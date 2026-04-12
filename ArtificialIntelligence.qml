@@ -994,7 +994,95 @@ Rectangle {
                         }
                     }
 
-                    Item { Layout.fillHeight: true } // spacer
+                    // ================= GAUSSIANNB PARAMS =================
+                    ColumnLayout {
+                        id: gnbPanel
+                        visible: currentModel === "GaussianNB"
+                        spacing: 6
+                        Layout.fillWidth: true
+
+                        property real varSmoothing: 1e-9
+                        property var priors: null
+
+                        // -------- VAR SMOOTHING --------
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Text {
+                                text: "Var Smoothing:"
+                                color: "white"
+                                Layout.preferredWidth: 110
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+
+                            Slider {
+                                Layout.fillWidth: true
+
+                                // log scale mapped manually
+                                from: -12
+                                to: -1
+                                value: Math.log10(Math.max(1e-12, gnbPanel.varSmoothing))
+
+                                onMoved: {
+                                    gnbPanel.varSmoothing = Math.pow(10, value)
+                                    logToConsole("Var Smoothing set to " + gnbPanel.varSmoothing.toExponential(2))
+                                }
+                            }
+
+                            TextField {
+                                text: Number(gnbPanel.varSmoothing).toExponential(2)
+
+                                onEditingFinished: {
+                                    var v = parseFloat(text)
+                                    if (!isNaN(v)) {
+                                        v = Math.max(1e-12, Math.min(1e-1, v))
+                                        gnbPanel.varSmoothing = v
+                                    }
+                                    text = Number(gnbPanel.varSmoothing).toExponential(2)
+
+                                    logToConsole("Var Smoothing set to " + gnbPanel.varSmoothing.toExponential(2))
+                                }
+
+                                Layout.preferredWidth: 100
+                            }
+                        }
+
+                        // -------- PRIORS --------
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Text {
+                                text: "Priors:"
+                                color: "white"
+                                Layout.preferredWidth: 110
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+
+                            TextField {
+                                Layout.fillWidth: true
+                                placeholderText: "None"
+
+                                onEditingFinished: {
+                                    if (text.trim() === "" || text.toLowerCase() === "none") {
+                                        gnbPanel.priors = null
+                                        // console.log("Priors set to None")
+                                        logToConsole("Priors set to None")
+                                    } else {
+                                        try {
+                                            gnbPanel.priors = text.split(",").map(x => parseFloat(x.trim()))
+                                            logToConsole("Priors set to " + text)
+                                        } catch (e) {
+                                            logToConsole("Invalid priors format")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true } 
                 }
             }
         }
