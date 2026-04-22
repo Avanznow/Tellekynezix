@@ -117,6 +117,9 @@ class BrainwavesBackend(QObject):
         self.current_data_mode = "synthetic"
         self.current_model = "Random Forest"  # Default model
         self.current_framework = "PyTorch"  # Default framework
+        # GaussianNB hyperparameters (UI-driven)
+        self.gnb_var_smoothing = 1e-9
+        self.gnb_priors = None  # None means default priors
         self.image_paths = []  # Store converted image paths
         self.plots_dir = os.path.abspath("plotscode/plots")  # Base plots directory
         self.current_dataset = "refresh"  # Default dataset to display
@@ -225,6 +228,51 @@ class BrainwavesBackend(QObject):
         self.current_model = model_name
         self.flight_log.insert(0, f"Selected Model: {model_name}")
         self.flightLogUpdated.emit(self.flight_log)
+        
+    @Slot(str)
+    def setGaussianNBVarSmoothing(self, value_str: str):
+        raw = (value_str or "").strip()
+        try:
+            val = float(raw)
+        except Exception:
+            self.logMessage.emit(f"Invalid Var Smoothing: '{value_str}' (use 1e-9, 1e-8, etc.)")
+            return
+
+        if val < 1e-12 or val > 1e-1:
+            self.logMessage.emit("Var Smoothing out of range (must be between 1e-12 and 1e-1)")
+            return
+
+        self.gnb_var_smoothing = val
+        self.logMessage.emit(f"Var Smoothing set to {val:g}")
+
+    @Slot(str)
+    def setGaussianNBPriors(self, priors_str: str):
+        raw = (priors_str or "").strip()
+
+        if raw == "" or raw.lower() == "none":
+            self.gnb_priors = None
+            self.logMessage.emit("Priors set to None (default)")
+            return
+
+        try:
+            parts = [p.strip() for p in raw.split(",") if p.strip() != ""]
+            vals = [float(p) for p in parts]
+        except Exception:
+            self.logMessage.emit(f"Invalid Priors: '{priors_str}' (use None or like 0.2,0.3,0.5)")
+            return
+
+        if any(v < 0 for v in vals):
+            self.logMessage.emit("Invalid Priors: values must be >= 0")
+            return
+
+        s = sum(vals)
+        if s <= 0:
+            self.logMessage.emit("Invalid Priors: sum must be > 0")
+            return
+
+        norm = [v / s for v in vals]
+        self.gnb_priors = norm
+        self.logMessage.emit(f"Priors set to {norm}")
 
     @Slot(str)
     def selectFramework(self, framework_name):
