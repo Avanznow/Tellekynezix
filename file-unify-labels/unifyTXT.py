@@ -3,25 +3,8 @@ import shutil      # For moving files
 import glob        # For matching file patterns ('*.txt')
 import stat        # For changing file permissions
 
-# Function to determine category from the folder name
-def get_category_from_folder(folder_name):
-    folder_name = folder_name.lower()  # Converts folder name to lowercase for case-insensitive matching
-    if "takeoff" in folder_name or "take_off" in folder_name:
-        return "takeoff"
-    elif "backward" in folder_name or "backwards" in folder_name:
-        return "backward"
-    elif "right" in folder_name:
-        return "right"
-    elif "left" in folder_name:
-        return "left"
-    elif "forward" in folder_name:
-        return "forward"
-    elif "landing" in folder_name:
-        return "landing"
-    else:
-        # Prints a warning if the folder name doesn't match any known category
-        print(f"Category not found: {folder_name}")
-        return None  # Returns None to indicate an unmatched folder
+# Shared category detection with unifyCSV.py (GUI unify uses this module).
+from unifyCSV import get_category_from_folder
 
 # Function to change permissions to ensure files/folders are writable and accessible
 def change_permissions(path):

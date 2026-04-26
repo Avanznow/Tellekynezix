@@ -4,21 +4,26 @@
 import os # Provides functions for file system interaction
 import shutil # Provides functions for copying, moving, and removing directories/files
 import glob # Provides functions for finding files
+import re # Provides regex utilities for robust name normalization
 
 # Dynamically map folder names to categories (case insensitive)
 def get_category_from_folder(folder_name):
-    folder_name = folder_name.lower() # Change to lowercase to help find
-    if "takeoff" in folder_name or "take_off" in folder_name: # Checks for unique takeoff names also
+    # Normalize aggressively so minor spelling/spacing differences still match.
+    # Examples handled: "Take Off", "take_off", "B ackward", "foreward", "fowward", etc.
+    raw = (folder_name or "").lower()
+    normalized = re.sub(r"[^a-z]+", "", raw)  # keep letters only; drop spaces/underscores/punct/digits
+
+    if any(key in normalized for key in ("takeoff", "takoff", "takeof")):
         return "takeoff"
-    elif "backward" in folder_name or "backwards" in folder_name: # Checks for unique backward names also
+    elif any(key in normalized for key in ("backward", "backwards", "backard", "bakward")):
         return "backward"
-    elif "right" in folder_name:
+    elif "right" in normalized:
         return "right"
-    elif "left" in folder_name:
+    elif "left" in normalized:
         return "left"
-    elif "forward" in folder_name:
+    elif any(key in normalized for key in ("forward", "foreward", "fowward")):
         return "forward"
-    elif "landing" in folder_name:
+    elif "landing" in normalized:
         return "landing"
     else:
         print(f"Category not found: {folder_name}") # Print message to indicate no category was found
@@ -75,7 +80,7 @@ def move_files_to_categories(base_dir):
             print(f"Removing empty group directory: {group_path}")
             os.rmdir(group_path) # Remove subdirectory
 
-    print(f"{base_directory} directory processed, CSV files unified!") # Program completion message
+    print(f"{base_dir} directory processed, CSV files unified!") # Program completion message
 
 if __name__ == "__main__":
     base_directory = "data"  # Base directory to start from: \data\. This should be in the same directory as the Python script.
