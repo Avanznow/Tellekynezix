@@ -340,7 +340,7 @@ Rectangle {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: currentModel === "SVM" ? "TensorFlow (N/A)" : "TensorFlow"
+                                    text: "TensorFlow"
                                     color: currentModel === "SVM" ? "#b7bcc8" : (currentFramework === "TensorFlow" ? "yellow" : "white")
                                     font.bold: true
                                     font.pixelSize: Math.max(10,
@@ -379,7 +379,7 @@ Rectangle {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: currentModel === "SVM" ? "JAX (N/A)" : "JAX"
+                                    text: "JAX"
                                     color: currentModel === "SVM" ? "#b7bcc8" : (currentFramework === "JAX" ? "yellow" : "white")
                                     font.bold: true
                                     font.pixelSize: Math.max(10,
