@@ -1,0 +1,9 @@
+[0;32m=== NAO Service Launcher ===[0m
+
+Project root: /Users/saadaqshire/Tellekynezix/python2and3
+[0;31mERROR: NAOqi SDK not found![0m
+Please either:
+  1. Extract NAOqi SDK to project root, OR
+  2. Set NAOQI_HOME environment variable
+
+Download from: https://www.aldebaran.com/en/support/nao-6/downloads-softwares
