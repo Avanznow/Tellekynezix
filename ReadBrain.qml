@@ -8,7 +8,7 @@ import QtQuick3D 6.7
 
 // Read Brain view
 Rectangle {
-    property string selectedModel: "Random Forest"
+    property string selectedModel: "Random Forest" // "Random Forest" | "GaussianNB" | "Deep Learning" | "SVM"
     property string currentFramework: "PyTorch"
     color: "#718399"
     Layout.fillWidth: true
@@ -453,7 +453,7 @@ Rectangle {
                         spacing: parent.width * 0.02
                         
                         Rectangle {
-                            width: (parent.width - parent.spacing * 2) / 3
+                            width: (parent.width - parent.spacing * 3) / 4
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
@@ -479,7 +479,7 @@ Rectangle {
                         }
                         
                         Rectangle {
-                            width: (parent.width - parent.spacing * 2) / 3
+                            width: (parent.width - parent.spacing * 3) / 4
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
@@ -505,7 +505,7 @@ Rectangle {
                         }
                         
                         Rectangle {
-                            width: (parent.width - parent.spacing * 2) / 3
+                            width: (parent.width - parent.spacing * 3) / 4
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
@@ -529,6 +529,34 @@ Rectangle {
                                 }
                             }
                         }
+
+                        Rectangle {
+                            width: (parent.width - parent.spacing * 3) / 4
+                            height: parent.height
+                            color: "#2d7a4a"
+                            radius: 5
+                            border.color: selectedModel === "SVM" ? "yellow" : "#4a9d6f"
+                            border.width: selectedModel === "SVM" ? 3 : 1
+
+                            Text {
+                                text: "SVM"
+                                font.pixelSize: parent.height * 0.25
+                                font.bold: true
+                                color: selectedModel === "SVM" ? "yellow" : "white"
+                                anchors.centerIn: parent
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    selectedModel = "SVM"
+                                    currentFramework = "PyTorch"
+                                    backend.selectModel("SVM")
+                                    backend.selectFramework("PyTorch")
+                                }
+                            }
+                        }
                     }
                     
                     // Framework Selection Row
@@ -542,6 +570,7 @@ Rectangle {
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
+                            opacity: selectedModel === "SVM" ? 0.55 : 1.0
                             border.color: currentFramework === "PyTorch" ? "yellow" : "#4a9d6f"
                             border.width: currentFramework === "PyTorch" ? 3 : 1
                             
@@ -567,6 +596,7 @@ Rectangle {
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
+                            opacity: selectedModel === "SVM" ? 0.55 : 1.0
                             border.color: currentFramework === "TensorFlow" ? "yellow" : "#4a9d6f"
                             border.width: currentFramework === "TensorFlow" ? 3 : 1
                             
@@ -580,6 +610,7 @@ Rectangle {
 
                             MouseArea {
                                 anchors.fill: parent
+                                enabled: selectedModel !== "SVM"
                                 onClicked: {
                                     currentFramework = "TensorFlow"
                                     backend.selectFramework("TensorFlow")
@@ -592,6 +623,7 @@ Rectangle {
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
+                            opacity: selectedModel === "SVM" ? 0.55 : 1.0
                             border.color: currentFramework === "JAX" ? "yellow" : "#4a9d6f"
                             border.width: currentFramework === "JAX" ? 3 : 1
                             
@@ -605,6 +637,7 @@ Rectangle {
 
                             MouseArea {
                                 anchors.fill: parent
+                                enabled: selectedModel !== "SVM"
                                 onClicked: {
                                     currentFramework = "JAX"
                                     backend.selectFramework("JAX")

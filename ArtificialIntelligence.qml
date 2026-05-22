@@ -25,7 +25,7 @@ Rectangle {
 
     // Mode and model selection
     property string mode: "Deploy"                 // "Deploy" (default) | "Train"
-    property string currentModel: "Random Forest"  // "Random Forest" | "GaussianNB" | "Deep Learning"
+    property string currentModel: "Random Forest"  // "Random Forest" | "GaussianNB" | "Deep Learning" | "SVM"
 
     // Deep Learning params (UI state only for now)
     property real   learningRate: 0.001
@@ -44,6 +44,11 @@ Rectangle {
     property int    rfMinSamplesLeaf: 1
     property string rfMaxFeatures: "auto"     // auto|sqrt|log2
     property string rfCriterion: "gini"       // gini|entropy
+
+    // SVM params (UI state only for now)
+    property string svmKernel: "rbf"
+    property real   svmC: 1.0
+    property string svmGamma: "scale"
 
     // Derived
     property bool paramsEnabled: mode === "Train"
@@ -207,6 +212,45 @@ Rectangle {
                                     }
                                 }
                             }
+
+                            // SVM
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: root.minControlSize
+                                Layout.minimumHeight: root.minControlSize
+                                Layout.maximumWidth: 260
+                                implicitWidth: Math.max(root.minControlSize,
+                                                        Math.min(root.width * 0.16, 260))
+                                implicitHeight: Math.max(root.minControlSize,
+                                                         Math.min(root.height * 0.08, 90))
+                                radius: 8
+                                color: "#2d7a4a"
+                                border.color: currentModel === "SVM" ? "yellow" : "#2d7a4a"
+                                border.width: currentModel === "SVM" ? 3 : 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "SVM"
+                                    color: currentModel === "SVM" ? "yellow" : "white"
+                                    font.bold: true
+                                    font.pixelSize: Math.max(10,
+                                                             Math.min(20, parent.height * 0.35))
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    wrapMode: Text.NoWrap
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        currentModel = "SVM"
+                                        backend.selectModel("SVM")
+                                        currentFramework = "PyTorch"
+                                        backend.selectFramework("PyTorch")
+                                        logToConsole("Model selected: SVM")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -292,11 +336,12 @@ Rectangle {
                                 color: "#2d7a4a"
                                 border.color: currentFramework === "TensorFlow" ? "yellow" : "#2d7a4a"
                                 border.width: currentFramework === "TensorFlow" ? 3 : 1
+                                opacity: currentModel === "SVM" ? 0.55 : 1.0
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: "TensorFlow"
-                                    color: currentFramework === "TensorFlow" ? "yellow" : "white"
+                                    color: currentModel === "SVM" ? "#b7bcc8" : (currentFramework === "TensorFlow" ? "yellow" : "white")
                                     font.bold: true
                                     font.pixelSize: Math.max(10,
                                                              Math.min(18, parent.height * 0.35))
@@ -307,6 +352,7 @@ Rectangle {
 
                                 MouseArea {
                                     anchors.fill: parent
+                                    enabled: currentModel !== "SVM"
                                     onClicked: {
                                         currentFramework = "TensorFlow"
                                         backend.selectFramework("TensorFlow")
@@ -329,11 +375,12 @@ Rectangle {
                                 color: "#2d7a4a"
                                 border.color: currentFramework === "JAX" ? "yellow" : "#2d7a4a"
                                 border.width: currentFramework === "JAX" ? 3 : 1
+                                opacity: currentModel === "SVM" ? 0.55 : 1.0
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: "JAX"
-                                    color: currentFramework === "JAX" ? "yellow" : "white"
+                                    color: currentModel === "SVM" ? "#b7bcc8" : (currentFramework === "JAX" ? "yellow" : "white")
                                     font.bold: true
                                     font.pixelSize: Math.max(10,
                                                              Math.min(18, parent.height * 0.35))
@@ -344,6 +391,7 @@ Rectangle {
 
                                 MouseArea {
                                     anchors.fill: parent
+                                    enabled: currentModel !== "SVM"
                                     onClicked: {
                                         currentFramework = "JAX"
                                         backend.selectFramework("JAX")
@@ -990,6 +1038,71 @@ Rectangle {
                                     text = Number(momentum).toFixed(2)
                                 }
                                 Layout.preferredWidth: 80
+                            }
+                        }
+                    }
+
+                    // SVM PARAMS -------------------------------------------
+                    ColumnLayout {
+                        visible: currentModel === "SVM"
+                        spacing: 6
+                        Layout.fillWidth: true
+
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            Text {
+                                text: "Kernel:"
+                                color: "white"
+                                Layout.preferredWidth: 110
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            ComboBox {
+                                Layout.fillWidth: true
+                                model: ["linear", "rbf", "poly"]
+                                currentIndex: Math.max(0, model.indexOf(svmKernel))
+                                onCurrentTextChanged: svmKernel = currentText
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            Text {
+                                text: "C:"
+                                color: "white"
+                                Layout.preferredWidth: 110
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            Slider {
+                                Layout.fillWidth: true
+                                from: 0.1; to: 100.0; stepSize: 0.1
+                                value: svmC
+                                onValueChanged: svmC = value
+                            }
+                            TextField {
+                                text: Number(svmC).toFixed(1)
+                                onEditingFinished: {
+                                    var v = parseFloat(text)
+                                    if (!isNaN(v))
+                                        svmC = Math.max(0.1, Math.min(100.0, v))
+                                    text = Number(svmC).toFixed(1)
+                                }
+                                Layout.preferredWidth: 80
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            Text {
+                                text: "Gamma:"
+                                color: "white"
+                                Layout.preferredWidth: 110
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            ComboBox {
+                                Layout.fillWidth: true
+                                model: ["scale", "auto"]
+                                currentIndex: Math.max(0, model.indexOf(svmGamma))
+                                onCurrentTextChanged: svmGamma = currentText
                             }
                         }
                     }

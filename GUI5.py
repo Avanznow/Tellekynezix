@@ -17,6 +17,7 @@ from collections import defaultdict
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from predictions_local.brainflowprocessor import BrainFlowDataProcessor
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
+from predictions_local.svmpytorchpredictor import SVMPytorchPredictor
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
 import asyncio
@@ -117,6 +118,7 @@ class BrainwavesBackend(QObject):
         self.current_data_mode = "synthetic"
         self.current_model = "Random Forest"  # Default model
         self.current_framework = "PyTorch"  # Default framework
+        self.svm_predictor = None
         self.image_paths = []  # Store converted image paths
         self.plots_dir = os.path.abspath("plotscode/plots")  # Base plots directory
         self.current_dataset = "refresh"  # Default dataset to display
@@ -247,6 +249,11 @@ class BrainwavesBackend(QObject):
                 prediction = self.run_gaussiannb_pytorch()
             else:
                 prediction = self.run_gaussiannb_tensorflow()
+        elif self.current_model == "SVM":
+            if self.current_framework != "PyTorch":
+                self.logMessage.emit("SVM currently runs through the PyTorch backend path. Falling back to PyTorch.")
+                self.current_framework = "PyTorch"
+            prediction = self.run_svm_pytorch()
         else:  # Deep Learning
             if self.current_framework == "PyTorch":
                 prediction = self.run_deep_learning_pytorch()
@@ -339,6 +346,19 @@ class BrainwavesBackend(QObject):
         except Exception as e:
             print(f"Error with TensorFlow Deep Learning: {e}")
             return "forward"
+
+    def run_svm_pytorch(self):
+        """ SVM model processing with PyTorch-compatible backend """
+        print("Running SVM Model with PyTorch...")
+        self.get_brainwave_data()
+        try:
+            model = SVMPytorchPredictor()
+            pred_label = model(self.brainwave_data)
+            return pred_label
+        except Exception as e:
+            print(f"Error with PyTorch SVM: {e}")
+            return "Error"
+
     def run_gaussiannb_pytorch(self):
         """ GaussianNB model processing with PyTorch backend """
         print("Running GaussianNB Model with PyTorch...")
