@@ -48,9 +48,10 @@ class TabController(QObject):
     def __init__(self):
         super().__init__()
         self.nao_process = None
-
-
-
+        self.gaussian_params = {
+                "var_smoothing": 1e-9,
+                "priors": None
+            }
 
 class BrainwavesBackend(QObject):
     # Define signals to update QML components
@@ -128,6 +129,11 @@ class BrainwavesBackend(QObject):
         self.hover_timer.timeout.connect(self.hover_callback)
 
         self.is_flying = False
+
+        self.gaussian_params = {
+            "var_smoothing": 1e-9,
+            "priors": None
+          }
 
 
         #Movement clumping
@@ -342,6 +348,18 @@ class BrainwavesBackend(QObject):
     def run_gaussiannb_pytorch(self):
         """ GaussianNB model processing with PyTorch backend """
         print("Running GaussianNB Model with PyTorch...")
+        params = getattr(self, "gaussian_params", None)
+
+        if params is None:
+            params = {"var_smoothing": 1e-9, "priors": None}
+
+        var_smoothing = params.get("var_smoothing", 1e-9)
+        priors = params.get("priors", None)
+
+        print("[GaussianNB PARAMS]")
+        print("var_smoothing:", var_smoothing)
+        print("priors:", priors)
+
         try:
             # Import the GaussianNB model
             import sys
@@ -357,7 +375,10 @@ class BrainwavesBackend(QObject):
                 checkpoint = torch.load(model_path)
                 model = GaussianNB(
                     num_features=checkpoint['num_features'],
-                    num_classes=checkpoint['num_classes']
+                    num_classes=checkpoint['num_classes'],
+                        var_smoothing=var_smoothing,  
+                        priors=priors                 
+
                 )
                 model.load_state_dict(checkpoint['model_state_dict'])
                 
@@ -919,7 +940,23 @@ class BrainwavesBackend(QObject):
         self.board = BoardShim(BoardIds.CYTON_DAISY_BOARD.value, params)
         print("\nLive headset board initialized.")
 
+    def setGaussianNBParams(self, var_smoothing, priors):
 
+        self.gaussian_params["var_smoothing"] = var_smoothing
+
+        # QVariant → Python safe handling
+        if priors is None:
+            self.gaussian_params["priors"] = None
+        else:
+            try:
+                # QML array comes as list already
+                self.gaussian_params["priors"] = list(priors)
+            except Exception:
+                self.gaussian_params["priors"] = None
+
+        self.logMessage.emit(
+            f"[GaussianNB] Updated → var_smoothing={var_smoothing:.2e}, priors={self.gaussian_params['priors']}"
+        )
 
 if __name__ == "__main__":
     os.environ["QT_QUICK_CONTROLS_STYLE"] = "Fusion"
