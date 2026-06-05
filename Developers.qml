@@ -66,16 +66,6 @@ Rectangle {
                                 }
                             }
                         }
-
-                        Text {
-                            text: "Top developer"
-                            color: "red"
-                            font.bold: true
-                            font.pixelSize: 18
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.top: parent.top
-                            anchors.topMargin: 8
-                        }
                     }
                 }
             }
@@ -120,16 +110,6 @@ Rectangle {
                                 }
                             }
                         }
-
-                        Text {
-                            text: "Top developer"
-                            color: "red"
-                            font.bold: true
-                            font.pixelSize: 18
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.top: parent.top
-                            anchors.topMargin: 8
-                        }
                     }
                 }
             }
@@ -173,16 +153,6 @@ Rectangle {
                                     console.log("Bronze chart not available.")
                                 }
                             }
-                        }
-
-                        Text {
-                            text: "Top developer"
-                            color: "red"
-                            font.bold: true
-                            font.pixelSize: 18
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.top: parent.top
-                            anchors.topMargin: 8
                         }
                     }
                 }
@@ -251,13 +221,14 @@ Rectangle {
 
                 Column {
                     anchors.centerIn: parent
-                    spacing: 1   // minimal space between image and button
+                    width: parent.width
+                    spacing: 0   // minimal space between image and button
 
                     // Medal Image
                     Image {
                         source: developersBackend.medalPath
                         width: 225
-                        height: 325
+                        height: 285
                         fillMode: Image.PreserveAspectFit
                         smooth: true
                         antialiasing: true
