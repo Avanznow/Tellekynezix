@@ -287,6 +287,12 @@ Rectangle {
                     var timestamp = new Date().toLocaleString()
                     consoleLog.append(message + " at " + timestamp)
                 }
+                function onParametersUpdated(parametersData) {
+                    parametersModel.clear();
+                    for (let item of parametersData) {
+                        parametersModel.append(item);
+                    }
+                }
             }
         }
 
@@ -384,6 +390,82 @@ Rectangle {
                             }
                             Text { 
                                 text: model.label; font.bold: true; color: "black"; width: 120 
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Parameters Panel
+            GroupBox {
+                title: "Parameters"
+                width: parent.width * 0.9
+                height: parent.height * 0.15
+
+                label: Text {
+                    text: qsTr("Parameters")
+                    color: "white"
+                    font.pixelSize: parent.width * 0.03
+                    font.bold: true
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.top: parent.top
+                    anchors.topMargin: 5
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 5
+                    color: "#5f6b7a"
+                    radius: 6
+                    border.color: "#d0d6df"
+                    border.width: 1
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 8
+
+                        // Dynamic parameters will be loaded here from backend
+                        ListView {
+                            id: parametersListView
+                            width: parent.width
+                            height: parent.height - 20
+                            model: ListModel {
+                                id: parametersModel
+                            }
+                            delegate: Row {
+                                spacing: 10
+                                width: parent.width
+                                height: 30
+                                
+                                Text {
+                                    text: model.label
+                                    color: "white"
+                                    font.bold: true
+                                    font.pixelSize: 12
+                                    width: parent.width * 0.4
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                
+                                Rectangle {
+                                    color: "white"
+                                    width: parent.width * 0.5
+                                    height: 25
+                                    radius: 3
+                                    
+                                    TextInput {
+                                        id: paramInput
+                                        anchors.fill: parent
+                                        anchors.margins: 3
+                                        text: model.value
+                                        font.pixelSize: 11
+                                        color: "black"
+                                        onTextChanged: {
+                                            backend.updateParameter(model.label, text)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
