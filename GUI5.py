@@ -62,6 +62,7 @@ class BrainwavesBackend(QObject):
     naoStarted = Signal()
     naoEnded = Signal()
     enqueueMoveRequested = Signal(str)
+    parametersUpdated = Signal(list)
 
     @Slot()
     def startNaoManual(self):
@@ -123,6 +124,14 @@ class BrainwavesBackend(QObject):
         self.current_dataset = "refresh"  # Default dataset to display
         self.connected = False
         self.drone_lock = threading.RLock()  # <-- reentrant lock avoids deadlock
+        
+        # Model parameters storage
+        self.model_parameters = {
+            "GaussianNB": {
+                "var_smoothing": "1e-9",
+                "priors": "None"
+            }
+        }
 
         # This timer instance will fire off the parameterized method each timer fire
         self.hover_timer = QTimer()
@@ -226,6 +235,9 @@ class BrainwavesBackend(QObject):
         self.current_model = model_name
         self.flight_log.insert(0, f"Selected Model: {model_name}")
         self.flightLogUpdated.emit(self.flight_log)
+        
+        # Update parameters panel when model changes
+        self.update_params_panel(model_name)
 
     @Slot(str)
     def selectFramework(self, framework_name):
@@ -233,6 +245,62 @@ class BrainwavesBackend(QObject):
         self.logMessage.emit(f"Framework selected: {framework_name}")
         self.current_framework = framework_name
         self.flight_log.insert(0, f"Selected Framework: {framework_name}")
+        self.flightLogUpdated.emit(self.flight_log)
+
+    def update_params_panel(self, model_name):
+        """
+        Dynamically updates the parameters panel based on the selected model.
+        """
+        parameters_list = []
+        
+        if model_name == "GaussianNB":
+            # Add GaussianNB specific parameters
+            parameters_list.append({
+                "label": "Var Smoothing",
+                "value": self.model_parameters.get("GaussianNB", {}).get("var_smoothing", "1e-9")
+            })
+            parameters_list.append({
+                "label": "Priors",
+                "value": self.model_parameters.get("GaussianNB", {}).get("priors", "None")
+            })
+        elif model_name in ["PyTorch", "TensorFlow", "JAX"]:
+            # Placeholder for deep learning frameworks
+            parameters_list.append({
+                "label": "Learning Rate",
+                "value": "0.001"
+            })
+            parameters_list.append({
+                "label": "Batch Size",
+                "value": "32"
+            })
+        else:
+            # Default empty parameters for other models
+            pass
+        
+        # Emit signal to update QML
+        self.parametersUpdated.emit(parameters_list)
+        self.logMessage.emit(f"Parameters panel updated for {model_name}")
+
+    @Slot(str, str)
+    def updateParameter(self, param_name, param_value):
+        """
+        Update a model parameter and log the change.
+        """
+        if self.current_model == "GaussianNB":
+            if param_name == "Var Smoothing":
+                self.model_parameters["GaussianNB"]["var_smoothing"] = param_value
+                self.logMessage.emit(f"Var Smoothing set to {param_value}")
+            elif param_name == "Priors":
+                self.model_parameters["GaussianNB"]["priors"] = param_value
+                self.logMessage.emit(f"Priors set to {param_value}")
+        elif self.current_model in ["PyTorch", "TensorFlow", "JAX"]:
+            if param_name == "Learning Rate":
+                self.logMessage.emit(f"Learning Rate set to {param_value}")
+            elif param_name == "Batch Size":
+                self.logMessage.emit(f"Batch Size set to {param_value}")
+        
+        # Log to flight log as well
+        self.flight_log.insert(0, f"Parameter updated: {param_name} = {param_value}")
         self.flightLogUpdated.emit(self.flight_log)
 
     @Slot()
@@ -343,6 +411,13 @@ class BrainwavesBackend(QObject):
     def run_gaussiannb_pytorch(self):
         """ GaussianNB model processing with PyTorch backend """
         print("Running GaussianNB Model with PyTorch...")
+        
+        # Get current parameters
+        var_smoothing = self.model_parameters.get("GaussianNB", {}).get("var_smoothing", "1e-9")
+        priors = self.model_parameters.get("GaussianNB", {}).get("priors", "None")
+        
+        print(f"Using parameters: var_smoothing={var_smoothing}, priors={priors}")
+        
         try:
             # Import the GaussianNB model
             import sys
@@ -354,13 +429,25 @@ class BrainwavesBackend(QObject):
             model_path = os.path.join(os.path.dirname(__file__), 'prediction-gaussiannb', 'pytorch', 'gaussiannb_trained.pth')
             
             if os.path.exists(model_path):
-                # Load the trained model
+                # Load the trained model with parameters
                 checkpoint = torch.load(model_path)
                 model = GaussianNB(
                     num_features=checkpoint['num_features'],
-                    num_classes=checkpoint['num_classes']
+                    num_classes=checkpoint['num_classes'],
+                    var_smoothing=float(var_smoothing) if var_smoothing != "None" else 1e-9
                 )
                 model.load_state_dict(checkpoint['model_state_dict'])
+                
+                # Apply priors if specified
+                if priors != "None" and priors.strip():
+                    try:
+                        # Parse priors string (e.g., "[0.3, 0.7]" or "0.3,0.7")
+                        priors_list = [float(x.strip()) for x in priors.replace('[', '').replace(']', '').split(',')]
+                        if len(priors_list) == checkpoint['num_classes']:
+                            model.set_priors(priors_list)
+                            print(f"Applied custom priors: {priors_list}")
+                    except Exception as e:
+                        print(f"Failed to parse priors '{priors}': {e}")
                 
                 # Get prediction from BCI connection
                 if hasattr(self, 'bcicon'):
@@ -371,7 +458,7 @@ class BrainwavesBackend(QObject):
                 # Fallback
                 return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
             else:
-                print(f"GaussianNB model not found at {model_path}. Using simulation.")
+                print(f"GaussianNB model not found at {model_path}. Using simulation with parameters.")
                 return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
                 
         except Exception as e:
