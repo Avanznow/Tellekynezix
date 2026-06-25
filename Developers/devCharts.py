@@ -24,8 +24,8 @@ except ImportError:
 # ----------------------------
 
 def fetch_contributors_from_github(
-    owner: str = "3C-SCSU",
-    repo: str = "Avatar",
+    owner: str = "Avanznow",
+    repo: str = "Tellekynezix",
     retries: int = 5,
     delay: float = 2.0,
 ) -> list[tuple[str, int]]:
@@ -138,7 +138,7 @@ def save_csv(rows: list[tuple[str, int, str]], outpath: str):
             w.writerow(row)
 
 
-def devList(owner: str = "3C-SCSU", repo: str = "Avatar") -> str:
+def devList(owner: str = "Avanznow", repo: str = "Tellekynezix") -> str:
     """
     For showing the list of developers in the GUI.
     Now uses the GitHub /stats/contributors API via fetch_contributors_from_github(),
@@ -152,8 +152,17 @@ def devList(owner: str = "3C-SCSU", repo: str = "Avatar") -> str:
     lines = [f"{commits:>6} {login}" for login, commits in data]
     return "\n".join(lines)
 
+def clean_author_name(author: str) -> str:
+    # Removes email parts like <email>
+    
+    name = re.split(r"\s*<", author, maxsplit=1)[0].strip()
 
-def ticketsByDev_map() -> Dict[str, List[str]]:
+    if not name: 
+        return "Unknown Developer"
+    
+    return name
+
+def ticketsByDev_map(branch: str = "main") -> Dict[str, List[str]]:
     """
     Returns a mapping author -> sorted list of unique ticket IDs.
     Recognizes JIRA-like (ABC-123) and GitHub issues (#123).
@@ -161,52 +170,85 @@ def ticketsByDev_map() -> Dict[str, List[str]]:
     pretty = "%x1e%an <%ae>%x1f%s%x1f%b"
     try:
         proc = subprocess.run(
-            ["git", "log", "main", f"--pretty=format:{pretty}"],
-            capture_output=True, text=True, encoding="utf-8", errors="ignore", check=True
+            ["git", "log", branch, f"--pretty=format:{pretty}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=True
         )
     except subprocess.CalledProcessError:
         return {}
+
     raw = proc.stdout or ""
-    commits = raw.split("\x1e")  # split by commit
+    commits = raw.split("\x1e")
+
     jira_re = re.compile(r"\b([A-Za-z]{2,}-\d+)\b", re.IGNORECASE)
     hash_re = re.compile(r"(?<![A-Za-z0-9])#\d+\b")
+
     author_to_ticketset: Dict[str, set[str]] = defaultdict(set)
+
     for entry in commits:
         entry = entry.strip()
+
         if not entry:
             continue
+
         parts = entry.split("\x1f", 2)
+
         author = parts[0].strip()
         subject = parts[1] if len(parts) > 1 else ""
         body = parts[2] if len(parts) > 2 else ""
+
         msg = (subject + "\n" + body).strip()
+
         found: set[str] = set()
+
         for m in jira_re.findall(msg):
             found.add(m.upper())
+
         for m in hash_re.findall(msg):
             found.add(m)
-        # ensures author exists even if no tickets
+
         author_to_ticketset[author]
         author_to_ticketset[author].update(found)
-    # convert sets -> sorted lists
-    result: Dict[str, List[str]] = {a: sorted(list(ts)) for a, ts in author_to_ticketset.items()}
+
+    result: Dict[str, List[str]] = {
+        a: sorted(list(ts)) for a, ts in author_to_ticketset.items()
+    }
+
     return result
 
 
-def ticketsByDev_text() -> str:
+def ticketsByDev_text(branch: str = "main") -> str:
     """
     Return a human-readable text block suitable for TextArea.
-    Format: "Author Name <email>: TICKET-1, #23, TICKET-5"
+    Format: "Author Name : TICKET-1, #23, TICKET-5"
     One author per line, authors sorted by number of tickets (desc).
     """
-    m = ticketsByDev_map()
+    m = ticketsByDev_map(branch)
+
     if not m:
         return "No tickets found."
 
     lines: List[str] = []
+
+    lines.append(f"Repository branch: {branch}")
+    lines.append("")
+
     # sort authors by number of tickets desc, then by name
     for author, tickets in sorted(m.items(), key=lambda kv: (-len(kv[1]), kv[0].lower())):
-        lines.append(f"{author}: {', '.join(tickets)}")
+        clean_name = clean_author_name(author)
+
+        if tickets:
+            ticket_text = ", ".join(tickets)
+        else:
+            ticket_text = "No linked tickets"
+
+        lines.append(f"{clean_name}")
+        lines.append(f"Tickets: {ticket_text}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -219,7 +261,23 @@ def plot_single_tier(rows: list[tuple[str, int, str]], tier: str, outpath: str):
     data = [r for r in rows if r[2] == tier]
     if not data:
         print(f"No data to plot for {tier}")
+
+        plt.figure(figsize=(10, 7))
+        plt.text(
+            0.5,
+            0.5,
+            f"No {tier} contributors",
+            ha="center",
+            va="center",
+            fontsize=28,
+            weight="bold",
+        )
+        plt.axis("off")
+        plt.tight_layout(pad=2.0)
+        plt.savefig(outpath, dpi=150)
+        plt.close()
         return
+
 
     # Extract just the name before any email or < >
     def extract_name(full: str) -> str:
@@ -254,6 +312,26 @@ def plot_single_tier(rows: list[tuple[str, int, str]], tier: str, outpath: str):
     plt.savefig(outpath, dpi=150)
     plt.close()
 
+#----------------------------
+# Clear old generated chart files
+#-----------------------------
+
+def clear_old_charts(out_dir: str):
+    old_files = [
+        "gold_contributors.png",
+        "silver_contributors.png",
+        "bronze_contributors.png",
+        "top15_contributors_tiers.csv"
+    ]
+    
+    for file_name in old_files:
+        path = os.path.join(out_dir, file_name)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Removed old file: {path}")
+            except Exception as e:
+                print(f"Error removing old file {path}: {e}")
 
 # ----------------------------
 # Main
@@ -267,8 +345,8 @@ def main():
     default_plot_path = os.path.join(script_dir, "plotDevelopers")
 
     parser.add_argument("--out-dir", type=str, default=default_plot_path, help="Directory to save outputs.")
-    parser.add_argument("--owner", type=str, default="3C-SCSU", help="GitHub repo owner (org or user).")
-    parser.add_argument("--repo", type=str, default="Avatar", help="GitHub repository name.")
+    parser.add_argument("--owner", type=str, default="Avanznow", help="GitHub repo owner (org or user).")
+    parser.add_argument("--repo", type=str, default="Tellekynezix", help="GitHub repository name.")
     args = parser.parse_args()
 
     # Use GitHub stats API instead of local git shortlog, with NO adjustments
@@ -279,6 +357,7 @@ def main():
 
     tiered = assign_fixed_tiers(data)
     os.makedirs(args.out_dir, exist_ok=True)
+    clear_old_charts(args.out_dir)
 
     # Save CSV and Plots using args.out_dir
     csv_path = os.path.join(args.out_dir, "top15_contributors_tiers.csv")

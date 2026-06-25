@@ -21,7 +21,7 @@ class DevelopersAPI(QObject):
     @Slot(result=str)
     def getDevList(self):
         return self._dev_list
-        # return devCharts.devList(owner="3C-SCSU", repo="Avatar")
+        # return devCharts.devList(owner="Avanznow", repo="Tellekynezix")
 
     @Slot(result=str)
     def getTicketsByDev(self) -> str:
@@ -48,7 +48,7 @@ class DevelopersAPI(QObject):
             self.devImagePath()
             self.pathsChanged.emit()
 
-            self._dev_list = devCharts.devList(owner="3C-SCSU", repo="Avatar")
+            self._dev_list = devCharts.devList(owner="Avanznow", repo="Tellekynezix")
             self.devListChanged.emit()
 
             print("Charts and developers list updated.")
