@@ -424,7 +424,7 @@ Rectangle {
                         id: consoleLog
                         wrapMode: Text.WrapAnywhere
                         readOnly: true
-                        font.pixelSize: parent.width * 0.025
+                        font.pixelSize: 14
                         color: "black"
                         background: Rectangle { color: "white" }
                     }
