@@ -5,7 +5,7 @@ JAX Deep Learning Implementation for Brain-Computer Interface Applications
 Author: Yash Patel (GitHub: Yash272001)
 Date: January 2025
 Project: Avatar BCI Platform - Neural Interface Control Systems
-Repository: https://github.com/3C-SCSU/Avatar
+Repository: https://github.com/Avanznow/Tellekynezix.git
 
 MAIN CONTRIBUTION:
 This implementation demonstrates a neural network approach using JAX and Flax 

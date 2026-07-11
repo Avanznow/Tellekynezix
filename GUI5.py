@@ -32,6 +32,7 @@ import queue
 
 from developers_api import DevelopersAPI
 
+
 								
 from NA06_Manual_Control import ManualNaoController
 from NA06_Manual_Control.camera_view import DroneCameraController
@@ -920,6 +921,20 @@ class BrainwavesBackend(QObject):
 
         self.imagesReady.emit(self.image_paths)  # Send data to QML
 
+    #Allows the user to switch between the OpenBCI or Neurosity Crown headsets
+    @Slot(str)
+    def setBCISource(self, source):
+        self.logMessage.emit(f"Switching BCI source to: {source}")
+
+        if source == "neurosity":
+            self.current_bci_source = "neurosity"
+
+        elif source == "openbci":
+            self.current_bci_source = "openbci"
+
+        else:
+            self.logMessage.emit("Unknown BCI source selected")
+            
     @Slot(str)
     def setDataMode(self, mode):
         """
@@ -1065,6 +1080,3 @@ if __name__ == "__main__":
     backend.imagesReady.connect(lambda images: engine.rootContext().setContextProperty("imageModel", images))
 
     sys.exit(app.exec())
-
-
-
