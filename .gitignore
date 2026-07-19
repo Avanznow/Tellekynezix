@@ -21,3 +21,30 @@ plotDevelopers/*contributors.png
 
 pynaoqi-python2.7-2.8.6.23-linux64-20191127_152327/
 /.qtcreator
+
+# =========================================================================
+# Substrate Solochain (P2P Folder) Ignores
+# =========================================================================
+
+# Ignore the massive Rust compilation directory
+P2P/target/
+
+# Ignore local blockchain databases if generated later
+P2P/data/
+P2P/db/
+P2P/*.db
+
+# Ignore keystores and secret keys
+P2P/keystore/
+P2P/secret_*
+P2P/*.seed
+P2P/*.key
+
+# Ignore custom or local chain specifications containing dev keys
+P2P/*chainspec*.json
+
+# Ignore backup source files and local IDE settings
+P2P/**/*.rs.bk
+P2P/.cargo/
+.vscode/
+.idea/
