@@ -7,7 +7,7 @@ pub use pallet::*;
 // Bring in Vector support safely for no_std environments
 extern crate alloc;
 
-// 💡 RUNTIME ALIGNMENT: Create an empty weights module to satisfy the runtime bindings
+// RUNTIME ALIGNMENT: Create an empty weights module to satisfy the runtime bindings
 pub mod weights {
 	pub trait WeightInfo {}
 	impl WeightInfo for () {}
@@ -30,7 +30,7 @@ pub mod pallet {
 		/// Uses strict Polkadot SDK event trait bindings
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 		
-		/// 💡 RUNTIME ALIGNMENT: Add the missing WeightInfo association expected by configs/mod.rs
+		/// RUNTIME ALIGNMENT: Add the missing WeightInfo association expected by configs/mod.rs
 		type WeightInfo: super::weights::WeightInfo;
 	}
 
