@@ -1,0 +1,5 @@
+Configuration,n_features,Train Time (ms),Inference Time (ms),Samples
+Raw flattened windows,2048,36.48,92.213,5000
+Raw + PCA/Power (≤95 % var),12,1.32,0.529,5000
+PSD band powers (80 feats),80,1.98,3.046,5000
+Feature cache (.npz) load,—,—,—,cache read: 0.2 ms

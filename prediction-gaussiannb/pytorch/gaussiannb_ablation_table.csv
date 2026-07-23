@@ -1,0 +1,6 @@
+Feature Set,Feats In,Feats Used,Accuracy,Macro-F1,Balanced Acc
+Stats + PSD + PCA/Power (95 %),160,55,0.2241,0.2216,0.2578
+PSD Band Powers only (80),80,80,0.2034,0.1915,0.242
+Raw Flattened Windows* (15 k subsample),2048,2048,0.1412,0.1277,0.2273
+Time-Domain Stats only (80),80,80,0.0926,0.0883,0.1655
+Stats + PSD Hybrid (160),160,160,0.0926,0.0883,0.1655
