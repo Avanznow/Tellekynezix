@@ -1,0 +1,18 @@
+# Netplan static IP template (Ticket #9)
+# Copy to: /etc/netplan/01-static-ip.yaml and replace placeholders safely.
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    <INTERFACE_NAME>:
+      dhcp4: false
+      addresses:
+        - <STATIC_IP>/<CIDR>   # example: 192.168.1.50/24
+      routes:
+        - to: default
+          via: <GATEWAY_IP>    # example: 192.168.1.1
+      nameservers:
+        addresses:
+          - <DNS_1>            # example: 1.1.1.1
+          - <DNS_2>            # example: 8.8.8.8
