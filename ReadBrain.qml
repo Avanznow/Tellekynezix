@@ -393,6 +393,82 @@ Rectangle {
                     }
                 }
             }
+                        // ================= Parameters Panel (GaussianNB) =================
+            GroupBox {
+                visible: selectedModel === "GaussianNB"
+                width: parent.width * 0.9
+                height: parent.height * 0.20
+
+                label: Text {
+                    text: qsTr("Parameters (GaussianNB)")
+                    color: "white"
+                    font.pixelSize: parent.width * 0.03
+                    font.bold: true
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    anchors.top: parent.top
+                    anchors.topMargin: 5
+                }
+
+                background: Rectangle {
+                    color: "#2c3e50"
+                    radius: 6
+                    border.color: "#d0d6df"
+                    border.width: 1
+                }
+
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 10
+
+                    Row {
+                        spacing: 10
+                        width: parent.width
+
+                        Text {
+                            text: "Var Smoothing:"
+                            color: "white"
+                            width: parent.width * 0.35
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        TextField {
+                            id: gnbVarSmoothingField
+                            width: parent.width * 0.55
+                            placeholderText: "1e-9"
+                            text: "1e-9"
+                            onEditingFinished: backend.setGaussianNBVarSmoothing(text)
+                        }
+                    }
+
+                    Row {
+                        spacing: 10
+                        width: parent.width
+
+                        Text {
+                            text: "Priors:"
+                            color: "white"
+                            width: parent.width * 0.35
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        TextField {
+                            id: gnbPriorsField
+                            width: parent.width * 0.55
+                            placeholderText: "None (Default) or e.g. 0.2,0.3,0.5"
+                            text: "None"
+                            onEditingFinished: backend.setGaussianNBPriors(text)
+                        }
+                    }
+
+                    Text {
+                        text: "Var Smoothing range: 1e-12 to 1e-1"
+                        color: "#d0d6df"
+                        font.pixelSize: 11
+                    }
+                }
+            }
 
         Text {
             text: "Console Log"
