@@ -1,0 +1,93 @@
+[0;34m╔═══════════════════════════════════════════╗[0m
+[0;34m║   Avatar + Tello Environment Launcher    ║[0m
+[0;34m╚═══════════════════════════════════════════╝[0m
+
+[0;32m➤[0m Project root: /Users/saadaqshire/Tellekynezix
+[0;32m✓[0m Found Python: Python 3.13.7 (/Users/saadaqshire/Tellekynezix/venv/bin/python3)
+[0;32m✓[0m Virtual environment found: /Users/saadaqshire/Tellekynezix/venv
+[0;32m✓[0m Virtual environment activated
+[0;32m✓[0m Found main.py: /Users/saadaqshire/Tellekynezix/GUI5.py
+
+Checking Python 3 dependencies...
+[0;32m✓[0m PySide6 (Qt GUI)
+[0;32m✓[0m djitellopy (Tello SDK)
+[0;31m✗[0m BrainFlow (missing)
+[0;31m✗[0m PyTorch (missing)
+[0;32m✓[0m Pandas
+[0;32m✓[0m NumPy
+
+[1;33m⚠  Some dependencies are missing![0m
+Install them with:
+  pip3 install PySide6 djitellopy brainflow torch pandas numpy
+
+Continue anyway? (y/n) 
+
+Checking NAO service status...
+[0;32m✓[0m NAO service is running (port 5000)
+
+Tello drone status:
+[1;33mℹ[0m  Make sure Tello is powered on and WiFi connected before starting
+   Tello WiFi SSID usually: TELLO-XXXXXX
+
+[0;34mConfiguration:[0m
+  Python Interpreter: /Users/saadaqshire/Tellekynezix/venv/bin/python3
+  Python Version:     Python 3.13.7
+  Project Root:       /Users/saadaqshire/Tellekynezix
+  Main Script:        /Users/saadaqshire/Tellekynezix/GUI5.py
+  Virtual Env:        /Users/saadaqshire/Tellekynezix/venv
+
+[1;33m⚠  Warning: No display server detected[0m
+   GUI applications may not work
+   Make sure you're running this in a graphical environment
+
+[0;32m╔═══════════════════════════════════════════╗[0m
+[0;32m║     Starting Avatar GUI Application      ║[0m
+[0;32m╚═══════════════════════════════════════════╝[0m
+
+Press Ctrl+C to stop
+
+Warning: BCI connection not available: No module named 'client'
+TabController created
+=============Manual Nao Controller initialized=============
+[INFO] tello.py - 129 - Tello instance was initialized. Host: '192.168.10.1'. Port: '8889'.
+Controllers exposed to QML
+file:///Users/saadaqshire/Tellekynezix/ManualDroneControl.qml:1025:9: QML CameraView: Binding loop detected for property "cameraController":
+file:///Users/saadaqshire/Tellekynezix/ManualDroneControl.qml:1032:13
+qt.qpa.fonts: Populating font family aliases took 344 ms. Replace uses of missing font family "Serif" with one that exists to avoid this cost. 
+qml: DroneCameraLoader.status:::  2
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:636:9: QML Button: Binding loop detected for property "implicitWidth":
+qrc:/qt-project.org/imports/QtQuick/Controls/Fusion/Button.qml:13:5
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:78:17: QML Button: Binding loop detected for property "implicitWidth":
+qrc:/qt-project.org/imports/QtQuick/Controls/Fusion/Button.qml:13:5
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:255: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:254: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:253: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:252: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:409: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:408: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:407: ReferenceError: root is not defined
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:406: ReferenceError: root is not defined
+Cloud API buttons connected successfully
+
+=== STARTING CONVERT PDFS TO IMAGES FOR REFRESH ===
+
+=== CHECKING IF PLOTS EXIST ===
+Checking PDFs in /Users/saadaqshire/Tellekynezix/plotscode/plots/rollback...
+Checking PDFs in /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh...
+Result of check_plots_exist: True
+Generated image: /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/takeoff_plots.png
+Generated image: /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/forward_plots.png
+Generated image: /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/right_plots.png
+Generated image: /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/land_plots.png
+Generated image: /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/backward_plots.png
+Generated image: /Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/left_plots.png
+Final Image Paths Sent to QML: [{'graphTitle': 'Takeoff', 'imagePath': 'file:///Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/takeoff_plots.png'}, {'graphTitle': 'Forward', 'imagePath': 'file:///Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/forward_plots.png'}, {'graphTitle': 'Right', 'imagePath': 'file:///Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/right_plots.png'}, {'graphTitle': 'Landing', 'imagePath': 'file:///Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/land_plots.png'}, {'graphTitle': 'Backward', 'imagePath': 'file:///Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/backward_plots.png'}, {'graphTitle': 'Left', 'imagePath': 'file:///Users/saadaqshire/Tellekynezix/plotscode/plots/refresh/left_plots.png'}]
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:370:25: TypeError: Cannot read property 'width' of null
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:17:5: QML Row: Cannot specify left, right, horizontalCenter, fill or centerIn anchors for items inside Row. Row will not function.
+qml: DroneCameraView loaded; cameraController: null
+qml: DroneCameraLoader.status:::  1
+file:///Users/saadaqshire/Tellekynezix/NA06_Manual_Control/camera_view/DroneCameraView.qml:19:5: QML Connections: Implicitly defined onFoo properties in Connections are deprecated. Use this syntax instead: function onFoo(<arguments>) { ... }
+qml: DroneCameraController assigned:::  DroneCameraController(0x772a182e0)
+file:///Users/saadaqshire/Tellekynezix/ReadBrain.qml:17:5: QML Row: Cannot specify left, right, horizontalCenter, fill or centerIn anchors for items inside Row. Row will not function.
+[INFO] tello.py - 438 - Send command: 'command'
+[WARNING] tello.py - 448 - Aborting command 'command'. Did not receive a response after 7 seconds

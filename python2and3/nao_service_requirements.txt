@@ -1,0 +1,22 @@
+# Python 2.7 Dependencies for NAO Service
+# Install with: python2.7 -m pip install -r nao_service_requirements.txt --user
+
+# Web framework for HTTP API
+flask==1.1.4
+werkzeug==1.0.1
+
+# Template engine (dependency of Flask)
+jinja2==2.11.3
+
+# Safe string markup (dependency of Jinja2)
+markupsafe==1.1.1
+
+# WSGI utility library
+itsdangerous==1.1.0
+
+# Click command line interface (dependency of Flask)
+click==7.1.2
+
+# Note: NAOqi SDK must be installed separately
+# Download from: https://www.aldebaran.com/en/support/nao-6/downloads-softwares
+# Extract to project root or set NAOQI_HOME environment variable
