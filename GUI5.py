@@ -1,3 +1,39 @@
+import subprocess
+from pathlib import Path
+
+def auto_install_dependencies():
+    required_modules = [
+        "PySide6",
+        "pdf2image",
+        "djitellopy",
+        "pandas",
+        "torch",
+        "brainflow"
+    ]
+
+    missing = []
+
+    for module in required_modules:
+        try:
+            __import__(module)
+        except ModuleNotFoundError:
+            missing.append(module)
+
+    if missing:
+        print(f"Missing modules detected: {missing}")
+        print("Running automatic dependency installer...")
+
+        project_root = Path(__file__).resolve().parent
+        installer = project_root / "pip-modules" / "installmodules.py"
+
+        try:
+            subprocess.check_call([sys.executable, str(installer)])
+            print("Dependencies installed successfully.")
+        except subprocess.CalledProcessError:
+            print("Dependency installation failed.")
+            sys.exit(1)
+
+auto_install_dependencies()
 import sys
 import os
 import subprocess
