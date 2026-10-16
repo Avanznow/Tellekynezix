@@ -70,19 +70,12 @@ class GaussianNBJAX:
         counts = jnp.bincount(y_j, length=num_classes)
         counts_f = jnp.maximum(counts.astype(jnp.float32), 1.0)
 
-        def sums_for_class(c):
-            mask = (y_j == c)
-            masked = jnp.where(mask[:, None], X_j, 0.0)
-            return jnp.sum(masked, axis=0)
-
-        def sums2_for_class(c):
-            mask = (y_j == c)
-            masked2 = jnp.where(mask[:, None], X_j * X_j, 0.0)
-            return jnp.sum(masked2, axis=0)
-
-        classes = jnp.arange(num_classes)
-        sums = jax.vmap(sums_for_class)(classes)
-        sums2 = jax.vmap(sums2_for_class)(classes)
+        # Per-class sums via one-hot matmul: (C,N) @ (N,D) -> (C,D), without
+        # materialising a masked (C,N,D) copy of X for every class.
+        one_hot = jax.nn.one_hot(y_j, num_classes, dtype=jnp.float32).T
+        hp = jax.lax.Precision.HIGHEST
+        sums = jnp.matmul(one_hot, X_j, precision=hp)
+        sums2 = jnp.matmul(one_hot, X_j * X_j, precision=hp)
 
         means = sums / counts_f[:, None]
         vars_ = (sums2 / counts_f[:, None]) - jnp.square(means)
