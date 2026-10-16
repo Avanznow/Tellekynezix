@@ -1,0 +1,23 @@
+{
+  "tests": {
+    "passed": 237,
+    "command": "python -m pytest signal_quality/tests prediction_eegnet/tests -q",
+    "duration_seconds": 33.93,
+    "hardware_initialized": false,
+    "network_requests": false
+  },
+  "notebook": {
+    "file": "Avatar_Signal_Quality.ipynb",
+    "executed_code_cells": 12,
+    "errors": 0,
+    "real_data_plots": 2
+  },
+  "static_checks": {
+    "python_compilation": "passed",
+    "git_diff_check": "passed",
+    "qml_lint": "completed with existing-style/property warnings; no GUI hardware runtime validation"
+  },
+  "live_integration": "not verified; installed BrainFlow import fails because pkg_resources is missing",
+  "quality_detection_accuracy": null,
+  "independent_real_quality_labels": 0
+}

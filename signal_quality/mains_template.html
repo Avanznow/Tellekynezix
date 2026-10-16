@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mains Frequency Check</title>
+<style>
+:root{color-scheme:light;--page:#f9f9f7;--surface-1:#fcfcfb;--text-primary:#0b0b0b;--text-secondary:#52514e;--muted:#898781;
+--grid:#e1e0d9;--axis:#c3c2b7;--border:rgba(11,11,11,.10);--series-1:#2a78d6;--critical:#d03b3b;--good:#006300}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--page:#0d0d0d;--surface-1:#1a1a19;
+--text-primary:#fff;--text-secondary:#c3c2b7;--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);--series-1:#3987e5;
+--critical:#e66767;--good:#0ca30c}}
+:root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface-1:#1a1a19;--text-primary:#fff;--text-secondary:#c3c2b7;
+--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);--series-1:#3987e5;--critical:#e66767;--good:#0ca30c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text-primary);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 56px}
+h1{font-size:24px;margin:0}h2{font-size:17px;margin:30px 0 6px}
+.sub,.note{color:var(--text-secondary)}.note{font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:18px 0 6px}
+.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:22px;font-weight:600}.tile span{color:var(--text-secondary);font-size:12.5px}
+ol.recs{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px 16px 12px 34px;margin:12px 0}
+ol.recs li{margin:5px 0}
+.multiples{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.multiples{grid-template-columns:1fr}}
+.chart{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px 12px 6px;position:relative}
+.chart h3{font-size:14px;margin:0 0 2px}.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;
+padding:7px 10px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;z-index:2;white-space:nowrap}
+table{border-collapse:collapse;width:100%;font-size:13px;background:var(--surface-1)}
+th,td{padding:6px 9px;border-bottom:1px solid var(--grid);text-align:left}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+tr.cfg td{font-weight:600}
+details summary{cursor:pointer;color:var(--text-secondary);margin:8px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Mains Frequency Check</h1>
+<p class="sub" id="sub"></p>
+<div class="tiles" id="tiles"></div>
+<h2>What to do</h2>
+<ol class="recs" id="recs"></ol>
+
+<h2>Median spectrum of all recordings</h2>
+<p class="note">Power relative to each recording's median between 30 Hz and the Nyquist limit, then the median across recordings. Line interference is the narrow peak; dashed lines mark the candidate mains frequencies.</p>
+<div class="multiples" id="spectra"></div>
+
+<h2>Peaks by collection group and board</h2>
+<p class="note" id="rule"></p>
+<div class="scroll"><table id="groups"></table></div>
+
+<section id="impactSection">
+<h2>If line-noise rejection were switched on</h2>
+<p class="note" id="impactNote"></p>
+<div class="scroll"><table id="impact"></table></div>
+</section>
+
+<details><summary>Show every recording</summary><div class="scroll"><table id="recordings"></table></div></details>
+<p class="note" style="margin-top:20px" id="interpretation"></p>
+</main>
+
+<script id="payload" type="application/json">/*__PAYLOAD__*/null</script>
+<script>
+"use strict";
+const R = JSON.parse(document.getElementById("payload").textContent);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const db = v => v === null || v === undefined ? "–" : v.toFixed(1) + " dB";
+const pct = v => (100 * v).toFixed(1) + "%";
+const NS = "http://www.w3.org/2000/svg";
+const el = (t, a, p) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); if (p) p.appendChild(n); return n; };
+const O = R.overall, f = R.recommended_mains_hz;
+
+$("sub").textContent = `${O.recordings.toLocaleString()} recordings · policy ${R.quality_policy_id} · configured mains: ${R.configured_mains_hz === null ? "not set" : R.configured_mains_hz + " Hz"}`;
+const tiles = [
+  [f ? f + " Hz" : "inconclusive", "mains frequency indicated by the recordings"],
+  [`${O.clear_60.toLocaleString()} vs ${O.clear_50.toLocaleString()}`, "recordings with a clear 60 Hz vs 50 Hz peak"],
+  [`${db(O.median_peak_60_db)} vs ${db(O.median_peak_50_db)}`, "median peak height at 60 Hz vs 50 Hz"],
+];
+if (R.impact) {
+  const e = R.impact.enabling_at_configured_ratio;
+  tiles.push([`+${e.newly_rejected.toLocaleString()}`, `currently usable windows lost if rejection were enabled (of ${e.of_currently_usable.toLocaleString()})`]);
+}
+$("tiles").innerHTML = tiles.map(([b, s]) => `<div class="tile"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");
+$("recs").innerHTML = R.recommendations.map(t => `<li>${esc(t)}</li>`).join("");
+
+// ------------------------------------------------------------------ spectra small multiples
+Object.entries(R.spectra).forEach(([board, s]) => {
+  const W = 540, H = 250, L = 46, Rt = 16, T = 14, B = 36;
+  const xs = s.freqs, ys = s.median_relative_power.map(v => 10 * Math.log10(Math.max(v, 1e-6)));
+  const x0 = xs[0], x1 = xs[xs.length - 1];
+  const yMin = Math.floor(Math.min(...ys) / 5) * 5, yMax = Math.ceil(Math.max(...ys) / 5) * 5;
+  const X = v => L + (v - x0) / (x1 - x0) * (W - L - Rt), Y = v => T + (1 - (v - yMin) / (yMax - yMin)) * (H - T - B);
+  const box = document.createElement("div"); box.className = "chart";
+  box.innerHTML = `<h3>${esc(board.replace("ch_", " channels · ").replace("hz", " Hz"))} <span class="note">(${s.recordings} recordings)</span></h3>`;
+  $("spectra").appendChild(box);
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Median spectrum, ${board}`}, box);
+  for (let v = yMin; v <= yMax; v += 5) {
+    el("line", {x1: L, x2: W - Rt, y1: Y(v), y2: Y(v), stroke: v === yMin ? "var(--axis)" : "var(--grid)"}, svg);
+    el("text", {x: L - 6, y: Y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)"}, svg).textContent = v + " dB";
+  }
+  for (let v = Math.ceil(x0 / 10) * 10; v <= x1; v += 10)
+    el("text", {x: X(v), y: H - B + 16, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)"}, svg).textContent = v + " Hz";
+  [50, 60, 100, 120].filter(m => m < x1).forEach(m => {
+    el("line", {x1: X(m), x2: X(m), y1: T, y2: H - B, stroke: "var(--text-secondary)", "stroke-dasharray": "4 3", "stroke-width": 1}, svg);
+    el("text", {x: X(m) + 3, y: T + 2, "font-size": 11, fill: "var(--text-secondary)"}, svg).textContent = m + " Hz";
+  });
+  el("path", {d: xs.map((x, i) => `${i ? "L" : "M"}${X(x).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(""), fill: "none",
+              stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round"}, svg);
+  const cross = el("line", {y1: T, y2: H - B, stroke: "var(--axis)", visibility: "hidden"}, svg);
+  const dot = el("circle", {r: 4, fill: "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden"}, svg);
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const hit = el("rect", {x: L, y: T, width: W - L - Rt, height: H - T - B, fill: "transparent"}, svg);
+  hit.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W;
+    let i = 0; xs.forEach((x, k) => { if (Math.abs(X(x) - vx) < Math.abs(X(xs[i]) - vx)) i = k; });
+    cross.setAttribute("x1", X(xs[i])); cross.setAttribute("x2", X(xs[i])); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", X(xs[i])); dot.setAttribute("cy", Y(ys[i])); dot.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${xs[i].toFixed(2)} Hz</b> · ${ys[i].toFixed(1)} dB relative`; tip.style.display = "block";
+    const bx = box.getBoundingClientRect();
+    tip.style.left = Math.min(ev.clientX - bx.left + 14, bx.width - tip.offsetWidth - 8) + "px"; tip.style.top = (ev.clientY - bx.top + 12) + "px";
+  });
+  hit.addEventListener("pointerleave", () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); });
+});
+
+// ------------------------------------------------------------------ tables
+const d = R.decision_rule;
+$("rule").textContent = `A clear peak is at least ${d.clear_peak_db} dB above its neighbouring frequencies and ${d.margin_db} dB above the other candidate. A recommendation needs ${100 * d.agreement}% of clear recordings to agree and ${100 * d.coverage}% of recordings to show a clear peak.` +
+  (R.harmonic_120_minus_100_db_on_250hz_board !== null ? ` On the 250 Hz board the 120 Hz harmonic exceeds 100 Hz by ${R.harmonic_120_minus_100_db_on_250hz_board.toFixed(1)} dB.` : "");
+const row = (name, t) => `<tr><td>${esc(name)}</td><td class="num">${t.recordings}</td><td class="num">${t.clear_60}</td><td class="num">${t.clear_50}</td><td class="num">${t.no_clear_peak}</td><td class="num">${db(t.median_peak_60_db)}</td><td class="num">${db(t.median_peak_50_db)}</td></tr>`;
+$("groups").innerHTML = `<tr><th></th><th class="num">Recordings</th><th class="num">Clear 60 Hz</th><th class="num">Clear 50 Hz</th><th class="num">No clear peak</th><th class="num">Median 60 Hz peak</th><th class="num">Median 50 Hz peak</th></tr>` +
+  Object.entries(R.groups).map(([g, t]) => row("Group " + g, t)).join("") +
+  Object.entries(R.boards).map(([b, t]) => row(b.replace("ch_", " ch · ").replace("hz", " Hz"), t)).join("") + row("All recordings", O);
+if (R.impact) {
+  const p = R.impact.usable_window_line_ratio_percentiles;
+  $("impactNote").textContent = `Line ratio = share of a channel's 1 Hz–Nyquist power within ±1 Hz of ${R.impact.mains_hz} Hz (worst channel per window). In currently usable windows its median is ${pct(p["50"])} and its 90th percentile ${pct(p["90"])}: raw, unfiltered recordings carry much of their power at the mains frequency, which a notch filter removes.`;
+  $("impact").innerHTML = `<tr><th class="num">max_line_ratio</th><th class="num">Windows flagged</th><th class="num">Usable windows lost</th><th class="num">Participants affected</th><th class="num">Rejection rate</th></tr>` +
+    R.impact.sweep.map(r => `<tr class="${r.is_configured ? "cfg" : ""}"><td class="num">${r.max_line_ratio}${r.is_configured ? " (configured)" : r.max_line_ratio === 1 ? " (record only)" : ""}</td><td class="num">${r.windows_flagged.toLocaleString()}</td><td class="num">${r.currently_usable_newly_rejected.toLocaleString()}</td><td class="num">${r.participants_affected}</td><td class="num">${pct(r.rejection_rate)}</td></tr>`).join("");
+} else $("impactSection").style.display = "none";
+$("recordings").innerHTML = `<tr><th>Participant</th><th>Board</th><th class="num">Seconds</th><th class="num">50 Hz</th><th class="num">60 Hz</th><th class="num">100 Hz</th><th class="num">120 Hz</th><th>Verdict</th></tr>` +
+  R.recordings.map(r => `<tr><td>${esc(r.participant_id)}</td><td>${esc(r.board)}</td><td class="num">${r.seconds}</td><td class="num">${db(r.peak_50_db)}</td><td class="num">${db(r.peak_60_db)}</td><td class="num">${db(r.peak_100_db)}</td><td class="num">${db(r.peak_120_db)}</td><td>${esc(r.verdict)}</td></tr>`).join("");
+$("interpretation").textContent = R.interpretation;
+</script>
+</body>
+</html>
