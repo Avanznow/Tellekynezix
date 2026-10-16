@@ -1,0 +1,22 @@
+Quantity,Value,Detail
+Files under Data_clean,3648,eeg_data.load_recordings
+Named OpenBCI recordings found,1826,eeg_data.load_recordings
+"Recordings loaded (16ch_125hz, 15 channels)",1394,eeg_data.load_recordings
+"Recordings skipped (other board, unreadable or unlabelled)",432,422 of another board
+2 s blocks assessed,6703,signal_quality policy on the kept channels
+2 s blocks kept,3249,48.5 %
+Recordings with usable data,883,at least one kept block
+Participants with usable data,18 of 23,"none usable: G03/person02, G04/person03, G04/person06, G04/person08, G04/person10"
+Windows in the feature caches,12089,"128 samples (1.024 s), stride 64"
+Recordings in the caches,883,one contiguous block of windows each
+Participants in the caches,18,"G01/person08, G01/person09, G01/person10, G03/person01, G03/person03, G03/person04, G03/person05, G03/person06, G03/person07, G03/person08, G03/person09, G03/person10, G04/person01, G04/person02, G04/person04, G04/person05, G04/person07, G04/person09"
+"Windows per recording (median, min, max)",15 (3-23),
+Windows: backward,1882,"train 1506, test 376"
+Windows: forward,1866,"train 1492, test 374"
+Windows: landing,2117,"train 1693, test 424"
+Windows: left,1987,"train 1589, test 398"
+Windows: right,1963,"train 1571, test 392"
+Windows: takeoff,2274,"train 1819, test 455"
+Training windows (notebook split),9670,707 recordings
+Test windows (notebook split),2419,176 recordings
+Participants with an own model,17,fallback: G03/person01
