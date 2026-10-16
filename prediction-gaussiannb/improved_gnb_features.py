@@ -154,3 +154,67 @@ class ParticipantScaler:
 
     def known_participants(self):
         return sorted(self.stats_)
+
+
+# ------------------------------------------------------------------------------------------------------------------
+# Subject-specific feature set (435): the two log-covariances above plus a 30-45 Hz log-covariance of the RAW signal
+# and multitaper absolute band powers of the raw window. Selected for the per-participant chain (subject_gnb.py);
+# with per-participant models the notebook's per-channel statistics carry nothing beyond the covariances.
+# ------------------------------------------------------------------------------------------------------------------
+from scipy.signal import butter, filtfilt, iirnotch, sosfiltfilt
+from scipy.signal.windows import dpss
+
+SUBJECT_FEATURE_VERSION = "subject_logcov_dcov_gammacov_multitaper_v1"
+GAMMA_BAND = (30.0, 45.0)
+
+
+def multitaper_log_abs_bandpower(W_raw, fs=125, NW=3.0, K=5, bands=BANDS, eps=1e-10):
+    """DPSS multitaper PSD (time-bandwidth NW, K tapers) of the RAW demeaned windows (n, ch, t) -> log absolute
+    band power in delta, theta, alpha, beta, gamma per channel -> (n, 5 ch)."""
+    W = np.asarray(W_raw, np.float64)
+    W = W - W.mean(-1, keepdims=True)
+    n = W.shape[-1]
+    tapers = dpss(n, NW, K)
+    S = np.fft.rfft(W[..., None, :] * tapers, axis=-1)
+    p = (np.abs(S) ** 2).mean(-2) * (2.0 / fs)
+    f = np.fft.rfftfreq(n, 1.0 / fs)
+    df = f[1] - f[0]
+    ba = np.stack([p[..., (f >= lo) & (f < hi)].sum(-1) * df for lo, hi in bands.values()], -1)
+    return np.log(ba + eps).reshape(W.shape[0], -1)
+
+
+def bandpass_segment(segment, fs=125, band=GAMMA_BAND, notch_hz=60.0, order=4):
+    """Zero-phase Butterworth band-pass (+ mains notch, Q=30) of one RAW segment (samples, channels), demeaned per
+    channel first. Applied per kept segment before windowing, like the loader's 1-40 Hz filter."""
+    sos = butter(order, [band[0], band[1]], btype="bandpass", fs=fs, output="sos")
+    s = np.asarray(segment, np.float64)
+    s = s - s.mean(axis=0, keepdims=True)
+    s = sosfiltfilt(sos, s, axis=0)
+    if notch_hz:
+        b, a = iirnotch(notch_hz, Q=30.0, fs=fs)
+        s = filtfilt(b, a, s, axis=0)
+    return s.astype(np.float32)
+
+
+def extract_subject_features(W_filt, W_raw, W_gamma, fs=125, chunk=3000):
+    """Three aligned views of the same windows, each (n, ch, t):
+         W_filt  : 1-40 Hz band-pass + 60 Hz notch (the loader's output, as the notebook windows them)
+         W_raw   : the same windows cut from the quality-filtered, demeaned, UNFILTERED segments
+         W_gamma : the same windows cut from the raw segments after bandpass_segment (30-45 Hz + notch)
+       -> (n, ch (ch + 1) * 3 / 2 + 5 ch) float32 = [logcov(W_filt) | logcov(diff W_filt) | logcov(W_gamma) | multitaper(W_raw)]
+       (435 for 15 channels)."""
+    def run(fn, W):
+        return np.concatenate([fn(np.asarray(W[s:s + chunk], np.float64)) for s in range(0, len(W), chunk)])
+    F = np.concatenate([run(logcov, W_filt), run(lambda w: logcov(np.diff(w, axis=-1)), W_filt),
+                        run(logcov, W_gamma), run(lambda w: multitaper_log_abs_bandpower(w, fs), W_raw)], 1)
+    return F.astype(np.float32)
+
+
+def subject_feature_names(channels):
+    ch = list(channels)
+    iu = np.triu_indices(len(ch))
+    cov = [f"logcov_{ch[i]}_{ch[j]}" for i, j in zip(*iu)]
+    dcov = [f"dcov_{ch[i]}_{ch[j]}" for i, j in zip(*iu)]
+    gcov = [f"gammacov_{ch[i]}_{ch[j]}" for i, j in zip(*iu)]
+    mt = [f"{c}_mt_log_{b}" for c in ch for b in BANDS]
+    return cov + dcov + gcov + mt
