@@ -3,7 +3,9 @@
     scaled features Z (n, d)  ->  per-participant linear projection (LDA, fitted on that participant's training windows)
                               ->  per-participant TorchGaussianNB            (fitted on the same windows)
     with a GLOBAL projection + GaussianNB (fitted on everyone's training windows) as the fallback for participants
-    without enough labelled training data or without every command.
+    without enough labelled training data or without every command. backend="torch" uses this repo's PyTorch
+    GaussianNB (pytorch/gaussiannb_model.py); backend="tensorflow" the TensorFlow GaussianNBTF
+    (tensorflow/gaussiannb_model.py via tensorflow/subject_gnb_tf.py); the chain is otherwise identical.
 
 Why: one GaussianNB for everyone reaches ~49 % window accuracy on Data_clean (6 commands, chance 16.7 %); the same
 chain fitted per participant reaches ~81 % (per recording ~88 %), because the discriminative directions differ from
@@ -16,6 +18,17 @@ import torch
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 from gaussiannb_model import GaussianNB as TorchGaussianNB
+
+
+def tensorflow_backend():
+    """prediction-gaussiannb/tensorflow/subject_gnb_tf (lazy: imports TensorFlow). The tensorflow folder is appended
+    to sys.path, never prepended: `gaussiannb_model` must keep resolving to the PyTorch model of pytorch/."""
+    import importlib, sys
+    from pathlib import Path
+    tf_dir = str(Path(__file__).resolve().parent / "tensorflow")
+    if tf_dir not in sys.path:
+        sys.path.append(tf_dir)
+    return importlib.import_module("subject_gnb_tf")
 
 
 def _log_softmax(x):
@@ -88,15 +101,22 @@ class SubjectSpecificGaussianNB:
     n_classes   : number of commands (6).
     """
 
-    def __init__(self, n_components=5, shrinkage="auto", var_smoothing=1e-9, min_windows=60, n_classes=6, absent_floor=1e-6):
+    def __init__(self, n_components=5, shrinkage="auto", var_smoothing=1e-9, min_windows=60, n_classes=6, absent_floor=1e-6,
+                 backend="torch"):
         self.n_components = n_components
         self.shrinkage = shrinkage
         self.var_smoothing = var_smoothing
         self.min_windows = min_windows
         self.n_classes = n_classes
         self.absent_floor = absent_floor
+        if backend not in ("torch", "tensorflow"):
+            raise ValueError("backend must be 'torch' or 'tensorflow'")
+        self.backend = backend
 
     def _new(self):
+        """A fresh projected GaussianNB of the chosen framework (same interface, same chain)."""
+        if self.backend == "tensorflow":
+            return tensorflow_backend().ProjectedGaussianNBTF(self.n_components, self.shrinkage, self.var_smoothing, self.absent_floor)
         return ProjectedTorchGaussianNB(self.n_components, self.shrinkage, self.var_smoothing, self.absent_floor)
 
     def fit(self, Z, y, participants):
@@ -141,4 +161,5 @@ class SubjectSpecificGaussianNB:
 
     def summary(self):
         return dict(participants_with_model=sorted(self.models_), fallback=self.skipped_,
-                    n_components=self.n_components, shrinkage=self.shrinkage, min_windows=self.min_windows)
+                    n_components=self.n_components, shrinkage=self.shrinkage, min_windows=self.min_windows,
+                    backend=getattr(self, "backend", "torch"))
