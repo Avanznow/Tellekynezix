@@ -130,6 +130,9 @@ class ProjectedGaussianNBTF:
                               int(z["n_classes"]), int(z["n_train"]), float(z["absent_floor"]))
 
 
+ProjectedGaussianNB = ProjectedGaussianNBTF      # the name the live path uses for every framework backend
+
+
 class _Resolver(pickle.Unpickler):
     """Resolves the notebook's ``gaussiannb_model.GaussianNBTF`` to the TensorFlow class."""
 
@@ -142,6 +145,9 @@ class _Resolver(pickle.Unpickler):
 def load_tf_pickle(path):
     with open(path, "rb") as f:
         return _Resolver(f).load()
+
+
+load_pickle = load_tf_pickle
 
 
 def subject_models_from_pickle(payload, n_classes=6):

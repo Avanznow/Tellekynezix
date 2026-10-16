@@ -2,6 +2,9 @@ import time
 import numpy as np
 import pandas as pd
 import requests
+import uuid
+from signal_quality.acquisition import brainflow_capture
+from signal_quality.gate import QualityGatedPredictor, withheld_result
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, LogLevels, BoardIds
 from brainflow.data_filter import DataFilter
 from enum import Enum
@@ -104,15 +107,21 @@ class bciConnection():
             board = BoardShim(BoardIds.CYTON_BOARD.value, self.__params)
         else:
             board = BoardShim(BoardIds.SYNTHETIC_BOARD.value, self.__params)
-
+        board_id = BoardIds.CYTON_BOARD.value if self.__mode == DataMode.LIVE else BoardIds.SYNTHETIC_BOARD.value
         board.prepare_session()
-        board.start_stream(streamer_params="streaming_board://225.1.1.1:6677")
-        BoardShim.log_message(LogLevels.LEVEL_INFO,
-                              'start sleeping in the main thread')
-        time.sleep(10)
-        data = board.get_board_data()
-        board.stop_stream()
-        board.release_session()
+        try:
+            board.start_stream(streamer_params="streaming_board://225.1.1.1:6677")
+            time.sleep(10)
+            data = board.get_board_data()
+            self.quality_capture = brainflow_capture(data, BoardShim.get_board_descr(board_id),
+                                  real=self.__mode == DataMode.LIVE, counter_step=1)
+            self.quality_capture.update(captured_monotonic=time.monotonic(),
+                                       stream_id=f"brainflow-rf:{board_id}:{uuid.uuid4()}")
+        finally:
+            try:
+                board.stop_stream()
+            finally:
+                board.release_session()
         return data
 
     def send_data_to_server(self, data):
@@ -129,10 +138,11 @@ class bciConnection():
         headers = {'Content-Type': 'application/json'}
 
         # Send the POST request with the data in the request body
-        response = requests.post(url, data=data_json, headers=headers)
+        response = requests.post(url, data=data_json, headers=headers, timeout=8)
         return response
 
-    def bciConnectionController(self):
+    def bciConnectionController(self, quality_gate=None):
+        gate = quality_gate or QualityGatedPredictor()
         try:
             BoardShim.enable_dev_board_logger()
 
@@ -144,20 +154,17 @@ class bciConnection():
             # read eeg data from the board -- will start a bci session with your current board
             # allowing it to stream to BCI Gui App and collect 10 second data sample
             data = self.read_from_board()
-            # Sends preprocessed data via http request to get a prediction
-            server_response = self.send_data_to_server(data)
-
-            if server_response.status_code == 200:  # if a prediction is returned
-                print(server_response.json())
+            self.column_labels = [f"c{i}" for i in range(data.shape[0])]
+            snapshot = np.asarray(data).copy()
+            snapshot.flags.writeable = False
+            def predict_same_capture(raw):
+                # Physical rows were checked before sending this SAME capture.
+                server_response = self.send_data_to_server(snapshot)
+                server_response.raise_for_status()
                 return server_response.json()
-                # return prediction
-            else:  # there was in error in getting a thought prediction response
-                # return error
-                print(server_response.status_code)
+            return gate.predict(predict=predict_same_capture, **self.quality_capture)
         except Exception as e:
-            print(e)
-            print(server_response.status_code)
-            print("Error Occured during EEG data collection or transmission")
+            return gate.withhold(f"capture_or_server_failed: {e}")
 
         # demo for data serialization using brainflow API, we recommend to use it instead pandas.to_csv()
         # DataFilter.write_file(data, 'test.csv', 'w')  # use 'a' for append mode

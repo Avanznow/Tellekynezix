@@ -5,7 +5,8 @@
     with a GLOBAL projection + GaussianNB (fitted on everyone's training windows) as the fallback for participants
     without enough labelled training data or without every command. backend="torch" uses this repo's PyTorch
     GaussianNB (pytorch/gaussiannb_model.py); backend="tensorflow" the TensorFlow GaussianNBTF
-    (tensorflow/gaussiannb_model.py via tensorflow/subject_gnb_tf.py); the chain is otherwise identical.
+    (tensorflow/gaussiannb_model.py via tensorflow/subject_gnb_tf.py); backend="jax" the GaussianNBJAX
+    (jax/algorithm_gnb_jax.py via jax/subject_gnb_jax.py, JAX pinned to the CPU); the chain is otherwise identical.
 
 Why: one GaussianNB for everyone reaches ~49 % window accuracy on Data_clean (6 commands, chance 16.7 %); the same
 chain fitted per participant reaches ~81 % (per recording ~88 %), because the discriminative directions differ from
@@ -29,6 +30,29 @@ def tensorflow_backend():
     if tf_dir not in sys.path:
         sys.path.append(tf_dir)
     return importlib.import_module("subject_gnb_tf")
+
+
+def jax_backend():
+    """prediction-gaussiannb/jax/subject_gnb_jax (lazy: imports JAX, pinned to the CPU there). The jax folder is
+    appended to sys.path like the tensorflow one (it holds no module that shadows anything the live path imports)."""
+    import importlib, sys
+    from pathlib import Path
+    jax_dir = str(Path(__file__).resolve().parent / "jax")
+    if jax_dir not in sys.path:
+        sys.path.append(jax_dir)
+    return importlib.import_module("subject_gnb_jax")
+
+
+BACKENDS = ("torch", "tensorflow", "jax")
+
+
+def framework_backend(backend):
+    """The backend module of a non-PyTorch framework: ProjectedGaussianNB, load_pickle, subject_models_from_pickle."""
+    if backend == "tensorflow":
+        return tensorflow_backend()
+    if backend == "jax":
+        return jax_backend()
+    raise ValueError(f"no framework backend module for {backend!r} (the PyTorch model lives in this module)")
 
 
 def _log_softmax(x):
@@ -109,14 +133,14 @@ class SubjectSpecificGaussianNB:
         self.min_windows = min_windows
         self.n_classes = n_classes
         self.absent_floor = absent_floor
-        if backend not in ("torch", "tensorflow"):
-            raise ValueError("backend must be 'torch' or 'tensorflow'")
+        if backend not in BACKENDS:
+            raise ValueError(f"backend must be one of {BACKENDS}")
         self.backend = backend
 
     def _new(self):
         """A fresh projected GaussianNB of the chosen framework (same interface, same chain)."""
-        if self.backend == "tensorflow":
-            return tensorflow_backend().ProjectedGaussianNBTF(self.n_components, self.shrinkage, self.var_smoothing, self.absent_floor)
+        if self.backend != "torch":
+            return framework_backend(self.backend).ProjectedGaussianNB(self.n_components, self.shrinkage, self.var_smoothing, self.absent_floor)
         return ProjectedTorchGaussianNB(self.n_components, self.shrinkage, self.var_smoothing, self.absent_floor)
 
     def fit(self, Z, y, participants):

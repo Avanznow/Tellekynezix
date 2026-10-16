@@ -30,6 +30,9 @@ their model, stored under USERS_DIR/<id>/ (AVATAR_GNB_USERS_DIR overrides):
 
 The notebook's artifacts torch_gaussiannb_subject_models.joblib / torch_gaussiannb_subject_scaler.joblib are loaded,
 when present, for the 17 Data_clean training participants and as the global fallback; they are never modified.
+backend="tensorflow" and backend="jax" run the same chain with the TensorFlow GaussianNBTF or the JAX GaussianNBJAX as
+the decision model, their notebooks' window geometry (125 / 62 and 125 / 50, no tail window) and pickled artifacts,
+and a users folder of their own (the stored model arrays themselves are framework-free).
 Nothing here imports BrainFlow or Qt at module level: BrainFlowStream imports brainflow when it starts.
 """
 import argparse
@@ -63,7 +66,7 @@ from signal_quality import QualityAssessor, QualityGatedPredictor  # noqa: E402
 from signal_quality.acquisition import brainflow_capture, read_openbci  # noqa: E402
 from signal_quality.config import load_default_config  # noqa: E402
 from signal_quality.salvage import folder_label  # noqa: E402
-from subject_gnb import ProjectedTorchGaussianNB, SubjectSpecificGaussianNB, tensorflow_backend  # noqa: E402
+from subject_gnb import ProjectedTorchGaussianNB, SubjectSpecificGaussianNB, framework_backend  # noqa: E402
 
 COMMANDS = list(LABELS)                       # alphabetical = the notebook's LabelEncoder order (0..5)
 assert COMMANDS == sorted(COMMANDS) and len(COMMANDS) == 6
@@ -72,11 +75,24 @@ SUBJECT_SCALER_FILE = "torch_gaussiannb_subject_scaler.joblib"
 DEFAULT_USERS_DIR = Path(os.environ.get("AVATAR_GNB_USERS_DIR", REPO_ROOT / "predictions_local" / "gnb_users"))
 # TensorFlow backend: GaussianNBTF as the decision model, the TensorFlow notebook's window geometry (125 samples,
 # stride 62, no tail window) and its artifact; users trained with it are stored apart (their features differ).
-BACKENDS = ("torch", "tensorflow")
+BACKENDS = ("torch", "tensorflow", "jax")
 TF_MODEL_DIR = GNB_DIR / "tensorflow"
 TF_SUBJECT_FILE = "gaussiannb_tf_subject_specific.pkl"
 TF_WINDOW_SIZE, TF_WINDOW_STRIDE = 125, 62
 DEFAULT_USERS_DIR_TF = Path(os.environ.get("AVATAR_GNB_USERS_DIR_TF", REPO_ROOT / "predictions_local" / "gnb_users_tf"))
+# JAX backend: GaussianNBJAX (prediction-gaussiannb/jax/algorithm_gnb_jax.py, pinned to the CPU by jax/subject_gnb_jax.py)
+# as the decision model, the JAX notebook's window geometry (125 samples, stride 50, no tail window) and its artifact;
+# its users are stored apart as well.
+JAX_MODEL_DIR = GNB_DIR / "jax"
+JAX_SUBJECT_FILE = "gaussiannb_jax_subject_specific.pkl"
+JAX_WINDOW_SIZE, JAX_WINDOW_STRIDE = 125, 50
+DEFAULT_USERS_DIR_JAX = Path(os.environ.get("AVATAR_GNB_USERS_DIR_JAX", REPO_ROOT / "predictions_local" / "gnb_users_jax"))
+# the backends whose notebook wrote one pickle per chain: model folder, subject chain pickle, window geometry
+# (size, stride, tail window), users folder
+PICKLED_BACKENDS = {"tensorflow": dict(model_dir=TF_MODEL_DIR, file=TF_SUBJECT_FILE, users_dir=DEFAULT_USERS_DIR_TF,
+                                       geometry=(TF_WINDOW_SIZE, TF_WINDOW_STRIDE, False)),
+                    "jax": dict(model_dir=JAX_MODEL_DIR, file=JAX_SUBJECT_FILE, users_dir=DEFAULT_USERS_DIR_JAX,
+                                geometry=(JAX_WINDOW_SIZE, JAX_WINDOW_STRIDE, False))}
 MIN_WINDOWS = 60               # SUBJ_MIN_WINDOWS in the notebook: own model only with this many labelled windows
 N_COMPONENTS, SHRINKAGE = 5, "auto"
 VOTE_WINDOWS = 5               # the vote-agreement gate looks at the last 5 window decisions ...
@@ -249,8 +265,8 @@ class TrainingPlan:
 
 # ====================================================================================================== model (de)serialisation
 def model_to_arrays(model):
-    """A fitted projected GaussianNB (either backend) -> the framework-free arrays stored in model.npz."""
-    if hasattr(model, "to_arrays"):            # TensorFlow backend
+    """A fitted projected GaussianNB (any backend) -> the framework-free arrays stored in model.npz."""
+    if hasattr(model, "to_arrays"):            # TensorFlow and JAX backends
         return model.to_arrays()
     nb = model.nb_
     return dict(projection=np.asarray(model.projection_, np.float64), classes=np.asarray(model.classes_, np.int64),
@@ -263,8 +279,10 @@ def model_to_arrays(model):
 
 def model_from_arrays(z, backend="torch"):
     """model.npz arrays -> a projected GaussianNB of the requested backend (the arrays are framework-free)."""
-    if backend == "tensorflow":
-        return tensorflow_backend().ProjectedGaussianNBTF.from_arrays(z)
+    if backend not in BACKENDS:
+        raise ValueError(f"backend must be one of {BACKENDS}")
+    if backend != "torch":
+        return framework_backend(backend).ProjectedGaussianNB.from_arrays(z)
     model = ProjectedTorchGaussianNB(n_components=N_COMPONENTS, shrinkage=SHRINKAGE, absent_floor=float(z["absent_floor"]))
     model.projection_ = np.ascontiguousarray(z["projection"], dtype=np.float64)
     model.classes_ = np.asarray(z["classes"], np.int64)
@@ -362,17 +380,15 @@ class SubjectSpecificGaussianNBChain:
         if backend not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}")
         self.backend = backend
-        self.model_dir = Path(model_dir) if model_dir is not None else (MODEL_DIR if backend == "torch" else TF_MODEL_DIR)
-        default_users = DEFAULT_USERS_DIR if backend == "torch" else DEFAULT_USERS_DIR_TF
+        pickled = PICKLED_BACKENDS.get(backend)
+        self.model_dir = Path(model_dir) if model_dir is not None else (MODEL_DIR if pickled is None else pickled["model_dir"])
+        default_users = DEFAULT_USERS_DIR if pickled is None else pickled["users_dir"]
         self.users_dir = Path(users_dir) if users_dir is not None else default_users
         self.device = torch.device(device)
-        if backend == "tensorflow":
-            self.window_size, self.window_stride, self.window_tail = TF_WINDOW_SIZE, TF_WINDOW_STRIDE, False
-        else:
-            self.window_size, self.window_stride, self.window_tail = WINDOW_SIZE, WINDOW_STRIDE, True
-        self._tf_payload = None
-        if backend == "tensorflow" and load_notebook_artifacts and (self.model_dir / TF_SUBJECT_FILE).exists():
-            self._tf_payload = tensorflow_backend().load_tf_pickle(self.model_dir / TF_SUBJECT_FILE)
+        self.window_size, self.window_stride, self.window_tail = (WINDOW_SIZE, WINDOW_STRIDE, True) if pickled is None else pickled["geometry"]
+        self._pickled_payload = None            # the TensorFlow / JAX notebook's subject chain pickle, when present
+        if pickled is not None and load_notebook_artifacts and (self.model_dir / pickled["file"]).exists():
+            self._pickled_payload = framework_backend(backend).load_pickle(self.model_dir / pickled["file"])
         self.config = self._load_config()
         self.channels = list(self.config.channels)
         self.sfreq = float(self.config.sfreq)
@@ -380,17 +396,17 @@ class SubjectSpecificGaussianNBChain:
         self.feature_names = subject_feature_names(self.channels)
         self.n_features = len(self.feature_names)
         self.notebook_models = self.notebook_scaler = None
-        if self._tf_payload is not None:
-            payload = self._tf_payload
+        if self._pickled_payload is not None:
+            payload, file_name = self._pickled_payload, pickled["file"]
             if (payload.get("feature_version") != SUBJECT_FEATURE_VERSION
                     or (int(payload["window_size"]), int(payload["window_stride"])) != (self.window_size, self.window_stride)):
-                print(f"[GaussianNB subject] {TF_SUBJECT_FILE} has another feature version or window geometry; ignored")
+                print(f"[GaussianNB subject] {file_name} has another feature version or window geometry; ignored")
             else:
-                models, scaler = tensorflow_backend().subject_models_from_pickle(payload, n_classes=len(self.classes))
+                models, scaler = framework_backend(backend).subject_models_from_pickle(payload, n_classes=len(self.classes))
                 if isinstance(scaler, ParticipantScaler) and scaler.n_features_in_ == self.n_features and models.global_.projection_.shape[0] == self.n_features:
                     self.notebook_models, self.notebook_scaler = models, scaler
                 else:
-                    print(f"[GaussianNB subject] {TF_SUBJECT_FILE} does not match the 435-feature set; ignored")
+                    print(f"[GaussianNB subject] {file_name} does not match the 435-feature set; ignored")
         elif backend == "torch" and load_notebook_artifacts and (self.model_dir / SUBJECT_MODELS_FILE).exists() and (self.model_dir / SUBJECT_SCALER_FILE).exists():
             models = joblib.load(self.model_dir / SUBJECT_MODELS_FILE)
             scaler = joblib.load(self.model_dir / SUBJECT_SCALER_FILE)
@@ -405,9 +421,9 @@ class SubjectSpecificGaussianNBChain:
 
     def _load_config(self):
         """The loader configuration of the global checkpoint (same board, channels and filtering), else the default."""
-        if self.backend == "tensorflow":
-            if self._tf_payload is not None:
-                cfg = dict(self._tf_payload.get("load_config", {}))
+        if self.backend != "torch":
+            if self._pickled_payload is not None:
+                cfg = dict(self._pickled_payload.get("load_config", {}))
                 return LoadConfig(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg.items()
                                      if k in ("board", "exclude_channels", "quality_filter", "bandpass_hz", "notch_hz", "filter_order")})
             return LoadConfig()
@@ -927,8 +943,9 @@ def session_plan_from_env():
 # ====================================================================================================== CLI
 def main(argv=None):
     p = argparse.ArgumentParser(description="Subject-specific GaussianNB: train a user from labelled recordings, replay, status.")
-    p.add_argument("--users-dir", default=None, help="where users are stored (default: %s, TensorFlow: %s)" % (DEFAULT_USERS_DIR, DEFAULT_USERS_DIR_TF))
-    p.add_argument("--backend", default="torch", choices=BACKENDS, help="GaussianNB implementation: PyTorch (default) or TensorFlow")
+    p.add_argument("--users-dir", default=None, help="where users are stored (default: %s, TensorFlow: %s, JAX: %s)"
+                   % (DEFAULT_USERS_DIR, DEFAULT_USERS_DIR_TF, DEFAULT_USERS_DIR_JAX))
+    p.add_argument("--backend", default="torch", choices=BACKENDS, help="GaussianNB implementation: PyTorch (default), TensorFlow or JAX")
     sub = p.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("train-folder", help="train <participant> from <folder>/<command>/OpenBCI-RAW-*.txt")
     t.add_argument("--participant", required=True)

@@ -3,6 +3,8 @@ import pandas as pd
 import torch
 import serial # required pyserial install
 import brainflow
+import uuid
+from signal_quality.acquisition import brainflow_capture
 from sklearn.preprocessing import StandardScaler
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from serial.tools import list_ports
@@ -69,6 +71,11 @@ class BrainFlowDataProcessor:
             self._disconnect_board()
 
         descr = BoardShim.get_board_descr(self.board_id)
+        self.quality_capture = brainflow_capture(
+            data, descr, real=self.board_id in self.CYTON_BOARDS,
+            counter_step=2 if self.board_id == BoardIds.CYTON_DAISY_BOARD.value else 1)
+        self.quality_capture.update(captured_monotonic=time.monotonic(),
+                                    stream_id=f"brainflow:{self.board_id}:{uuid.uuid4()}")
         channel_names = [""] * data.shape[0]
 
         # Map channel indices to names
@@ -121,6 +128,11 @@ class BrainFlowDataProcessor:
         self.capture_data()
         self.extract_eeg_data()
         return self.preprocess_eeg()
+
+    def get_quality_capture(self):
+        """Capture original physical EEG and timing before any scaler is fitted."""
+        self.capture_data()
+        return self.quality_capture
     
 
 if __name__ == "__main__":

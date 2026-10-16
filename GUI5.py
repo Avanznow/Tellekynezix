@@ -145,7 +145,7 @@ class BrainwavesBackend(QObject):
         # Improved GaussianNB chain (prediction-gaussiannb/pytorch/improved_gnb_inference.py): loaded on first use.
         # The participant id selects the per-participant feature statistics; a new user calibrates once.
         self.gnb_chain = None          # improved global chain of the selected framework (see _gnb_chain)
-        self.gnb_chains = {}           # backend -> ImprovedGaussianNBChain ("torch" = PyTorch, "tensorflow" = TensorFlow)
+        self.gnb_chains = {}           # backend -> ImprovedGaussianNBChain ("torch" = PyTorch, "tensorflow" = TensorFlow, "jax" = JAX)
         self.gnb_subject_chains = {}   # backend -> SubjectSpecificGaussianNBChain
         self.gnb_chain_lock = threading.Lock()
         self.gnb_participant_id = os.environ.get("AVATAR_PARTICIPANT_ID", "user")
@@ -312,7 +312,7 @@ class BrainwavesBackend(QObject):
             elif self.current_model == "Random Forest":
                 result = self.run_random_forest_pytorch() if self.current_framework == "PyTorch" else self.run_random_forest_tensorflow()
             elif self.current_model == "GaussianNB":
-                result = self.run_gaussiannb_pytorch() if self.current_framework == "PyTorch" else self.run_gaussiannb_tensorflow()
+                result = self._run_gaussiannb(self.current_framework)      # PyTorch, TensorFlow or JAX chains
             else:
                 result = self.run_deep_learning_pytorch() if self.current_framework == "PyTorch" else self.run_deep_learning_tensorflow()
         except Exception as error:
@@ -466,20 +466,21 @@ class BrainwavesBackend(QObject):
     def run_deep_learning_tensorflow(self):
         return self.quality_gate.withhold("TensorFlow CNN inference is not implemented; no simulated command substituted")
 
-    # ---- GaussianNB: the improved chains of prediction-gaussiannb (PyTorch or TensorFlow decision model) ---------
-    GNB_BACKENDS = {"PyTorch": "torch", "TensorFlow": "tensorflow"}
+    # ---- GaussianNB: the improved chains of prediction-gaussiannb (PyTorch, TensorFlow or JAX decision model) ----
+    GNB_BACKENDS = {"PyTorch": "torch", "TensorFlow": "tensorflow", "JAX": "jax"}
+    GNB_LABELS = {"torch": "PyTorch", "tensorflow": "TensorFlow", "jax": "JAX"}
 
     def _gnb_backend(self, framework=None):
-        """The GaussianNB implementation behind the selected framework ('torch' or 'tensorflow')."""
+        """The GaussianNB implementation behind the selected framework ('torch', 'tensorflow' or 'jax')."""
         framework = self.current_framework if framework is None else framework
         backend = self.GNB_BACKENDS.get(framework)
         if backend is None:
-            raise ValueError(f"GaussianNB is not implemented for the {framework} framework (PyTorch or TensorFlow)")
+            raise ValueError(f"GaussianNB is not implemented for the {framework} framework (PyTorch, TensorFlow or JAX)")
         return backend
 
     def _gnb_chain(self, framework=None):
         """Load the improved GaussianNB chain of the selected framework once (features, participant scaler, LDA
-        projection, PyTorch GaussianNB or TensorFlow GaussianNBTF)."""
+        projection, PyTorch GaussianNB, TensorFlow GaussianNBTF or JAX GaussianNBJAX)."""
         backend = self._gnb_backend(framework)
         with self.gnb_chain_lock:
             if backend not in self.gnb_chains:
@@ -495,9 +496,9 @@ class BrainwavesBackend(QObject):
             self.gnb_chain = self.gnb_chains[backend]
             return self.gnb_chain
 
-    @staticmethod
-    def _gnb_label(backend):
-        return "TensorFlow" if backend == "tensorflow" else "PyTorch"
+    @classmethod
+    def _gnb_label(cls, backend):
+        return cls.GNB_LABELS.get(backend, str(backend))
 
     def _emit_gnb_status(self):
         backend = self.GNB_BACKENDS.get(self.current_framework)
@@ -592,7 +593,7 @@ class BrainwavesBackend(QObject):
     # ---- GaussianNB subject-specific mode: the user's own model from a guided labelled session -------------------
     def _gnb_subject_chain(self, framework=None):
         """Load the subject-specific chain of the selected framework once (three views -> 435 features -> the user's
-        statistics and model, PyTorch GaussianNB or TensorFlow GaussianNBTF)."""
+        statistics and model, PyTorch GaussianNB, TensorFlow GaussianNBTF or JAX GaussianNBJAX)."""
         backend = self._gnb_backend(framework)
         with self.gnb_chain_lock:
             if backend not in self.gnb_subject_chains:
@@ -760,6 +761,12 @@ class BrainwavesBackend(QObject):
         """The same chains with the TensorFlow GaussianNBTF as the decision model (artifacts of
         prediction-gaussiannb/tensorflow/gaussiannb_train.ipynb: 125-sample windows, argmax decision)."""
         return self._run_gaussiannb("TensorFlow")
+
+    def run_gaussiannb_jax(self):
+        """The same chains with the JAX GaussianNBJAX as the decision model, on the CPU (artifacts of
+        prediction-gaussiannb/jax/instructions_log_gnb_jax.ipynb: 125-sample windows with a 50-sample stride, argmax
+        decision); calibrations and user models live in predictions_local/gnb_calibration_jax and gnb_users_jax."""
+        return self._run_gaussiannb("JAX")
 
     def _run_gaussiannb(self, framework):
         """Only accepted raw captures reach the chain. In subject-specific mode (setGaussianNBMode("subject")) the

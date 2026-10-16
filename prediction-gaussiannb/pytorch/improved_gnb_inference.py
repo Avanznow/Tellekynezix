@@ -65,7 +65,17 @@ TF_MODEL_DIR = GNB_DIR / "tensorflow"
 TF_GLOBAL_FILE = "gaussiannb_tf_improved_global.pkl"
 DEFAULT_CALIBRATION_DIR_TF = Path(os.environ.get("AVATAR_GNB_CALIBRATION_DIR_TF",
                                                  REPO_ROOT / "predictions_local" / "gnb_calibration_tf"))
-BACKENDS = ("torch", "tensorflow")
+# JAX backend: the chains trained by prediction-gaussiannb/jax/instructions_log_gnb_jax.ipynb (same features,
+# GaussianNBJAX as the decision model, 125-sample windows with a 50-sample stride and no tail window, no thresholds);
+# JAX is pinned to the CPU by jax/subject_gnb_jax.py
+JAX_MODEL_DIR = GNB_DIR / "jax"
+JAX_GLOBAL_FILE = "gaussiannb_jax_improved_global.pkl"
+DEFAULT_CALIBRATION_DIR_JAX = Path(os.environ.get("AVATAR_GNB_CALIBRATION_DIR_JAX",
+                                                  REPO_ROOT / "predictions_local" / "gnb_calibration_jax"))
+BACKENDS = ("torch", "tensorflow", "jax")
+# the backends whose notebook wrote one pickle per chain: model folder, global chain pickle, calibration folder, label
+PICKLED_BACKENDS = {"tensorflow": (TF_MODEL_DIR, TF_GLOBAL_FILE, DEFAULT_CALIBRATION_DIR_TF, "TensorFlow"),
+                    "jax": (JAX_MODEL_DIR, JAX_GLOBAL_FILE, DEFAULT_CALIBRATION_DIR_JAX, "JAX")}
 _BRAINFLOW_NAME = re.compile(r"^EEG_(\d+)$")
 
 
@@ -133,57 +143,63 @@ class ImprovedGaussianNBChain:
 
     backend="torch": the PyTorch notebook's artifacts (pytorch/, 128-sample windows, per-class thresholds).
     backend="tensorflow": the TensorFlow notebook's gaussiannb_tf_improved_global.pkl (tensorflow/, 125-sample windows
-    with a 62-sample stride and no tail window, GaussianNBTF, argmax decision). Same features, same participant
-    statistics logic; calibrations of the two backends are stored apart because their windows differ.
+    with a 62-sample stride and no tail window, GaussianNBTF, argmax decision).
+    backend="jax": the JAX notebook's gaussiannb_jax_improved_global.pkl (jax/, 125-sample windows with a 50-sample
+    stride and no tail window, GaussianNBJAX on the CPU, argmax decision).
+    Same features, same participant statistics logic; calibrations of the backends are stored apart because their
+    windows differ.
     """
 
     def __init__(self, model_dir=None, calibration_dir=None, device="cpu", backend="torch"):
         if backend not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}")
         self.backend = backend
-        self.model_dir = Path(model_dir) if model_dir is not None else (MODEL_DIR if backend == "torch" else TF_MODEL_DIR)
-        default_calibration = DEFAULT_CALIBRATION_DIR if backend == "torch" else DEFAULT_CALIBRATION_DIR_TF
+        pickled = PICKLED_BACKENDS.get(backend)
+        self.model_dir = Path(model_dir) if model_dir is not None else (MODEL_DIR if pickled is None else pickled[0])
+        default_calibration = DEFAULT_CALIBRATION_DIR if pickled is None else pickled[2]
         self.calibration_dir = Path(calibration_dir) if calibration_dir is not None else default_calibration
         self.device = torch.device(device)
         self.window_size, self.window_stride, self.window_tail = WINDOW_SIZE, WINDOW_STRIDE, True
-        if backend == "tensorflow":
-            self._init_tensorflow()
+        if pickled is not None:
+            self._init_pickled()
         else:
             self._init_torch()
         self.calibrations = {}
         self.load_calibrations()
         self.last_decision = None
 
-    def _init_tensorflow(self):
-        from subject_gnb import tensorflow_backend
-        tfb = tensorflow_backend()
-        payload = tfb.load_tf_pickle(self.model_dir / TF_GLOBAL_FILE)
+    def _init_pickled(self):
+        """The TensorFlow or JAX notebook's global chain pickle: participant scaler, projection matrix, the framework's
+        GaussianNB (unnormalised log-posteriors from predict_log_proba) and that notebook's window geometry."""
+        from subject_gnb import framework_backend
+        _, file_name, _, label = PICKLED_BACKENDS[self.backend]
+        payload = framework_backend(self.backend).load_pickle(self.model_dir / file_name)
         chain = payload["chain"]
         if chain.get("kind") != "global" or payload.get("feature_version") != FEATURE_VERSION:
-            raise ValueError(f"{TF_GLOBAL_FILE} is not the improved global chain of feature version {FEATURE_VERSION}")
+            raise ValueError(f"{file_name} is not the improved global chain of feature version {FEATURE_VERSION}")
         cfg = dict(payload["load_config"])
         self.config = LoadConfig(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg.items()
                                     if k in ("board", "exclude_channels", "quality_filter", "bandpass_hz", "notch_hz", "filter_order")})
         self.channels = list(self.config.channels)
         self.sfreq = float(self.config.sfreq)
         if float(payload.get("sampling_rate", self.sfreq)) != self.sfreq:
-            raise ValueError("sampling rate of the TensorFlow chain does not match its LoadConfig")
+            raise ValueError(f"sampling rate of the {label} chain does not match its LoadConfig")
         self.classes = [str(c) for c in payload["label_names"]]
-        self.thresholds = None                      # the TensorFlow notebook decides by argmax
+        self.thresholds = None                      # the TensorFlow and JAX notebooks decide by argmax
         self.feature_names = feature_names(self.channels)
-        self.projection = f"LDA ({int(np.asarray(chain['projection']).shape[1])} dims, TensorFlow notebook)"
+        self.projection = f"LDA ({int(np.asarray(chain['projection']).shape[1])} dims, {label} notebook)"
         self.checkpoint_info = {}
         self.window_size, self.window_stride, self.window_tail = int(payload["window_size"]), int(payload["window_stride"]), False
         self.training_scaler = chain["scaler"]
         if not isinstance(self.training_scaler, ParticipantScaler) or self.training_scaler.n_features_in_ != len(self.feature_names):
-            raise ValueError("participant scaler of the TensorFlow chain does not match the feature set")
+            raise ValueError(f"participant scaler of the {label} chain does not match the feature set")
         self._copy_scaler()
         self.prep = _LinearProjection(chain["projection"])
         if self.prep.matrix.shape[0] != len(self.feature_names):
-            raise ValueError("projection of the TensorFlow chain does not match the feature set")
-        self.model = chain["model"]                 # GaussianNBTF (predict_log_proba = unnormalised log-posteriors)
+            raise ValueError(f"projection of the {label} chain does not match the feature set")
+        self.model = chain["model"]                 # GaussianNBTF / GaussianNBJAX (predict_log_proba = unnormalised log-posteriors)
         if int(self.model.n_classes_) != len(self.classes) or int(self.model.n_features_) != self.prep.matrix.shape[1]:
-            raise ValueError("GaussianNBTF shape does not match the projection / classes")
+            raise ValueError(f"{type(self.model).__name__} shape does not match the projection / classes")
 
     def _copy_scaler(self):
         self.scaler = ParticipantScaler(min_windows=self.training_scaler.min_windows, eps=self.training_scaler.eps)
@@ -283,7 +299,7 @@ class ImprovedGaussianNBChain:
 
     def _joint_log_likelihood(self, P):
         """Unnormalised log-posteriors (n, classes) of projected windows, by the backend's GaussianNB."""
-        if self.backend == "tensorflow":
+        if self.backend != "torch":
             return np.asarray(self.model.predict_log_proba(P), np.float64)
         with torch.no_grad():
             return self.model._joint_log_likelihood(torch.from_numpy(P).to(self.device)).cpu().numpy().astype(np.float64)
@@ -293,7 +309,7 @@ class ImprovedGaussianNBChain:
         if len(X) == 0:
             return np.empty((0, len(self.classes)))
         P = self._projected(X, participant)
-        if self.backend == "tensorflow":
+        if self.backend != "torch":
             return np.exp(_log_softmax(self._joint_log_likelihood(P)))
         with torch.no_grad():
             return self.model.predict_proba(torch.from_numpy(P).to(self.device)).cpu().numpy()
@@ -313,7 +329,7 @@ class ImprovedGaussianNBChain:
             raise ValueError("need at least one window")
         ctx = context_log_posteriors(logp)[-1]
         probs = np.exp(_log_softmax(ctx))
-        thresholds = self.thresholds if use_thresholds else None      # the TensorFlow chain has none: argmax
+        thresholds = self.thresholds if use_thresholds else None      # the TensorFlow and JAX chains have none: argmax
         index = int(predict_with_thresholds(probs[None, :], thresholds)[0]) if thresholds is not None else int(np.argmax(ctx))
         window_votes = predict_with_thresholds(np.exp(logp), thresholds) if thresholds is not None else logp.argmax(axis=1)
         return dict(label=self.classes[index], index=index, confidence=float(probs[index]),
@@ -503,8 +519,9 @@ def main(argv=None):
     p.add_argument("--file", required=True, help="named OpenBCI GUI recording (.txt), 16 channels at 125 Hz")
     p.add_argument("--participant", default=None, help="participant id (default: <group>/<person> from the path)")
     p.add_argument("--calibrate-from", default=None, help="recording used to calibrate the participant first")
-    p.add_argument("--calibration-dir", default=None, help="where calibrations are stored (default: %s)" % DEFAULT_CALIBRATION_DIR)
-    p.add_argument("--backend", default="torch", choices=BACKENDS, help="GaussianNB implementation: PyTorch (default) or TensorFlow")
+    p.add_argument("--calibration-dir", default=None, help="where calibrations are stored (default: %s, TensorFlow: %s, JAX: %s)"
+                   % (DEFAULT_CALIBRATION_DIR, DEFAULT_CALIBRATION_DIR_TF, DEFAULT_CALIBRATION_DIR_JAX))
+    p.add_argument("--backend", default="torch", choices=BACKENDS, help="GaussianNB implementation: PyTorch (default), TensorFlow or JAX")
     a = p.parse_args(argv)
     chain = ImprovedGaussianNBChain(calibration_dir=a.calibration_dir, backend=a.backend)
     if a.calibrate_from:

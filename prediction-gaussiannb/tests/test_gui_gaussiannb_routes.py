@@ -1,12 +1,13 @@
-"""GUI5.BrainwavesBackend's GaussianNB routes, PyTorch and TensorFlow, exercised with stubbed Qt and BrainFlow.
+"""GUI5.BrainwavesBackend's GaussianNB routes, PyTorch, TensorFlow and JAX, exercised with stubbed Qt and BrainFlow.
 
 PySide6 and brainflow are not needed: the modules the GUI imports are replaced by minimal stubs before GUI5 is
 imported, the BrainFlow processor is replaced by one that serves a Data_clean capture the quality gate accepts, and
-the training-session stream is replaced by a replay of Data_clean recordings against the real clock. Checks: both
-frameworks load their own chains and stores, predictions reach a decision, calibration from a recording is stored in
-the framework's folder, and a short guided session trains and persists a user model with the selected framework.
-Skipped when Data_clean or the notebooks' artifacts are not present.
+the training-session stream is replaced by a replay of Data_clean recordings against the real clock. Checks: every
+framework loads its own chains and stores, predictions reach a decision (also through readMyMind), calibration from a
+recording is stored in the framework's folder, and a short guided session trains and persists a user model with the
+selected framework. Skipped when Data_clean or the notebooks' artifacts are not present.
 """
+import importlib.util
 import json
 import os
 import sys
@@ -23,16 +24,25 @@ REPO_ROOT = GNB_DIR.parent
 if not (REPO_ROOT / "Data_clean" / "G03" / "person03").is_dir():
     pytest.skip("Data_clean not present", allow_module_level=True)
 for name in ("pytorch/torch_gaussiannb_subject_models.joblib", "tensorflow/gaussiannb_tf_subject_specific.pkl",
-             "tensorflow/gaussiannb_tf_improved_global.pkl", "pytorch/torch_gaussiannb_improved_features.pth"):
+             "tensorflow/gaussiannb_tf_improved_global.pkl", "pytorch/torch_gaussiannb_improved_features.pth",
+             "jax/gaussiannb_jax_subject_specific.pkl", "jax/gaussiannb_jax_improved_global.pkl"):
     if not (GNB_DIR / name).exists():
         pytest.skip(f"{name} not present", allow_module_level=True)
 pytest.importorskip("tensorflow")
+if importlib.util.find_spec("jax") is None:         # not importorskip: the JAX backend module must import jax first (CPU pin)
+    pytest.skip("jax not installed", allow_module_level=True)
 
 TMP = Path(tempfile.mkdtemp(prefix="gui_gnb_"))
 os.environ.update(TF_CPP_MIN_LOG_LEVEL="3", AVATAR_GNB_USERS_DIR=str(TMP / "users"), AVATAR_GNB_USERS_DIR_TF=str(TMP / "users_tf"),
-                  AVATAR_GNB_CALIBRATION_DIR=str(TMP / "cal"), AVATAR_GNB_CALIBRATION_DIR_TF=str(TMP / "cal_tf"),
+                  AVATAR_GNB_USERS_DIR_JAX=str(TMP / "users_jax"), AVATAR_GNB_CALIBRATION_DIR=str(TMP / "cal"),
+                  AVATAR_GNB_CALIBRATION_DIR_TF=str(TMP / "cal_tf"), AVATAR_GNB_CALIBRATION_DIR_JAX=str(TMP / "cal_jax"),
                   AVATAR_GNB_TRAIN_ROUNDS="1", AVATAR_GNB_TRAIN_CUE_SECONDS="4", AVATAR_GNB_TRAIN_REST_SECONDS="0",
                   AVATAR_PARTICIPANT_ID="gui-tester")
+# the two frameworks whose notebooks wrote pickled chains: backend key, GUI route, stores, window geometry, model class
+FRAMEWORKS = {"TensorFlow": dict(backend="tensorflow", route="run_gaussiannb_tensorflow", users="users_tf", cal="cal_tf",
+                                 geometry=(125, 62), model="GaussianNBTF"),
+              "JAX": dict(backend="jax", route="run_gaussiannb_jax", users="users_jax", cal="cal_jax",
+                          geometry=(125, 50), model="GaussianNBJAX")}
 
 
 # ----------------------------------------------------------------------------------------------- stubs
@@ -185,25 +195,33 @@ def _log(gui, needle):
     return [m for m in gui.BrainwavesBackend.logMessage.calls if needle in m]
 
 
-def test_tensorflow_route_predicts_with_global_and_training_participant_models(gui, backend):
+@pytest.mark.parametrize("framework", list(FRAMEWORKS))
+def test_framework_route_predicts_with_global_and_training_participant_models(gui, backend, framework):
+    spec = FRAMEWORKS[framework]
     b = backend
     b.selectModel("GaussianNB")
-    b.selectFramework("TensorFlow")
-    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == "gui-tester [TensorFlow]: not loaded"
-    result = b.run_gaussiannb_tensorflow()
+    b.selectFramework(framework)
+    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == f"gui-tester [{framework}]: not loaded"
+    result = getattr(b, spec["route"])()
     assert result["status"] == "accepted", result
-    chain = b.gnb_chains["tensorflow"]
-    assert chain.backend == "tensorflow" and chain.window_size == 125 and chain.thresholds is None
-    assert _log(gui, "GaussianNB chain loaded (TensorFlow)") and _log(gui, "GaussianNB (TensorFlow): ")
-    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == "gui-tester [TensorFlow]: global fallback"
+    chain = b.gnb_chains[spec["backend"]]
+    assert chain.backend == spec["backend"] and (chain.window_size, chain.window_stride) == spec["geometry"] and chain.thresholds is None
+    assert type(chain.model).__name__ == spec["model"] and chain.capture_samples == 125 + 4 * spec["geometry"][1]
+    assert _log(gui, f"GaussianNB chain loaded ({framework})") and _log(gui, f"GaussianNB ({framework}): ")
+    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == f"gui-tester [{framework}]: global fallback"
+    # the Read-my-mind slot routes the selected framework to the same chain
+    b.readMyMind()
+    assert b.gnb_chain is chain and b.current_prediction_result["status"] in ("accepted", "withheld")
+    assert b.current_prediction_result["status"] != "accepted" or b.flight_log[0].endswith(f"(Model: GaussianNB, Framework: {framework})")
     b.setGaussianNBParticipant("G03/person03")
     b.setGaussianNBMode("subject")
-    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == "G03/person03 [TensorFlow]: my model: training participant"
-    result = b.run_gaussiannb_tensorflow()
-    subject = b.gnb_subject_chains["tensorflow"]
-    assert subject.backend == "tensorflow" and subject.resolve("G03/person03")[3] == "training participant"
+    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == f"G03/person03 [{framework}]: my model: training participant"
+    result = getattr(b, spec["route"])()
+    subject = b.gnb_subject_chains[spec["backend"]]
+    assert subject.backend == spec["backend"] and subject.resolve("G03/person03")[3] == "training participant"
+    assert (subject.window_size, subject.window_stride) == spec["geometry"] and type(subject.notebook_models.global_.nb_).__name__ == spec["model"]
     assert result["status"] in ("accepted", "withheld") and subject.last_decision is not None
-    assert _log(gui, "GaussianNB (my model, TensorFlow)")
+    assert _log(gui, f"GaussianNB (my model, {framework})")
     b.setGaussianNBMode("global")
     b.setGaussianNBParticipant("gui-tester")
 
@@ -220,17 +238,29 @@ def test_calibration_is_stored_per_framework_and_pytorch_route_keeps_its_own_cha
     assert result["status"] in ("accepted", "withheld") and b.gnb_chains["torch"].backend == "torch"
     assert b.gnb_chains["torch"].participant_status("gui-tester") == "global fallback"      # calibrated only for TensorFlow
     assert b.gnb_chains["torch"].window_size == 128 and b.gnb_chains["torch"].thresholds is not None
+    # the JAX route has its own calibration folder as well
     b.selectFramework("JAX")
-    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == "gui-tester: not available for the JAX framework"
-    assert b._run_gaussiannb("JAX")["status"] == "withheld"
+    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == "gui-tester [JAX]: global fallback"
+    b.calibrateGaussianNBFromRecording()
+    assert b.gnb_chains["jax"].participant_status("gui-tester") == "calibrated"
+    assert sorted(p.name for p in (TMP / "cal_jax").iterdir()) == ["gui-tester.npz"]
+    assert sorted(p.name for p in (TMP / "cal_tf").iterdir()) == ["gui-tester.npz"] and not (TMP / "cal").exists()
+    assert b.gnb_chains["torch"].participant_status("gui-tester") == "global fallback"
+    assert b._run_gaussiannb("JAX")["status"] in ("accepted", "withheld") and b.gnb_chain is b.gnb_chains["jax"]
+    # an unknown framework is still withheld, never routed to another chain
+    b.selectFramework("Keras")
+    assert gui.BrainwavesBackend.gnbParticipantStatusChanged.calls[-1] == "gui-tester: not available for the Keras framework"
+    assert b._run_gaussiannb("Keras")["status"] == "withheld"
     b.selectFramework("TensorFlow")
 
 
-def test_guided_training_session_trains_a_user_with_the_selected_framework(gui, backend, files):
+@pytest.mark.parametrize("framework", list(FRAMEWORKS))
+def test_guided_training_session_trains_a_user_with_the_selected_framework(gui, backend, files, framework):
     import subject_gnb_inference as S
     from signal_quality.acquisition import read_openbci
+    spec = FRAMEWORKS[framework]
     b = backend
-    b.selectFramework("TensorFlow")
+    b.selectFramework(framework)
     b.setGaussianNBMode("subject")
     b.setGaussianNBParticipant("gui-tester")
 
@@ -273,11 +303,16 @@ def test_guided_training_session_trains_a_user_with_the_selected_framework(gui, 
     assert b._gnb_training is None
     summary = gui.BrainwavesBackend.gnbTrainingFinished.calls[-1]
     assert summary["cues_done"] == 6 and summary["windows_total"] > 0 and summary["participant"] == "gui-tester"
-    meta = json.loads((TMP / "users_tf" / "gui-tester" / "meta.json").read_text())
-    assert meta["framework"] == "tensorflow" and (meta["window_size"], meta["window_stride"]) == (125, 62)
+    meta = json.loads((TMP / spec["users"] / "gui-tester" / "meta.json").read_text())
+    assert meta["framework"] == spec["backend"] and (meta["window_size"], meta["window_stride"]) == spec["geometry"]
     assert not (TMP / "users").exists()
-    assert _log(gui, "GaussianNB training session (TensorFlow)")
-    chain = b.gnb_subject_chains["tensorflow"]
+    assert _log(gui, f"GaussianNB training session ({framework})")
+    chain = b.gnb_subject_chains[spec["backend"]]
     assert "gui-tester" in chain.users and chain.users["gui-tester"].n_windows == summary["windows_total"]
-    result = b.run_gaussiannb_tensorflow()
+    assert chain.users_dir == TMP / spec["users"]      # every framework's chain reads and writes its own store
+    for other, other_spec in FRAMEWORKS.items():
+        if other != framework and other_spec["backend"] in b.gnb_subject_chains:
+            assert b.gnb_subject_chains[other_spec["backend"]].users_dir == TMP / other_spec["users"]
+    result = getattr(b, spec["route"])()
     assert result["status"] in ("accepted", "withheld") and chain.last_decision["participant"] == "gui-tester"
+    b.setGaussianNBMode("global")
