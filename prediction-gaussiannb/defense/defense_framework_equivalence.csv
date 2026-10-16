@@ -1,5 +1,0 @@
-Comparison,Windows,Decision agreement,Max |difference in class probability|,Accuracy PyTorch,Accuracy other
-"PyTorch vs TensorFlow, same stored model arrays",2389,1.0,3.6930085448583228e-06,,
-"PyTorch vs JAX, same stored model arrays",2389,1.0,3.753591267474654e-06,,
-"PyTorch vs TensorFlow, separately fitted on the same training windows",2389,0.9987442444537463,,0.856425282544998,0.8560066973629133
-"PyTorch vs JAX, separately fitted on the same training windows",2389,0.9987442444537463,,0.856425282544998,0.8560066973629133

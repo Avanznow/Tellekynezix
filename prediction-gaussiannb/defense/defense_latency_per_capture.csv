@@ -1,7 +1,0 @@
-Chain,Framework,Capture samples,Capture seconds,Windows,Features,Signal to features ms,Features to decision ms,Total ms (median),Total ms (p90)
-Improved global chain,PyTorch,384,3.07,5,570,3.23,0.44,3.67,4.96
-Subject-specific chain,PyTorch,384,3.07,5,435,3.98,0.18,4.16,4.31
-Improved global chain,TensorFlow,373,2.98,5,570,3.12,1.2,4.32,4.35
-Subject-specific chain,TensorFlow,373,2.98,5,435,3.99,1.21,5.21,5.27
-Improved global chain,JAX,325,2.6,5,570,3.1,0.4,3.5,3.54
-Subject-specific chain,JAX,325,2.6,5,435,3.93,0.38,4.31,4.36
