@@ -1,0 +1,600 @@
+{
+ "replay": "/home/prasndhdl/Downloads/avatar/Tellekynezix/signal_quality/data/real_replay_v3",
+ "replay_summary_sha256": "69e7a31938bf954210a6d33098e50729e6f48ae74c1a15fb8119177ded6d1ff6",
+ "quality_policy_id": "avatar-raw-quality-v1-955cc6c1f48fa7c8",
+ "salvage_policy": {
+  "drop_startup_window": true,
+  "max_excluded_fraction": 0.25
+ },
+ "finding_policy": {
+  "electrode_fault_fraction": 0.8,
+  "global_rail_channel_fraction": 0.75,
+  "global_rail_window_fraction": 0.5,
+  "dropout_window_fraction": 0.2,
+  "artifact_window_fraction": 0.3,
+  "artifact_channel_fraction": 0.5,
+  "startup_first_fraction": 0.8,
+  "startup_excess": 0.3,
+  "systematic_participants": 3,
+  "good_usable_fraction": 0.7,
+  "unusable_below_fraction": 0.3
+ },
+ "counts": {
+  "windows": 8786,
+  "usable_full_montage": 3381,
+  "usable_after_exclusion": 5236,
+  "exported": 5235,
+  "recovered": 1855,
+  "windows_in_excluded_participants": 301,
+  "dropped_startup": 1
+ },
+ "participants": {
+  "G01/person01": {
+   "board": "8ch_250hz",
+   "windows": 313,
+   "usable_full_montage": 1,
+   "dead_electrodes": [
+    "EXG Channel 4"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 178,
+   "exported": 178,
+   "recovered": 177,
+   "dropped_startup": 0
+  },
+  "G01/person02": {
+   "board": "8ch_250hz",
+   "windows": 303,
+   "usable_full_montage": 240,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 240,
+   "exported": 240,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G01/person03": {
+   "board": "8ch_250hz",
+   "windows": 300,
+   "usable_full_montage": 218,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 218,
+   "exported": 218,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G01/person04": {
+   "board": "8ch_250hz",
+   "windows": 306,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 4",
+    "EXG Channel 6"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 170,
+   "exported": 170,
+   "recovered": 170,
+   "dropped_startup": 0
+  },
+  "G01/person05": {
+   "board": "8ch_250hz",
+   "windows": 301,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 0",
+    "EXG Channel 3",
+    "EXG Channel 4"
+   ],
+   "excluded": true,
+   "usable_after_exclusion": 0,
+   "exported": 0,
+   "recovered": 0,
+   "dropped_startup": 0,
+   "reason": "3 of 8 channels dead (limit 25%)"
+  },
+  "G01/person06": {
+   "board": "8ch_250hz",
+   "windows": 262,
+   "usable_full_montage": 183,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 183,
+   "exported": 182,
+   "recovered": 0,
+   "dropped_startup": 1
+  },
+  "G01/person07": {
+   "board": "8ch_250hz",
+   "windows": 298,
+   "usable_full_montage": 238,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 238,
+   "exported": 238,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G01/person08": {
+   "board": "16ch_125hz",
+   "windows": 293,
+   "usable_full_montage": 229,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 229,
+   "exported": 229,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G01/person09": {
+   "board": "16ch_125hz",
+   "windows": 296,
+   "usable_full_montage": 226,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 226,
+   "exported": 226,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G01/person10": {
+   "board": "16ch_125hz",
+   "windows": 298,
+   "usable_full_montage": 205,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 205,
+   "exported": 205,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person01": {
+   "board": "16ch_125hz",
+   "windows": 192,
+   "usable_full_montage": 17,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 17,
+   "exported": 17,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person02": {
+   "board": "16ch_125hz",
+   "windows": 301,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 11"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 236,
+   "exported": 236,
+   "recovered": 236,
+   "dropped_startup": 0
+  },
+  "G03/person03": {
+   "board": "16ch_125hz",
+   "windows": 300,
+   "usable_full_montage": 226,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 226,
+   "exported": 226,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person04": {
+   "board": "16ch_125hz",
+   "windows": 300,
+   "usable_full_montage": 236,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 236,
+   "exported": 236,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person05": {
+   "board": "16ch_125hz",
+   "windows": 299,
+   "usable_full_montage": 239,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 239,
+   "exported": 239,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person06": {
+   "board": "16ch_125hz",
+   "windows": 303,
+   "usable_full_montage": 243,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 243,
+   "exported": 243,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person07": {
+   "board": "16ch_125hz",
+   "windows": 303,
+   "usable_full_montage": 231,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 231,
+   "exported": 231,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G03/person08": {
+   "board": "16ch_125hz",
+   "windows": 290,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 15"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 223,
+   "exported": 223,
+   "recovered": 223,
+   "dropped_startup": 0
+  },
+  "G03/person09": {
+   "board": "16ch_125hz",
+   "windows": 300,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 15"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 66,
+   "exported": 66,
+   "recovered": 66,
+   "dropped_startup": 0
+  },
+  "G03/person10": {
+   "board": "16ch_125hz",
+   "windows": 300,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 15"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 239,
+   "exported": 239,
+   "recovered": 239,
+   "dropped_startup": 0
+  },
+  "G04/person01": {
+   "board": "16ch_125hz",
+   "windows": 296,
+   "usable_full_montage": 160,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 160,
+   "exported": 160,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G04/person02": {
+   "board": "16ch_125hz",
+   "windows": 269,
+   "usable_full_montage": 112,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 112,
+   "exported": 112,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G04/person03": {
+   "board": "16ch_125hz",
+   "windows": 302,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 14"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 242,
+   "exported": 242,
+   "recovered": 242,
+   "dropped_startup": 0
+  },
+  "G04/person04": {
+   "board": "16ch_125hz",
+   "windows": 267,
+   "usable_full_montage": 102,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 102,
+   "exported": 102,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G04/person05": {
+   "board": "16ch_125hz",
+   "windows": 303,
+   "usable_full_montage": 50,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 50,
+   "exported": 50,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G04/person06": {
+   "board": "16ch_125hz",
+   "windows": 295,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 5",
+    "EXG Channel 11",
+    "EXG Channel 13"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 224,
+   "exported": 224,
+   "recovered": 224,
+   "dropped_startup": 0
+  },
+  "G04/person07": {
+   "board": "16ch_125hz",
+   "windows": 299,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 15"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 33,
+   "exported": 33,
+   "recovered": 33,
+   "dropped_startup": 0
+  },
+  "G04/person08": {
+   "board": "16ch_125hz",
+   "windows": 300,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 2",
+    "EXG Channel 15"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 200,
+   "exported": 200,
+   "recovered": 200,
+   "dropped_startup": 0
+  },
+  "G04/person09": {
+   "board": "16ch_125hz",
+   "windows": 293,
+   "usable_full_montage": 225,
+   "dead_electrodes": [],
+   "excluded": false,
+   "usable_after_exclusion": 225,
+   "exported": 225,
+   "recovered": 0,
+   "dropped_startup": 0
+  },
+  "G04/person10": {
+   "board": "16ch_125hz",
+   "windows": 304,
+   "usable_full_montage": 0,
+   "dead_electrodes": [
+    "EXG Channel 3",
+    "EXG Channel 14",
+    "EXG Channel 15"
+   ],
+   "excluded": false,
+   "usable_after_exclusion": 45,
+   "exported": 45,
+   "recovered": 45,
+   "dropped_startup": 0
+  }
+ },
+ "boards": {
+  "16ch_125hz": {
+   "windows": 4009,
+   "shape": [
+    4009,
+    16,
+    250
+   ],
+   "channels": [
+    "EXG Channel 0",
+    "EXG Channel 1",
+    "EXG Channel 2",
+    "EXG Channel 3",
+    "EXG Channel 4",
+    "EXG Channel 5",
+    "EXG Channel 6",
+    "EXG Channel 7",
+    "EXG Channel 8",
+    "EXG Channel 9",
+    "EXG Channel 10",
+    "EXG Channel 11",
+    "EXG Channel 12",
+    "EXG Channel 13",
+    "EXG Channel 14",
+    "EXG Channel 15"
+   ],
+   "common_channels": [
+    "EXG Channel 0",
+    "EXG Channel 1",
+    "EXG Channel 4",
+    "EXG Channel 6",
+    "EXG Channel 7",
+    "EXG Channel 8",
+    "EXG Channel 9",
+    "EXG Channel 10",
+    "EXG Channel 12"
+   ],
+   "montage_options": [
+    {
+     "channels_kept": 16,
+     "excluded_channels": [],
+     "windows": 2501,
+     "participants": 14
+    },
+    {
+     "channels_kept": 15,
+     "excluded_channels": [
+      "EXG Channel 15"
+     ],
+     "windows": 3062,
+     "participants": 18
+    },
+    {
+     "channels_kept": 14,
+     "excluded_channels": [
+      "EXG Channel 14",
+      "EXG Channel 15"
+     ],
+     "windows": 3304,
+     "participants": 19
+    },
+    {
+     "channels_kept": 13,
+     "excluded_channels": [
+      "EXG Channel 11",
+      "EXG Channel 14",
+      "EXG Channel 15"
+     ],
+     "windows": 3540,
+     "participants": 20
+    },
+    {
+     "channels_kept": 12,
+     "excluded_channels": [
+      "EXG Channel 2",
+      "EXG Channel 11",
+      "EXG Channel 14",
+      "EXG Channel 15"
+     ],
+     "windows": 3740,
+     "participants": 21
+    },
+    {
+     "channels_kept": 11,
+     "excluded_channels": [
+      "EXG Channel 2",
+      "EXG Channel 3",
+      "EXG Channel 11",
+      "EXG Channel 14",
+      "EXG Channel 15"
+     ],
+     "windows": 3785,
+     "participants": 22
+    },
+    {
+     "channels_kept": 10,
+     "excluded_channels": [
+      "EXG Channel 2",
+      "EXG Channel 5",
+      "EXG Channel 11",
+      "EXG Channel 13",
+      "EXG Channel 14",
+      "EXG Channel 15"
+     ],
+     "windows": 3964,
+     "participants": 22
+    },
+    {
+     "channels_kept": 9,
+     "excluded_channels": [
+      "EXG Channel 2",
+      "EXG Channel 3",
+      "EXG Channel 5",
+      "EXG Channel 11",
+      "EXG Channel 13",
+      "EXG Channel 14",
+      "EXG Channel 15"
+     ],
+     "windows": 4009,
+     "participants": 23
+    }
+   ],
+   "participants": 23,
+   "recovered": 1508,
+   "label_counts": {
+    "backward": 610,
+    "forward": 622,
+    "landing": 751,
+    "right": 644,
+    "takeoff": 738,
+    "left": 644
+   },
+   "X_sha256": "a26d90fc19e8ec3195c9215ac376224e44435a2210d19fe6ede1237820d1478d"
+  },
+  "8ch_250hz": {
+   "windows": 1226,
+   "shape": [
+    1226,
+    8,
+    500
+   ],
+   "channels": [
+    "EXG Channel 0",
+    "EXG Channel 1",
+    "EXG Channel 2",
+    "EXG Channel 3",
+    "EXG Channel 4",
+    "EXG Channel 5",
+    "EXG Channel 6",
+    "EXG Channel 7"
+   ],
+   "common_channels": [
+    "EXG Channel 0",
+    "EXG Channel 1",
+    "EXG Channel 2",
+    "EXG Channel 3",
+    "EXG Channel 5",
+    "EXG Channel 7"
+   ],
+   "montage_options": [
+    {
+     "channels_kept": 8,
+     "excluded_channels": [],
+     "windows": 878,
+     "participants": 4
+    },
+    {
+     "channels_kept": 7,
+     "excluded_channels": [
+      "EXG Channel 4"
+     ],
+     "windows": 1056,
+     "participants": 5
+    },
+    {
+     "channels_kept": 6,
+     "excluded_channels": [
+      "EXG Channel 4",
+      "EXG Channel 6"
+     ],
+     "windows": 1226,
+     "participants": 6
+    }
+   ],
+   "participants": 6,
+   "recovered": 347,
+   "label_counts": {
+    "backward": 221,
+    "forward": 226,
+    "landing": 205,
+    "left": 171,
+    "right": 190,
+    "takeoff": 213
+   },
+   "X_sha256": "1122388b0eb3562b4eb6d26b906d9a79a6e64c165a635070366d814e81120d23"
+  }
+ },
+ "usable_pct_full_montage": 38.5,
+ "usable_pct_after_exclusion": 59.6,
+ "consistent_with_quality_report_estimate": true,
+ "samples": "raw \u00b5V as recorded (float32); no filtering, re-referencing or normalisation",
+ "excluded_channels": "NaN in X.npy and False in mask.npy; never zero-filled or interpolated",
+ "label_warning": "Folder labels are proxies without cue timing; in Data_clean every class was recorded as one contiguous block, so labels are confounded with recording order. Evaluate on held-out participants; recovered windows do not make the labels more trustworthy.",
+ "loading": "signal_quality.salvage.load_salvaged(<dir>, board, montage='common' | 'masked')"
+}

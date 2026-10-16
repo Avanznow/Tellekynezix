@@ -1,0 +1,50 @@
+{
+  "replay": "/home/prasndhdl/Downloads/avatar/Tellekynezix/signal_quality/data/real_replay_v3",
+  "replay_summary_sha256": "69e7a31938bf954210a6d33098e50729e6f48ae74c1a15fb8119177ded6d1ff6",
+  "quality_policy_id": "avatar-raw-quality-v1-955cc6c1f48fa7c8",
+  "finding_policy": {
+    "electrode_fault_fraction": 0.8,
+    "global_rail_channel_fraction": 0.75,
+    "global_rail_window_fraction": 0.5,
+    "dropout_window_fraction": 0.2,
+    "artifact_window_fraction": 0.3,
+    "artifact_channel_fraction": 0.5,
+    "startup_first_fraction": 0.8,
+    "startup_excess": 0.3,
+    "systematic_participants": 3,
+    "good_usable_fraction": 0.7,
+    "unusable_below_fraction": 0.3
+  },
+  "recordings": 1800,
+  "participants": 30,
+  "windows": 8786,
+  "usable_windows": 3381,
+  "usable_pct": 38.5,
+  "usable_pct_if_dead_excluded": 62.2,
+  "first_window_fail_pct": 99.9,
+  "later_window_fail_pct": 51.6,
+  "verdicts": {
+    "unusable": 14,
+    "good": 11,
+    "review": 5
+  },
+  "recording_verdicts": {
+    "unusable": 935,
+    "good": 786,
+    "review": 79
+  },
+  "finding_counts": {
+    "startup_transient": 1,
+    "mixed_hardware": 1,
+    "systematic_electrode": 2,
+    "electrode_contact": 20,
+    "wireless_dropouts": 3
+  },
+  "replay_decisions_reproduced": true,
+  "interpretation": "Rule flags plus heuristic findings; not verified hardware diagnoses or artifact ground truth",
+  "implementation_sha256": {
+    "assessment.py": "adf5a5d4089f360ef6ff0be1df64dceceb025fe7e5fb1a113c99def9f669be47",
+    "acquisition.py": "f4f2ac7ceee0c75169b9250ee25a97e9d48167b5824e3388220b696c40ef27f6",
+    "report.py": "fb2f91ce083afbe8a46ee90ccdfd2628741fd6416fd3a71c61ccb18ff0ca0c9e"
+  }
+}
