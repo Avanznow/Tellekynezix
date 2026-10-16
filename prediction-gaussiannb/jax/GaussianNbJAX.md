@@ -143,3 +143,31 @@ def load_model(path: str) -> tuple[GaussianNBJAX, dict]:
 - pickle (standard library)
 
 
+
+## CPU or GPU, and how far the accuracy goes (October 2026)
+
+**Device.** `instructions_log_gnb_jax.ipynb` forces JAX onto the CPU (`JAX_PLATFORMS=cpu` in its first cell) on
+purpose. A GaussianNB with 6 classes and a few hundred features is tiny: on this machine (RTX 3070 Laptop, JAX 0.10.2)
+fitting it takes 0.2-0.5 s on the CPU against 0.8-1.6 s on the GPU, and a prediction for a capture of a new shape
+takes 40-70 ms on the CPU against 130-540 ms on the GPU, because every new input shape costs a compile and every call
+compiles for it (the device copy itself is 10-20 ms); only the steady-state call on a shape already compiled is ~1 ms
+on both. An independent check put a simulated per-participant training workload at 33 s on the CPU and 77 s on the
+GPU. JAX reads `JAX_PLATFORMS` when the `jax` package is imported, so the setting only works when the cell runs
+before anything else imported JAX in the kernel; the cell therefore also calls `jax.config.update("jax_platforms",
+"cpu")`, which still works after the import as long as nothing has run, and prints a note when the kernel already
+initialised the GPU (restart the kernel and run the first cell first). Without the variable the default backend on
+this machine is the GPU. Note that the JAX GaussianNB is compile-bound on either device (about 0.3 s per new input
+shape on the CPU, roughly 100x sklearn's GaussianNB for this model); the device is not the bottleneck, and neither is
+accuracy-wise the implementation, see below.
+
+**Accuracy.** The JAX implementation is not the bottleneck: `GaussianNBJAX` reproduces, to four decimals, the chains
+found on the PyTorch notebook (`../pytorch/GaussianNB_EEG_Classification_Notebook (Copy 1).ipynb`, which holds the
+ablations, the confirmation partition and the audit): the improved global chain (570 window features, per-participant
+z-score, LDA projection, one GaussianNB) at ~49 % window accuracy and ~63 % per recording on a 5-fold split by
+recording, and the subject-specific chain (435 features, own LDA and own GaussianNB per participant, global fallback)
+at ~84 % and ~90 %. The notebook now trains both on its own windows (125 samples, stride 50) and 60/20/20 file split
+and saves them as `gaussiannb_jax_improved_global.pkl` / `gaussiannb_jax_subject_specific.pkl`; the classic
+`gaussiannb_jax_model.pkl` for `inference_gaussiannb.py` is unchanged. No global model of any kind exceeds ~56 % on
+these features (the notebook's RBF-SVM included), and held-out participants stay at chance for every chain: each
+command in `Data_clean` was recorded as one contiguous block per participant, so the numbers measure within-session
+separability, as the notebook's closing note explains.
