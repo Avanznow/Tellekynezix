@@ -1,0 +1,80 @@
+{
+  "spec": {
+    "board": "16ch_125hz",
+    "exclude_channels": [
+      "EXG Channel 15"
+    ],
+    "quality_filter": true,
+    "bandpass_hz": [
+      1.0,
+      40.0
+    ],
+    "notch_hz": 60.0,
+    "filter_order": 4,
+    "sfreq": 125.0,
+    "channels": [
+      "EXG Channel 0",
+      "EXG Channel 1",
+      "EXG Channel 2",
+      "EXG Channel 3",
+      "EXG Channel 4",
+      "EXG Channel 5",
+      "EXG Channel 6",
+      "EXG Channel 7",
+      "EXG Channel 8",
+      "EXG Channel 9",
+      "EXG Channel 10",
+      "EXG Channel 11",
+      "EXG Channel 12",
+      "EXG Channel 13",
+      "EXG Channel 14"
+    ],
+    "window_size": 128,
+    "window_stride": 64,
+    "min_segment_rows": 8,
+    "feature_version": "improved_logcov_dcov_tkeo_hybridlog_car_v1",
+    "labels": [
+      "backward",
+      "forward",
+      "landing",
+      "left",
+      "right",
+      "takeoff"
+    ]
+  },
+  "data_dir": "/home/prasndhdl/Downloads/avatar/Tellekynezix/Data_clean",
+  "n_windows": 12089,
+  "n_features": 570,
+  "n_recordings": 883,
+  "n_recordings_loaded": 1394,
+  "n_recordings_skipped": 432,
+  "n_participants": 18,
+  "windows_per_class": {
+    "backward": 1882,
+    "forward": 1866,
+    "landing": 2117,
+    "left": 1987,
+    "right": 1963,
+    "takeoff": 2274
+  },
+  "segments_too_short": 0,
+  "nonfinite_samples_zeroed": 0,
+  "seconds": 7.6,
+  "subsample": {
+    "max_windows_per_class": 2000,
+    "seed": 0,
+    "n_windows_used": 11698,
+    "n_recordings_used": 883,
+    "n_participants_used": 18,
+    "windows_per_class_used": {
+      "backward": 1882,
+      "forward": 1866,
+      "landing": 2000,
+      "left": 1987,
+      "right": 1963,
+      "takeoff": 2000
+    }
+  },
+  "chance_level": 0.17096939647803044,
+  "feature_cache": "/home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results/cache/features_4df6a3d7e7044283.npz"
+}

@@ -1,0 +1,17 @@
+# Quantum benchmark environment (issue #49 minimum), separate from the notebooks' ai_env. Python 3.12, CPU only.
+# Install torch from the CPU wheel index first, then the rest:
+#   python3 -m venv ~/qml_env && ~/qml_env/bin/pip install --upgrade pip
+#   ~/qml_env/bin/pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+#   ~/qml_env/bin/pip install -r prediction-quantum/requirements.txt
+# Versions are the newest pair that imported cleanly together on 2026-10-17 (PennyLane 0.45.1 with torch 2.14.1, numpy 2.5).
+pennylane==0.45.1
+pennylane-lightning==0.45.0
+torch==2.14.1
+scikit-learn==1.9.1
+numpy==2.5.4
+scipy==1.18.1
+pandas==3.0.6
+matplotlib==3.11.2
+joblib==1.6.0
+pyyaml==6.0.3
+pytest==9.1.1
