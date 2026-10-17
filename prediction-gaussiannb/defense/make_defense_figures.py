@@ -579,6 +579,367 @@ def framework_equivalence(data, train, test, chain_sub):
     return df, nb, geo
 
 
+def framework_performance(data, train, test, chain_sub, nb=None):
+    """Performance of the best chain (subject-specific) fitted and evaluated in each framework on the same test
+    windows: accuracy, macro-F1, balanced accuracy, Cohen's kappa and per-command F1 (defense_framework_performance.csv),
+    one figure with the scores and the per-command F1 per framework, and one figure with the three confusion
+    matrices. The three backends are fitted separately on the same training windows (PyTorch notebook split, the
+    participants with an own model), so the only difference between them is the implementation; the notebooks' own
+    protocol-A numbers (each with its own window geometry) are appended from defense_framework_notebooks.csv."""
+    X, y, parts = data["X_sub"], data["y"], data["parts"]
+    preds = {b: [] for b in BACKENDS}
+    truth = []
+    n_participants = 0
+    for q in sorted(np.unique(parts[test])):
+        mt, mtr = test & (parts == q), train & (parts == q)
+        _, _, _, status = chain_sub.resolve(q)
+        if str(status).startswith("global fallback"):
+            continue
+        p = {b: fit_eval_subject(X[mtr], y[mtr], X[mt], q, backend=b) for b in BACKENDS}
+        if any(v is None for v in p.values()):
+            continue
+        for b in BACKENDS:
+            preds[b].append(p[b])
+        truth.append(y[mt])
+        n_participants += 1
+    truth = np.concatenate(truth)
+    preds = {b: np.concatenate(v) for b, v in preds.items()}
+    labels = list(range(len(COMMANDS)))
+    rows = []
+    for b in BACKENDS:
+        pr = preds[b]
+        f1s = f1_score(truth, pr, labels=labels, average=None, zero_division=0)
+        row = {"Framework": BACKEND_LABEL[b], "Chain": "subject-specific chain", "Windows": int(len(truth)),
+               "Participants": n_participants, "Accuracy": float((pr == truth).mean()),
+               "Macro-F1": float(f1_score(truth, pr, labels=labels, average="macro", zero_division=0)),
+               "Balanced accuracy": float(balanced_accuracy_score(truth, pr)),
+               "Cohen's kappa": float(cohen_kappa_score(truth, pr)),
+               "Agreement with PyTorch": float((pr == preds["torch"]).mean())}
+        for c, f in zip(COMMANDS, f1s):
+            row[f"F1 {c}"] = float(f)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    if nb is not None and len(nb):
+        own = nb[(nb["Chain"] == "subject-specific chain") & nb["Protocol"].str.startswith("5-fold by recording")]
+        own = own[["Framework", "Window_accuracy", "File_accuracy", "window_size", "window_stride"]].rename(columns={
+            "Window_accuracy": "Notebook protocol A window accuracy", "File_accuracy": "Notebook protocol A per-recording accuracy",
+            "window_size": "Notebook window size", "window_stride": "Notebook window stride"})
+        df = df.merge(own, on="Framework", how="left")
+    write_csv(df, "defense_framework_performance.csv")
+    say("framework performance: " + ", ".join(f"{r['Framework']} acc {r['Accuracy']:.4f} F1 {r['Macro-F1']:.4f}" for r in rows))
+
+    colors = {"PyTorch": "#ee4c2c", "TensorFlow": "#ff8c00", "JAX": "#3987e5"}
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.2), gridspec_kw={"width_ratios": [1.05, 1.5]})
+    metrics = ["Accuracy", "Macro-F1", "Balanced accuracy", "Cohen's kappa"]
+    w = 0.26
+    xs = np.arange(len(metrics))
+    for i, r in enumerate(rows):
+        vals = [r[m] for m in metrics]
+        bars = ax1.bar(xs + (i - 1) * w, vals, w, color=colors[r["Framework"]], label=r["Framework"])
+        for bar, v in zip(bars, vals):
+            ax1.text(bar.get_x() + bar.get_width() / 2, v + 0.012, f"{v:.3f}", ha="center", va="bottom", fontsize=7.5, rotation=90)
+    ax1.axhline(CHANCE, color="#555555", ls="--", lw=1)
+    ax1.text(xs[0] - 1.5 * w, CHANCE + 0.01, "chance", fontsize=8, color="#555555")
+    ax1.set_xticks(xs)
+    ax1.set_xticklabels(metrics, fontsize=9)
+    ax1.set_ylim(0, 1.12)
+    ax1.set_ylabel("score on the same held-out windows")
+    ax1.set_title(f"Subject-specific chain per framework\n({len(truth)} test windows, {n_participants} participants, fitted separately)", fontsize=10)
+    ax1.legend(fontsize=8, loc="lower right", frameon=False)
+    ax1.spines[["top", "right"]].set_visible(False)
+    xs2 = np.arange(len(COMMANDS))
+    for i, r in enumerate(rows):
+        vals = [r[f"F1 {c}"] for c in COMMANDS]
+        bars = ax2.bar(xs2 + (i - 1) * w, vals, w, color=colors[r["Framework"]], label=r["Framework"])
+        for bar, v in zip(bars, vals):
+            ax2.text(bar.get_x() + bar.get_width() / 2, v + 0.012, f"{v:.2f}", ha="center", va="bottom", fontsize=7.5)
+    ax2.set_xticks(xs2)
+    ax2.set_xticklabels(COMMANDS, fontsize=9)
+    ax2.set_ylim(0, 1.08)
+    ax2.set_ylabel("F1 score per command")
+    ax2.set_title("Per-command F1 of the subject-specific chain per framework", fontsize=10)
+    ax2.legend(fontsize=8, loc="lower right", frameon=False)
+    ax2.spines[["top", "right"]].set_visible(False)
+    fig.suptitle("Gaussian Naive Bayes performance across PyTorch, TensorFlow and JAX: the same chain, the same windows, three implementations",
+                 fontsize=11, x=0.01, ha="left")
+    fig.tight_layout()
+    fig.savefig(HERE / "defense_framework_performance.png")
+    plt.close(fig)
+    say("wrote defense_framework_performance.png")
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.4))
+    for ax, b in zip(axes, BACKENDS):
+        pr = preds[b]
+        plot_cm(ax, confusion_matrix(truth, pr, labels=labels),
+                f"{BACKEND_LABEL[b]}, accuracy {(pr == truth).mean():.3f}, macro-F1 "
+                f"{f1_score(truth, pr, labels=labels, average='macro', zero_division=0):.3f}")
+    fig.suptitle(f"Subject-specific chain fitted and evaluated in each framework on the same {len(truth)} held-out windows "
+                 "(count and share of each true command)", fontsize=11, x=0.01, ha="left")
+    fig.tight_layout()
+    fig.savefig(HERE / "defense_framework_confusion_matrices.png")
+    plt.close(fig)
+    say("wrote defense_framework_confusion_matrices.png")
+    return df
+
+
+# ------------------------------------------------------------------------------------------------------ 5b. the project's own RF and MLP
+RF_JAX_DIR = REPO_ROOT / "prediction-random-forest" / "JAX"
+DL_JAX_DIR = REPO_ROOT / "prediction_deep_learning" / "JAX"
+
+
+def _import_project_module(path, name):
+    """Import one of the project's original scripts (they print a banner and define module constants on import)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _old_random_split(n, seed):
+    """The 70/10/20 random split of rows used by both original scripts (main())."""
+    n_test, n_val = int(n * 0.2), int(n * 0.1)
+    np.random.seed(seed)
+    idx = np.random.permutation(n)
+    return idx[:n - n_test - n_val], idx[n - n_test - n_val:n - n_test], idx[n - n_test:]
+
+
+def _scores(yt, yp):
+    labels = list(range(len(COMMANDS)))
+    return dict(Accuracy=float((yp == yt).mean()),
+                **{"Macro-F1": float(f1_score(yt, yp, labels=labels, average="macro", zero_division=0))},
+                **{"Balanced accuracy": float(balanced_accuracy_score(yt, yp))})
+
+
+def _old_loader_with_files(RF, base_path, desired_rows):
+    """load_and_process_data of the original scripts, reproduced step by step (same walk, same parser, same padding
+    and truncation, same label normalisation, same zero padding to the widest row), with the index of the source file
+    recorded for every row so that the rows can be split by file."""
+    all_samples, all_labels, file_ids = [], [], []
+    n_files = 0
+    for root, dirs, files in os.walk(str(base_path)):
+        if "output" in root:
+            continue
+        csv_files = [f for f in files if f.endswith(".csv")]
+        if not csv_files:
+            continue
+        class_label_raw = os.path.basename(root)
+        if class_label_raw.startswith(("group", "individual", "Test")):
+            continue
+        class_label = RF.normalize_class_label(class_label_raw)
+        for csv_file in csv_files:
+            try:
+                df = RF.read_csv_flexible(os.path.join(root, csv_file))
+                if df.empty:
+                    continue
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) == 0:
+                    continue
+                df = df[numeric_cols]
+                if len(df) < desired_rows:
+                    df = pd.concat([df, pd.DataFrame(0, index=range(desired_rows - len(df)), columns=df.columns)], ignore_index=True)
+                elif len(df) > desired_rows:
+                    df = df.iloc[:desired_rows]
+                df = df.apply(pd.to_numeric, errors="coerce").fillna(0)
+                vals = df.values.astype(np.float32)
+                all_samples.extend(list(vals))
+                all_labels.extend([class_label] * len(vals))
+                file_ids.extend([n_files] * len(vals))
+                n_files += 1
+            except Exception:  # noqa: BLE001  (the original swallows every parse error)
+                pass
+    max_features = max(len(s) for s in all_samples)
+    X = np.zeros((len(all_samples), max_features), np.float32)
+    for i, sample in enumerate(all_samples):
+        X[i, :min(len(sample), max_features)] = sample[:max_features]
+    y = np.array(all_labels)
+    class_names = sorted(np.unique(y))
+    label_to_idx = {label: idx for idx, label in enumerate(class_names)}
+    y_encoded = np.array([label_to_idx[label] for label in y], dtype=np.int32)
+    return X, y_encoded, class_names, np.array(file_ids)
+
+
+def _project_model_job(job):
+    """One fit of one original model (runs in a worker process on the CPU): job = dict(model, Xtr, ytr, Xte, Xval, yval)."""
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    import io, contextlib
+    t1 = time.perf_counter()
+    with contextlib.redirect_stdout(io.StringIO()):      # the scripts print a banner on import
+        if job["model"] == "JAX random forest":
+            RF = _import_project_module(RF_JAX_DIR / "jax_random_forest.py", "jax_random_forest_worker")
+            m = RF.JAXRandomForest(n_trees=RF.N_TREES, max_depth=RF.MAX_DEPTH, bootstrap_ratio=RF.BOOTSTRAP_RATIO, seed=RF.SEED)
+            m.fit(np.asarray(job["Xtr"], np.float32), np.asarray(job["ytr"], np.int32), verbose=False)
+            pred = np.asarray(m.predict(np.asarray(job["Xte"], np.float32)), np.int64)
+        else:
+            DL = _import_project_module(DL_JAX_DIR / "deep_learning_jax.py", "deep_learning_jax_worker")
+            import jax.numpy as jnp
+            Xtr, ytr, Xval, yval = job["Xtr"], job["ytr"], job.get("Xval"), job.get("yval")
+            if Xval is None:   # hold out 1/8 of the training rows for the script's early stopping
+                rng = np.random.default_rng(DL.SEED); perm = rng.permutation(len(ytr)); k = len(ytr) // 8
+                Xval, yval, Xtr, ytr = Xtr[perm[:k]], ytr[perm[:k]], Xtr[perm[k:]], ytr[perm[k:]]
+            state, _, _ = DL.train_model(jnp.asarray(Xtr, jnp.float32), jnp.asarray(ytr, jnp.int32),
+                                         jnp.asarray(Xval, jnp.float32), jnp.asarray(yval, jnp.int32), DL.N_EPOCHS, DL.BATCH_SIZE)
+            _, pred = DL.eval_step(state, jnp.asarray(job["Xte"], jnp.float32), jnp.zeros(len(job["Xte"]), jnp.int32))
+            pred = np.asarray(pred, np.int64)
+    return dict(Model=job["model"], Condition=job["condition"], Seed=job["seed"], n_train=int(len(job["ytr"])), n_test=int(len(job["yte"])),
+                **_scores(job["yte"], pred), seconds=time.perf_counter() - t1)
+
+
+def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file=160, row_subsample=30000, window_subsample=None, n_jobs=4):
+    """The project's ORIGINAL random forest (JAXRandomForest, prediction-random-forest/JAX/jax_random_forest.py) and
+    deep-learning model (the Flax MLP of prediction_deep_learning/JAX/deep_learning_jax.py), run as written, under
+    three conditions, so that the old renditions can be compared with the GNB chains on the same dataset:
+
+      1. "as reported": the two scripts' own loader on Data_clean (the first 160 rows of every BrainFlow CSV export,
+         every numeric column, label from the folder name) and their own 70/10/20 random split of ROWS (seed 42),
+         which is how the 94.36 % and 93.60 % in the scripts' headers were obtained;
+      2. "same code, split by recording": the same loader and rows, but the 20 % test rows are whole files
+         (GroupShuffleSplit by file, seed 0), so no row of a test file is in training;
+      3. "same code on the verified windows": the two models trained and tested on the loader's 12,089 windows with
+         the GNB chains' 570 features, under the six recording-grouped hold-outs of the main notebook's cell 36
+         (GroupShuffleSplit, 20 % of recordings, seeds 0 to 5), which is the protocol of the GNB benchmark.
+
+    The models and their hyperparameters are the scripts' own (40 trees of depth 8; hidden layers 256-128-64-32,
+    100 epochs with early stopping); only the data split changes. Because the original forest trains at roughly one
+    tree per 20 s on 20,000 rows, conditions 1 and 2 use a random subsample of row_subsample rows of the loader's
+    291,200 (every file keeps some rows, so the random-row leak and the split by file are both preserved). The fits
+    run in n_jobs worker processes on the CPU. Writes defense_project_models_benchmark.csv (means),
+    defense_project_models_benchmark_runs.csv and defense_project_models_benchmark.png. Needs flax and optax."""
+    from sklearn.model_selection import GroupShuffleSplit
+    from joblib import Parallel, delayed
+    import io, contextlib
+    data_dir = Path(data_dir) if data_dir else REPO_ROOT / "Data_clean"
+    t0 = time.perf_counter()
+    with contextlib.redirect_stdout(io.StringIO()), plt.rc_context():   # the script sets a seaborn style on import
+        RF = _import_project_module(RF_JAX_DIR / "jax_random_forest.py", "jax_random_forest")
+    for _n in dir(RF):                                   # the stored pickle was written from __main__
+        if isinstance(getattr(RF, _n), type):
+            setattr(sys.modules["__main__"], _n, getattr(RF, _n))
+    reported = {}
+    try:
+        import pickle
+        with open(RF_JAX_DIR / "trained_classifier_rf_jax.pkl", "rb") as f:
+            reported["JAX random forest"] = float(pickle.load(f)["test_accuracy"])
+        with open(DL_JAX_DIR / "trained_classifier_dl_jax.pkl", "rb") as f:
+            reported["JAX deep learning (MLP)"] = float(pickle.load(f)["test_accuracy"])
+    except Exception as e:  # noqa: BLE001
+        say(f"stored pickles not read: {e}")
+    say(f"stored test accuracies in the project's pickles: {reported}")
+    models = ("JAX random forest", "JAX deep learning (MLP)")
+
+    # ---- conditions 1 and 2: the scripts' own loader (rows of the BrainFlow CSV exports)
+    X_rows, y_raw, class_names, file_of_row = _old_loader_with_files(RF, data_dir, max_rows_per_file)
+    # The scripts' normalize_class_label leaves Data_clean's misspelled folders (B ackward, Foreward, Fowward, TakOff,
+    # backard) as classes of their own; map every folder name to the six commands with the loader's label table so
+    # that the models are trained on the same six classes they were reported on.
+    try:
+        from signal_quality.salvage import folder_label
+        norm = lambda c: folder_label(str(c)) or RF.normalize_class_label(str(c))  # noqa: E731
+    except Exception:  # noqa: BLE001
+        fix = {"b ackward": "backward", "backard": "backward", "foreward": "forward", "fowward": "forward", "takoff": "takeoff"}
+        norm = lambda c: fix.get(str(c).lower(), RF.normalize_class_label(str(c)))  # noqa: E731
+    mapped = {i: norm(c) for i, c in enumerate(class_names)}
+    bad = sorted(set(mapped.values()) - set(COMMANDS))
+    assert not bad, f"unmapped folder labels: {bad}"
+    y_rows = np.array([COMMANDS.index(mapped[int(v)]) for v in y_raw], np.int32)
+    say("folder labels mapped to the six commands: " + ", ".join(f"{c} -> {mapped[i]}" for i, c in enumerate(class_names) if str(c) != mapped[i]))
+    n_rows_all, n_files_all = len(y_rows), len(np.unique(file_of_row))
+    if row_subsample is not None and row_subsample < n_rows_all:
+        sub = np.sort(np.random.default_rng(0).choice(n_rows_all, row_subsample, replace=False))
+    else:
+        sub = np.arange(n_rows_all)
+    X_rows, y_rows, file_of_row = X_rows[sub], y_rows[sub], file_of_row[sub]
+    X_rows_std = (X_rows - X_rows.mean(0)) / (X_rows.std(0) + 1e-8)   # the MLP script standardises its rows
+    say(f"old loader: {n_rows_all:,} rows of {X_rows.shape[1]} columns from {n_files_all} BrainFlow exports "
+        f"({time.perf_counter() - t0:.0f} s); using {len(sub):,} rows of {len(np.unique(file_of_row))} files")
+    jobs = []
+    tr, va, te = _old_random_split(len(y_rows), RF.SEED)
+    c1 = "1. as reported: own loader, random split of rows"
+    jobs.append(dict(model=models[0], condition=c1, seed=RF.SEED, Xtr=X_rows[tr], ytr=y_rows[tr], Xte=X_rows[te], yte=y_rows[te]))
+    jobs.append(dict(model=models[1], condition=c1, seed=RF.SEED, Xtr=X_rows_std[tr], ytr=y_rows[tr], Xte=X_rows_std[te], yte=y_rows[te],
+                     Xval=X_rows_std[va], yval=y_rows[va]))
+    tr, te = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=0).split(X_rows, y_rows, file_of_row))
+    c2 = "2. same code and rows, split by recording"
+    jobs.append(dict(model=models[0], condition=c2, seed=0, Xtr=X_rows[tr], ytr=y_rows[tr], Xte=X_rows[te], yte=y_rows[te]))
+    jobs.append(dict(model=models[1], condition=c2, seed=0, Xtr=X_rows_std[tr], ytr=y_rows[tr], Xte=X_rows_std[te], yte=y_rows[te]))
+
+    # ---- condition 3: the verified windows and the GNB chains' 570 features, six recording-grouped hold-outs
+    X, y, groups = data["X_imp"], data["y"], data["groups"]
+    if window_subsample is not None and window_subsample < len(y):
+        keep = np.sort(np.random.default_rng(0).choice(len(y), window_subsample, replace=False))
+        X, y, groups = X[keep], y[keep], groups[keep]
+    c3 = "3. same code on the verified windows (570 features), split by recording"
+    for seed in range(n_repeats):
+        tr, te = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed).split(X, y, groups))
+        imp = SimpleImputer(strategy="median").fit(X[tr])
+        Xtr, Xte = imp.transform(X[tr]).astype(np.float32), imp.transform(X[te]).astype(np.float32)
+        mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-8
+        jobs.append(dict(model=models[0], condition=c3, seed=seed, Xtr=Xtr, ytr=y[tr], Xte=Xte, yte=y[te]))
+        jobs.append(dict(model=models[1], condition=c3, seed=seed, Xtr=(Xtr - mu) / sd, ytr=y[tr], Xte=(Xte - mu) / sd, yte=y[te]))
+    say(f"{len(jobs)} fits of the original models in {n_jobs} worker processes (the forest is the slow part)")
+    rows = Parallel(n_jobs=n_jobs, backend="loky")(delayed(_project_model_job)(j) for j in jobs)
+    for r in rows:
+        r["Reported"] = reported.get(r["Model"], float("nan")) if r["Condition"].startswith("1.") else float("nan")
+        say(f"{r['Model']}, {r['Condition'][:2]} seed {r['Seed']}: accuracy {r['Accuracy']:.4f}, macro-F1 {r['Macro-F1']:.4f} in {r['seconds']:.0f} s")
+    df = pd.DataFrame(rows)
+    write_csv(df, "defense_project_models_benchmark_runs.csv")
+    summ = (df.groupby(["Model", "Condition"], sort=False)
+              .agg(runs=("Seed", "size"), Accuracy=("Accuracy", "mean"), Accuracy_sd=("Accuracy", "std"),
+                   **{"Macro-F1": ("Macro-F1", "mean"), "Macro-F1_sd": ("Macro-F1", "std"),
+                      "Balanced accuracy": ("Balanced accuracy", "mean"), "Reported": ("Reported", "first"),
+                      "n_train": ("n_train", "mean"), "n_test": ("n_test", "mean"), "seconds": ("seconds", "mean")}).reset_index())
+    summ["rows_in_loader"] = n_rows_all
+    summ["files_in_loader"] = n_files_all
+    summ["rows_used"] = len(sub)
+    write_csv(summ, "defense_project_models_benchmark.csv")
+
+    # ---- figure
+    conds = [c1, c2, c3]
+    cond_label = {c1: f"as reported: own loader, random split of rows ({len(sub):,} rows)",
+                  c2: "same code and rows, split by recording",
+                  c3: f"same code on the verified windows (570 features), {n_repeats} recording-grouped hold-outs"}
+    colors = ["#9e9e9e", "#ff8c00", "#3987e5"]
+    fig, ax = plt.subplots(figsize=(11, 6.4))
+    names = list(models)
+    w = 0.8 / (len(conds) + 1)
+    for j, c in enumerate(conds):
+        for i, name in enumerate(names):
+            r = summ[(summ["Model"] == name) & (summ["Condition"] == c)]
+            if not len(r):
+                continue
+            v = float(r["Accuracy"].iloc[0]); sd = float(r["Accuracy_sd"].iloc[0]) if int(r["runs"].iloc[0]) > 1 else 0.0
+            bar = ax.bar(i + (j - (len(conds) - 1) / 2) * w, v, w, color=colors[j], yerr=sd if sd else None, capsize=3,
+                         label=cond_label[c] if i == 0 else None)
+            ax.text(bar[0].get_x() + w / 2, v + 0.02 + sd, f"{v:.3f}", ha="center", va="bottom", fontsize=8)
+    for i, name in enumerate(names):
+        if name in reported:
+            ax.plot([i - 0.45, i + 0.45], [reported[name]] * 2, color="#333333", lw=1.2, ls=":",
+                    label="test accuracy stored in the project's pickle" if i == 0 else None)
+    gnb = PYTORCH_DIR / "final_model_benchmark_project_models_summary.csv"
+    if gnb.exists():
+        b = pd.read_csv(gnb)
+        for key, lab, col in (("subject-specific", "GNB subject-specific chain, same six hold-outs", "#ee4c2c"), ("improved", "GNB improved global chain, same six hold-outs", "#d62728")):
+            r = b[b["Model"].str.contains(key)]
+            if len(r):
+                ax.axhline(float(r["Accuracy Mean"].iloc[0]), color=col, lw=1.0, ls="-." if key == "improved" else "-", label=lab)
+    ax.axhline(CHANCE, color="#555555", ls="--", lw=1)
+    ax.text(len(names) - 0.55, CHANCE + 0.012, "chance", fontsize=8, color="#555555")
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names)
+    ax.set_ylim(0, 1.08)
+    ax.set_ylabel("accuracy")
+    ax.set_title("The project's original random forest and MLP, run as written on Data_clean, under three data splits", fontsize=10)
+    ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.08), frameon=False, ncol=2)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(HERE / "defense_project_models_benchmark.png")
+    plt.close(fig)
+    say(f"wrote defense_project_models_benchmark.png in {time.perf_counter() - t0:.0f} s")
+    return summ
+
+
 # ------------------------------------------------------------------------------------------------------ 6. latency
 def _median_ms(fn, repeat, warmup=3):
     for _ in range(warmup):
@@ -1737,7 +2098,7 @@ def write_tables_md():
                  "defense_confound_controls.csv", "defense_statistics.csv", "defense_itr.csv", "defense_subject_ablation.csv",
                  "defense_deployed_pr_roc.csv", "defense_time_distance.csv", "defense_channel_contribution.csv",
                  "defense_dataset.csv", "defense_model_complexity.csv",
-                 "defense_framework_equivalence.csv", "defense_framework_notebooks.csv",
+                 "defense_framework_equivalence.csv", "defense_framework_notebooks.csv", "defense_framework_performance.csv", "defense_project_models_benchmark.csv",
                  "defense_decision_model_latency.csv", "defense_latency_per_capture.csv"):
         f = HERE / name
         if f.exists():
@@ -1757,6 +2118,7 @@ def main(argv=None):
     ap.add_argument("--skip-learning-curve", action="store_true", help="skip the per-participant learning curve")
     ap.add_argument("--skip-heldout", action="store_true", help="skip the held-out-participant confusion matrix")
     ap.add_argument("--skip-dataset-load", action="store_true", help="do not reload Data_clean for the dataset table")
+    ap.add_argument("--skip-project-models", action="store_true", help="skip the project's original RF and MLP run as written (slow)")
     args = ap.parse_args(argv)
     t_start = time.perf_counter()
     summary = {}
@@ -1785,6 +2147,7 @@ def main(argv=None):
 
     equiv, nb, geo = framework_equivalence(data, train, test, chain_sub)
     summary["framework_equivalence"] = equiv.to_dict("records")
+    summary["framework_performance"] = framework_performance(data, train, test, chain_sub, nb).to_dict("records")
 
     # ---- the PyTorch chains in more detail (sections 7-10)
     logp_by_chain = {"Improved global chain": logp_imp, "Subject-specific chain": logp_sub}
@@ -1810,6 +2173,8 @@ def main(argv=None):
     if not args.skip_ablation:
         summary["subject_ablation"] = subject_ablation(data, train, test, chain_sub)
     summary["model_complexity"] = model_complexity(data, train, chain_imp, chain_sub)
+    if not args.skip_project_models:
+        summary["project_models_benchmark"] = project_models_benchmark(data).to_dict("records")
     summary["deployed_pr_roc"] = deployed_pr_roc(data, test, logp_by_chain)
 
     if not args.skip_latency:

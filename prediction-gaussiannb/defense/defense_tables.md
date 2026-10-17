@@ -202,7 +202,7 @@
 | Subject-specific chain | one user's LDA projection (435 -> 5) | 2175.000 | torch_gaussiannb_subject_models.joblib | 323.600 | the artifact holds 17 own models + the global fallback |
 | Subject-specific chain | one user's GaussianNB (6 classes x 5 dims) | 66.000 | torch_gaussiannb_subject_models.joblib |  | priors, means, variances |
 | Subject-specific chain | total per user | 3111.000 | model.npz per user in the GUI's store |  | all 18 models + scaler: 455.4 KB |
-| Subject-specific chain | fit of one user's model (631 windows of G03/person03) |  |  |  | median 298 ms over 20 fits (p90 1189 ms): z-score, LDA, GaussianNB |
+| Subject-specific chain | fit of one user's model (631 windows of G03/person03) |  |  |  | median 269 ms over 20 fits (p90 303 ms): z-score, LDA, GaussianNB |
 | RandomForest (PyTorch notebook) | saved artifact |  | prediction-random-forest/pytorch/custom_rf.pt.gz | 8387.100 | gzip-compressed state; parameters not counted (not loaded here) |
 | RandomForest (JAX notebook) | saved artifact |  | prediction-random-forest/JAX/trained_classifier_rf_jax.pkl | 799.700 | pickle; parameters not counted (not loaded here) |
 | JAX MLP (deep learning notebook) | saved artifact |  | prediction_deep_learning/JAX/trained_classifier_dl_jax.pkl | 213.200 | pickle; parameters not counted (not loaded here) |
@@ -233,28 +233,47 @@
 | JAX | improved global chain | 5-fold by participant (held-out people) | 0.180 | 0.181 | 125 | 50 | 325 |
 | JAX | subject-specific chain | 5-fold by participant (held-out people) | 0.183 | 0.181 | 125 | 50 | 325 |
 
+## defense_framework_performance.csv
+
+| Framework | Chain | Windows | Participants | Accuracy | Macro-F1 | Balanced accuracy | Cohen's kappa | Agreement with PyTorch | F1 backward | F1 forward | F1 landing | F1 left | F1 right | F1 takeoff | Notebook protocol A window accuracy | Notebook protocol A per-recording accuracy | Notebook window size | Notebook window stride |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| PyTorch | subject-specific chain | 2389 | 17 | 0.856 | 0.855 | 0.855 | 0.828 | 1.000 | 0.847 | 0.810 | 0.879 | 0.854 | 0.851 | 0.887 | 0.843 | 0.900 | 128 | 64 |
+| TensorFlow | subject-specific chain | 2389 | 17 | 0.856 | 0.854 | 0.855 | 0.827 | 0.999 | 0.846 | 0.807 | 0.879 | 0.855 | 0.851 | 0.887 | 0.840 | 0.891 | 125 | 62 |
+| JAX | subject-specific chain | 2389 | 17 | 0.856 | 0.854 | 0.855 | 0.827 | 0.999 | 0.846 | 0.807 | 0.879 | 0.855 | 0.851 | 0.887 | 0.839 | 0.896 | 125 | 50 |
+
+## defense_project_models_benchmark.csv
+
+| Model | Condition | runs | Accuracy | Accuracy_sd | Macro-F1 | Macro-F1_sd | Balanced accuracy | Reported | n_train | n_test | seconds | rows_in_loader | files_in_loader | rows_used |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| JAX random forest | 1. as reported: own loader, random split of rows | 1 | 0.930 |  | 0.930 |  | 0.930 | 0.944 | 21000.000 | 6000.000 | 411.517 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 1. as reported: own loader, random split of rows | 1 | 0.958 |  | 0.957 |  | 0.957 | 0.936 | 21000.000 | 6000.000 | 30.359 | 291200 | 1820 | 30000 |
+| JAX random forest | 2. same code and rows, split by recording | 1 | 0.846 |  | 0.850 |  | 0.851 |  | 24055.000 | 5945.000 | 458.808 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 2. same code and rows, split by recording | 1 | 0.906 |  | 0.905 |  | 0.908 |  | 24055.000 | 5945.000 | 30.398 | 291200 | 1820 | 30000 |
+| JAX random forest | 3. same code on the verified windows (570 features), split by recording | 6 | 0.509 | 0.035 | 0.501 | 0.039 | 0.506 |  | 9672.333 | 2416.667 | 120.685 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.702 | 0.030 | 0.697 | 0.033 | 0.699 |  | 9672.333 | 2416.667 | 13.347 | 291200 | 1820 | 30000 |
+
 ## defense_decision_model_latency.csv
 
 | Model | Device | n_train | first_fit_ms | second_fit_ms | first_predict_ms | steady_predict_ms | steady_predict_p90_ms |
 |---|---|---|---|---|---|---|---|
-| PyTorch GaussianNB | CPU | 600 | 1.010 | 0.403 | 0.667 | 0.048 | 0.051 |
-| PyTorch GaussianNB | CUDA | 600 | 53.969 | 0.977 | 35.312 | 0.102 | 0.109 |
-| TensorFlow GaussianNBTF | CPU | 600 | 36.494 | 1.397 | 6.695 | 0.940 | 0.964 |
-| JAX GaussianNBJAX | CPU | 600 | 495.886 | 1.566 | 73.946 | 0.204 | 0.214 |
-| PyTorch GaussianNB | CPU | 9670 | 1.174 | 0.887 | 0.131 | 0.048 | 0.051 |
-| PyTorch GaussianNB | CUDA | 9670 | 1.075 | 1.326 | 0.168 | 0.106 | 0.112 |
-| TensorFlow GaussianNBTF | CPU | 9670 | 2.597 | 2.024 | 1.071 | 0.941 | 0.970 |
-| JAX GaussianNBJAX | CPU | 9670 | 277.207 | 1.542 | 0.348 | 0.204 | 0.213 |
-| JAX GaussianNBJAX | GPU | 600 | 985.592 | 3.348 | 130.446 | 0.439 | 0.472 |
-| JAX GaussianNBJAX | GPU | 9670 | 542.671 | 3.294 | 0.584 | 0.449 | 0.514 |
+| PyTorch GaussianNB | CPU | 600 | 0.714 | 0.406 | 0.506 | 0.051 | 0.059 |
+| PyTorch GaussianNB | CUDA | 600 | 57.608 | 1.158 | 37.790 | 0.106 | 0.119 |
+| TensorFlow GaussianNBTF | CPU | 600 | 38.098 | 1.841 | 7.256 | 1.016 | 1.249 |
+| JAX GaussianNBJAX | CPU | 600 | 524.837 | 1.568 | 77.882 | 0.210 | 0.221 |
+| PyTorch GaussianNB | CPU | 9670 | 1.156 | 0.892 | 0.123 | 0.049 | 0.051 |
+| PyTorch GaussianNB | CUDA | 9670 | 1.313 | 1.122 | 0.169 | 0.108 | 0.119 |
+| TensorFlow GaussianNBTF | CPU | 9670 | 2.743 | 1.978 | 1.235 | 1.007 | 1.074 |
+| JAX GaussianNBJAX | CPU | 9670 | 283.868 | 1.692 | 0.348 | 0.211 | 0.234 |
+| JAX GaussianNBJAX | GPU | 600 | 1007.002 | 4.561 | 134.525 | 0.459 | 1.105 |
+| JAX GaussianNBJAX | GPU | 9670 | 589.170 | 3.630 | 0.552 | 0.499 | 0.588 |
 
 ## defense_latency_per_capture.csv
 
 | Chain | Framework | Capture samples | Capture seconds | Windows | Features | Signal to features ms | Features to decision ms | Total ms (median) | Total ms (p90) |
 |---|---|---|---|---|---|---|---|---|---|
-| Improved global chain | PyTorch | 384 | 3.070 | 5 | 570 | 3.230 | 0.440 | 3.670 | 4.960 |
-| Subject-specific chain | PyTorch | 384 | 3.070 | 5 | 435 | 3.980 | 0.180 | 4.160 | 4.310 |
-| Improved global chain | TensorFlow | 373 | 2.980 | 5 | 570 | 3.120 | 1.200 | 4.320 | 4.350 |
-| Subject-specific chain | TensorFlow | 373 | 2.980 | 5 | 435 | 3.990 | 1.210 | 5.210 | 5.270 |
-| Improved global chain | JAX | 325 | 2.600 | 5 | 570 | 3.100 | 0.400 | 3.500 | 3.540 |
-| Subject-specific chain | JAX | 325 | 2.600 | 5 | 435 | 3.930 | 0.380 | 4.310 | 4.360 |
+| Improved global chain | PyTorch | 384 | 3.070 | 5 | 570 | 3.430 | 0.450 | 3.900 | 3.990 |
+| Subject-specific chain | PyTorch | 384 | 3.070 | 5 | 435 | 4.230 | 0.190 | 4.410 | 4.610 |
+| Improved global chain | TensorFlow | 373 | 2.980 | 5 | 570 | 3.250 | 1.300 | 4.600 | 4.650 |
+| Subject-specific chain | TensorFlow | 373 | 2.980 | 5 | 435 | 4.270 | 1.360 | 5.600 | 6.060 |
+| Improved global chain | JAX | 325 | 2.600 | 5 | 570 | 3.200 | 0.400 | 3.670 | 3.780 |
+| Subject-specific chain | JAX | 325 | 2.600 | 5 | 435 | 4.170 | 0.390 | 4.560 | 4.680 |
