@@ -13,6 +13,22 @@ Rectangle {
     property string currentFramework: "PyTorch"
     property string selectedHeadset: "OpenBCI"
     property string neurosityStatus: "Offline"
+    property string signalQualityStatus: "EEG quality: no assessed input"
+    // Structured quality view from backend.qualityViewChanged (signal_quality.gui_view)
+    property string qualityState: "idle"
+    property string qualityHeadline: ""
+    property string qualitySummary: ""
+    property var qualityReasons: []
+    property var qualityChannels: []
+    // Improved GaussianNB chain: "<participant>: calibrated | training participant | global fallback"
+    property string gnbStatus: ""
+    // Subject-specific GaussianNB: "global" = one model for everyone, "subject" = this user's own model trained in
+    // the guided interleaved cue session (backend.startGaussianNBTraining); progress arrives in gnbCue.
+    property string gnbMode: "global"
+    property bool gnbTraining: false
+    property var gnbCue: ({})
+    property string gnbExpectation: ""
+    property string gnbTrainingMessage: ""
     color: "#718399"
     Layout.fillWidth: true
     Layout.fillHeight: true
@@ -90,9 +106,210 @@ Rectangle {
                     }
                     onClicked: backend.readMyMind()
                 }
+
+                // EEG quality tools, beside the button that produces quality decisions
+                Column {
+                    anchors.left: parent.right
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+                    Button {
+                        text: "Quality dashboard..."
+                        onClicked: backend.openQualityDashboard()
+                    }
+                    Button {
+                        text: "Check recording..."
+                        onClicked: backend.checkRecordingQuality()
+                    }
+                    // GaussianNB (improved chain): the participant id picks the per-participant feature
+                    // statistics; a new user records ~30 s of EEG once (or picks one of their recordings).
+                    Row {
+                        visible: selectedModel === "GaussianNB"
+                        spacing: 6
+                        TextField {
+                            id: gnbParticipantField
+                            width: 130
+                            placeholderText: "participant id"
+                            font.pixelSize: 12
+                            Component.onCompleted: text = backend.gaussianNBParticipant()
+                            onEditingFinished: backend.setGaussianNBParticipant(text)
+                        }
+                        Button {
+                            text: "Calibrate (30 s)"
+                            onClicked: {
+                                backend.setGaussianNBParticipant(gnbParticipantField.text)
+                                backend.calibrateGaussianNB()
+                            }
+                        }
+                    }
+                    Row {
+                        visible: selectedModel === "GaussianNB"
+                        spacing: 6
+                        Button {
+                            text: "Calibrate from recording..."
+                            onClicked: {
+                                backend.setGaussianNBParticipant(gnbParticipantField.text)
+                                backend.calibrateGaussianNBFromRecording()
+                            }
+                        }
+                        Text {
+                            text: root.gnbStatus
+                            color: "white"
+                            font.pixelSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    // Subject-specific GaussianNB: "My model" runs a model fitted on this user's own labelled
+                    // windows (84 % per participant on Data_clean vs 49 % for the global chain). It needs one
+                    // guided session first: 6 rounds x 6 commands x 20 s cues in random order with rest gaps.
+                    Row {
+                        visible: selectedModel === "GaussianNB"
+                        spacing: 6
+                        Component.onCompleted: {
+                            root.gnbMode = backend.gaussianNBMode()
+                            var plan = backend.gaussianNBTrainingPlan()
+                            if (plan && plan.expectation)
+                                root.gnbExpectation = plan.expectation
+                        }
+                        RadioButton {
+                            id: gnbGlobalMode
+                            text: "Global model"
+                            checked: root.gnbMode === "global"
+                            onClicked: {
+                                root.gnbMode = "global"
+                                backend.setGaussianNBMode("global")
+                            }
+                            contentItem: Text {
+                                text: gnbGlobalMode.text
+                                color: "white"
+                                font.pixelSize: 12
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: gnbGlobalMode.indicator.width + gnbGlobalMode.spacing
+                            }
+                        }
+                        RadioButton {
+                            id: gnbSubjectMode
+                            text: "My model"
+                            checked: root.gnbMode === "subject"
+                            onClicked: {
+                                root.gnbMode = "subject"
+                                backend.setGaussianNBMode("subject")
+                            }
+                            contentItem: Text {
+                                text: gnbSubjectMode.text
+                                color: "white"
+                                font.pixelSize: 12
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: gnbSubjectMode.indicator.width + gnbSubjectMode.spacing
+                            }
+                        }
+                    }
+                    Row {
+                        visible: selectedModel === "GaussianNB" && root.gnbMode === "subject"
+                        spacing: 6
+                        Button {
+                            text: root.gnbTraining ? "Stop training" : "Train my model (15 min)"
+                            onClicked: {
+                                if (root.gnbTraining) {
+                                    backend.stopGaussianNBTraining()
+                                } else {
+                                    backend.setGaussianNBParticipant(gnbParticipantField.text)
+                                    root.gnbTrainingMessage = ""
+                                    backend.startGaussianNBTraining()
+                                }
+                            }
+                        }
+                        Button {
+                            text: "Train from folder..."
+                            enabled: !root.gnbTraining
+                            onClicked: {
+                                backend.setGaussianNBParticipant(gnbParticipantField.text)
+                                backend.trainGaussianNBFromFolder()
+                            }
+                        }
+                    }
+                    Text {
+                        visible: selectedModel === "GaussianNB" && root.gnbMode === "subject"
+                        width: 300
+                        wrapMode: Text.WordWrap
+                        color: "white"
+                        font.pixelSize: 11
+                        text: (root.gnbTrainingMessage.length > 0 ? root.gnbTrainingMessage + "\n" : "")
+                              + "Learning curve (Data_clean): about 4 recordings per command for ~75 %, 6 for ~80 % window accuracy. "
+                              + root.gnbExpectation
+                    }
+                }
             }
 
-            // Model Prediction Section
+            // EEG quality: withholding indicator, channel grid and quality tools (compact for 1200x800)
+            Rectangle {
+                id: qualityPanel
+                width: parent.width * 0.9
+                height: qualityColumn.implicitHeight + 10
+                radius: 6
+                color: "#242c4d"
+                border.width: 2
+                border.color: root.qualityState === "accepted" ? "#66bb6a"
+                            : root.qualityState === "withheld" ? "#ff8a65" : "#8a94a6"
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                Column {
+                    id: qualityColumn
+                    x: 6
+                    y: 5
+                    width: parent.width - 12
+                    spacing: 3
+
+                    Label {
+                        // Before the first structured view (or while assessing) show the plain status line.
+                        text: (root.qualityHeadline !== "" && root.signalQualityStatus.indexOf("Assessing") < 0
+                               ? root.qualityHeadline : root.signalQualityStatus)
+                              + (root.qualitySummary !== "" ? "  ·  " + root.qualitySummary : "")
+                        color: root.qualityState === "withheld" ? "#ffcf70"
+                             : root.qualityState === "accepted" ? "#a5d6a7" : "white"
+                        font.bold: true
+                        font.pixelSize: 13
+                        width: parent.width
+                        elide: Text.ElideRight
+                    }
+                    Label {
+                        id: qualityReasonsLabel
+                        visible: root.qualityReasons.length > 0
+                        text: root.qualityReasons.join("  ·  ")
+                        color: "white"
+                        font.pixelSize: 11
+                        width: parent.width
+                        elide: Text.ElideRight
+                        HoverHandler { id: reasonsHover }
+                        ToolTip.visible: reasonsHover.hovered
+                        ToolTip.text: root.qualityReasons.join("\n")
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 2
+                        Repeater {
+                            model: root.qualityChannels
+                            Rectangle {
+                                width: 26
+                                height: 18
+                                radius: 3
+                                color: modelData.status === "pass" ? "#2e7d4f"
+                                     : modelData.status === "fail" ? "#c62828"
+                                     : modelData.status === "warn" ? "#b7791f" : "#5a6275"
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.label.replace("Ch ", "")
+                                    color: "white"
+                                    font.pixelSize: 10
+                                }
+                                HoverHandler { id: channelHover }
+                                ToolTip.visible: channelHover.hovered
+                                ToolTip.text: modelData.name + ": " + modelData.status + " - " + modelData.detail
+                            }
+                        }
+                    }
+                }
+            }
             Label {
                 text: "The model says ..."
                 color: "white"
@@ -291,6 +508,29 @@ Rectangle {
                 function onNeurosityStatusChanged(status) {
                     neurosityStatus = status
                 }
+                function onSignalQualityChanged(status) {
+                    root.signalQualityStatus = status
+                }
+                function onQualityViewChanged(view) {
+                    root.qualityState = view.state
+                    root.qualityHeadline = view.headline
+                    root.qualitySummary = view.summary
+                    root.qualityReasons = view.reasons
+                    root.qualityChannels = view.channels
+                }
+                function onGnbParticipantStatusChanged(status) {
+                    root.gnbStatus = status
+                }
+                function onGnbTrainingCueChanged(cue) {
+                    root.gnbCue = cue
+                    root.gnbTraining = cue.phase !== "finished"
+                }
+                function onGnbTrainingFinished(summary) {
+                    root.gnbTraining = false
+                    root.gnbTrainingMessage = summary.trained
+                        ? ("Trained: " + summary.message + " (" + summary.status + ")")
+                        : ("Not trained: " + summary.message)
+                }
             }
         }
 
@@ -459,7 +699,7 @@ Rectangle {
                         spacing: parent.width * 0.02
                         
                         Rectangle {
-                            width: (parent.width - parent.spacing * 2) / 3
+                            width: (parent.width - parent.spacing * 4) / 5
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
@@ -485,7 +725,7 @@ Rectangle {
                         }
                         
                         Rectangle {
-                            width: (parent.width - parent.spacing * 2) / 3
+                            width: (parent.width - parent.spacing * 4) / 5
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
@@ -511,7 +751,7 @@ Rectangle {
                         }
                         
                         Rectangle {
-                            width: (parent.width - parent.spacing * 2) / 3
+                            width: (parent.width - parent.spacing * 4) / 5
                             height: parent.height
                             color: "#2d7a4a"
                             radius: 5
@@ -535,8 +775,58 @@ Rectangle {
                                 }
                             }
                         }
+                        Rectangle {
+                            width: (parent.width - parent.spacing * 4) / 5
+                            height: parent.height
+                            color: "#2d7a4a"
+                            radius: 5
+                            border.color: selectedModel === "Riemannian + LR" ? "yellow" : "#4a9d6f"
+                            border.width: selectedModel === "Riemannian + LR" ? 3 : 1
+
+                            Text {
+                                text: "Riemannian + LR"
+                                font.pixelSize: parent.height * 0.19
+                                font.bold: true
+                                color: selectedModel === "Riemannian + LR" ? "yellow" : "white"
+                                anchors.centerIn: parent
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    selectedModel = "Riemannian + LR"
+                                    backend.selectModel("Riemannian + LR")
+                                }
+                            }
+                        }
+                        Rectangle {
+                            width: (parent.width - parent.spacing * 4) / 5
+                            height: parent.height
+                            color: "#2d7a4a"
+                            radius: 5
+                            border.color: selectedModel === "Band Power + SVM" ? "yellow" : "#4a9d6f"
+                            border.width: selectedModel === "Band Power + SVM" ? 3 : 1
+
+                            Text {
+                                text: "Band Power + SVM"
+                                font.pixelSize: parent.height * 0.16
+                                font.bold: true
+                                color: selectedModel === "Band Power + SVM" ? "yellow" : "white"
+                                anchors.centerIn: parent
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    selectedModel = "Band Power + SVM"
+                                    backend.selectModel("Band Power + SVM")
+                                }
+                            }
+                        }
                     }
-                    
+
                     // Framework Selection Row
                     Row {
                         width: parent.width
@@ -761,7 +1051,75 @@ Rectangle {
         }
          
     }
-    
 
-   
+    // Guided labelled session (subject-specific GaussianNB): the cue the user should think about, the countdown,
+    // and how many quality-checked windows were kept so far. Shown over the whole view while the session runs.
+    Rectangle {
+        id: gnbTrainingOverlay
+        anchors.fill: parent
+        z: 50
+        visible: root.gnbTraining
+        color: "#e6213040"
+        property string phase: root.gnbCue && root.gnbCue.phase ? root.gnbCue.phase : ""
+        property string command: root.gnbCue && root.gnbCue.command ? String(root.gnbCue.command).toUpperCase() : ""
+        property int remaining: root.gnbCue && root.gnbCue.remaining !== undefined ? root.gnbCue.remaining : 0
+        property int cueIndex: root.gnbCue && root.gnbCue.index !== undefined ? root.gnbCue.index : -1
+        property int nCues: root.gnbCue && root.gnbCue.n_cues ? root.gnbCue.n_cues : 0
+        property int windowsTotal: root.gnbCue && root.gnbCue.windows_total !== undefined ? root.gnbCue.windows_total : 0
+
+        MouseArea { anchors.fill: parent }   // swallow clicks on the controls behind the overlay
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 18
+            width: parent.width * 0.8
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: "#cfd8e3"
+                font.pixelSize: 22
+                text: gnbTrainingOverlay.phase === "settle" ? "Get ready - sit still, headset settling"
+                    : gnbTrainingOverlay.phase === "rest" ? "Rest - next command:"
+                    : gnbTrainingOverlay.phase === "cue" ? "Think the command now:"
+                    : gnbTrainingOverlay.phase === "cue_done" ? "Saved" : ""
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: gnbTrainingOverlay.phase === "cue" ? "yellow" : "white"
+                font.pixelSize: gnbTrainingOverlay.phase === "cue" ? 72 : 44
+                font.bold: true
+                text: gnbTrainingOverlay.command
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: "white"
+                font.pixelSize: 40
+                text: gnbTrainingOverlay.remaining > 0 ? gnbTrainingOverlay.remaining + " s" : ""
+            }
+            ProgressBar {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                from: 0
+                to: Math.max(1, gnbTrainingOverlay.nCues)
+                value: Math.max(0, gnbTrainingOverlay.cueIndex + (gnbTrainingOverlay.phase === "cue_done" ? 1 : 0))
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: "#cfd8e3"
+                font.pixelSize: 16
+                text: (gnbTrainingOverlay.cueIndex >= 0
+                       ? "Cue " + (gnbTrainingOverlay.cueIndex + 1) + " of " + gnbTrainingOverlay.nCues
+                         + (root.gnbCue.round ? "  -  round " + root.gnbCue.round + " of " + root.gnbCue.rounds : "")
+                       : "")
+                      + "  -  windows kept: " + gnbTrainingOverlay.windowsTotal
+                      + (root.gnbCue.phase === "cue_done" && root.gnbCue.n_windows !== undefined
+                         ? " (+" + root.gnbCue.n_windows + ", " + root.gnbCue.n_blocks_kept + "/" + root.gnbCue.n_blocks + " blocks)" : "")
+            }
+            Button {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Stop and keep what was recorded"
+                onClicked: backend.stopGaussianNBTraining()
+            }
+        }
+    }
 }

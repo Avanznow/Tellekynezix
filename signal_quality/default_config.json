@@ -1,0 +1,15 @@
+{
+  "min_seconds": 2.0,
+  "min_ptp_uv": 1e-06,
+  "flat_step_uv": 1e-06,
+  "max_flat_fraction": 0.98,
+  "max_ptp_uv": 1000.0,
+  "max_jump_uv": 500.0,
+  "rail_uv": 187499.99,
+  "max_rail_fraction": 0.01,
+  "mains_hz": 60,
+  "max_line_ratio": 1.0,
+  "max_arrival_gap_seconds": 0.5,
+  "max_prediction_age_seconds": 10.0,
+  "recovery_good_windows": 1
+}

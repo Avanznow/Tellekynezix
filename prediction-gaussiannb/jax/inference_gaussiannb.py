@@ -11,9 +11,12 @@ import jax.numpy as jnp
 from pathlib import Path
 import sys
 
-# Import the model class from gaussiannb_jax module
-from gaussiannb_jax import GaussianNBJAX, load_model
+# Saved models can contain a fast_preprocessing.ParallelPowerTransformer, so make
+# prediction-gaussiannb/fast_preprocessing.py importable when unpickling.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Import the model class from gaussiannb_jax module
+from algorithm_gnb_jax import GaussianNBJAX, load_model
 
 def standardize(X: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
     """Apply pre-computed standardization to test data."""
@@ -32,8 +35,10 @@ def predict_on_data(model: GaussianNBJAX, X: np.ndarray,
     Returns:
         Tuple of (predicted_labels, probabilities, class_names)
     """
-    y_pred = model.predict(X)
+    # Softmax is monotonic, so argmax of the probabilities equals argmax of the
+    # log-probabilities; this avoids running the likelihood computation twice.
     y_proba = model.predict_proba(X)
+    y_pred = np.argmax(y_proba, axis=1).astype(np.int32)
     class_names = [index_to_label[i] for i in sorted(index_to_label.keys())]
     
     return y_pred, y_proba, class_names

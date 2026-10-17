@@ -73,75 +73,61 @@ class GaussianNB(nn.Module):
                 self.variances[c] = X_c.var(dim=0) + 1e-9
         
         self.is_fitted = torch.tensor(True)
-        
+
+    def _joint_log_likelihood(self, X):
+        """
+        Compute unnormalised log posteriors log(P(x|y=c)) + log(P(y=c)) for all classes at once.
+
+        Args:
+            X (torch.Tensor): Input data of shape (n_samples, n_features)
+
+        Returns:
+            torch.Tensor: Log posteriors of shape (n_samples, n_classes)
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Model must be fitted before making predictions")
+
+        X = X.to(self.means.device)
+
+        # Log of class prior: log(P(y=c)), shape (C,)
+        log_prior = torch.log(self.class_priors + 1e-10)
+
+        # Log PDF: log(P(x|y=c)) = -0.5 * [log(2πσ²) + (x-μ)²/σ²]
+        # The log(2πσ²) term does not depend on x, so sum it once per class.
+        const_term = -0.5 * torch.log(2 * np.pi * self.variances).sum(dim=1)  # (C,)
+
+        # (x - μ)² / σ² summed over features for every (sample, class) pair, shape (N, C)
+        diff_sq = (X.unsqueeze(1) - self.means.unsqueeze(0)).pow(2)
+        quad = -0.5 * (diff_sq / self.variances.unsqueeze(0)).sum(dim=2)
+
+        # Posterior: log(P(y=c|x)) ∝ log(P(x|y=c)) + log(P(y=c))
+        return quad + const_term + log_prior
+
     def forward(self, X):
         """
         Make predictions using the Gaussian PDF and Bayes' theorem.
-        
+
         Args:
             X (torch.Tensor): Input data of shape (n_samples, n_features)
-            
+
         Returns:
             torch.Tensor: Predicted class labels of shape (n_samples,)
         """
-        if not self.is_fitted:
-            raise RuntimeError("Model must be fitted before making predictions")
-        
-        X = X.to(self.means.device)
-        n_samples = X.shape[0]
-        
-        # Calculate log probabilities for numerical stability
-        log_probs = torch.zeros(n_samples, self.num_classes, device=X.device)
-        
-        for c in range(self.num_classes):
-            # Log of class prior: log(P(y=c))
-            log_prior = torch.log(self.class_priors[c] + 1e-10)
-            
-            # Gaussian PDF: P(x|y=c) = (1/sqrt(2πσ²)) * exp(-(x-μ)²/(2σ²))
-            # Log PDF: log(P(x|y=c)) = -0.5 * [log(2πσ²) + (x-μ)²/σ²]
-            
-            # Calculate (x - μ)²
-            diff_sq = (X - self.means[c]).pow(2)
-            
-            # Calculate log likelihood: sum over all features (independence assumption)
-            log_likelihood = -0.5 * torch.sum(
-                torch.log(2 * np.pi * self.variances[c]) + diff_sq / self.variances[c],
-                dim=1
-            )
-            
-            # Posterior: log(P(y=c|x)) ∝ log(P(x|y=c)) + log(P(y=c))
-            log_probs[:, c] = log_likelihood + log_prior
-        
         # Return class with highest posterior probability
-        return torch.argmax(log_probs, dim=1)
-    
+        return torch.argmax(self._joint_log_likelihood(X), dim=1)
+
     def predict_proba(self, X):
         """
         Predict class probabilities.
-        
+
         Args:
             X (torch.Tensor): Input data of shape (n_samples, n_features)
-            
+
         Returns:
             torch.Tensor: Class probabilities of shape (n_samples, n_classes)
         """
-        if not self.is_fitted:
-            raise RuntimeError("Model must be fitted before making predictions")
-        
-        X = X.to(self.means.device)
-        n_samples = X.shape[0]
-        
-        log_probs = torch.zeros(n_samples, self.num_classes, device=X.device)
-        
-        for c in range(self.num_classes):
-            log_prior = torch.log(self.class_priors[c] + 1e-10)
-            diff_sq = (X - self.means[c]).pow(2)
-            log_likelihood = -0.5 * torch.sum(
-                torch.log(2 * np.pi * self.variances[c]) + diff_sq / self.variances[c],
-                dim=1
-            )
-            log_probs[:, c] = log_likelihood + log_prior
-        
+        log_probs = self._joint_log_likelihood(X)
+
         # Convert log probabilities to probabilities using softmax
         probs = torch.softmax(log_probs, dim=1)
         return probs

@@ -1,0 +1,173 @@
+{
+  "source_root": "/home/prasndhdl/Downloads/Data_clean",
+  "source_data_unchanged": true,
+  "synthetic_samples": 0,
+  "quality_policy_id": "avatar-raw-quality-v1-c3cdcab9bb16f145",
+  "config": {
+    "min_seconds": 2.0,
+    "min_ptp_uv": 1e-06,
+    "flat_step_uv": 1e-06,
+    "max_flat_fraction": 0.98,
+    "max_ptp_uv": 1000.0,
+    "max_jump_uv": 500.0,
+    "rail_uv": 187499.99,
+    "max_rail_fraction": 0.01,
+    "mains_hz": null,
+    "max_line_ratio": 0.35,
+    "max_arrival_gap_seconds": 0.5,
+    "max_prediction_age_seconds": 10.0,
+    "recovery_good_windows": 1
+  },
+  "counts": {
+    "files_scanned": 3648,
+    "unsupported_export_files": 1821,
+    "files_assessed": 1816,
+    "trailing_samples_unscored": 168060,
+    "windows_assessed": 8786,
+    "unacceptable": 5405,
+    "acceptable": 3381,
+    "invalid_or_unsupported_named_files": 11
+  },
+  "reason_counts": {
+    "adc_saturation": 3812,
+    "excessive_amplitude": 2738,
+    "excessive_sample_jump": 2204,
+    "flat_channel": 3514,
+    "packet_discontinuity": 2031,
+    "acquisition_gap": 6
+  },
+  "participants": {
+    "G01/person01": {
+      "unacceptable": 312,
+      "acceptable": 1
+    },
+    "G01/person02": {
+      "unacceptable": 63,
+      "acceptable": 240
+    },
+    "G01/person03": {
+      "unacceptable": 82,
+      "acceptable": 218
+    },
+    "G01/person04": {
+      "unacceptable": 306
+    },
+    "G01/person05": {
+      "unacceptable": 301
+    },
+    "G01/person06": {
+      "unacceptable": 79,
+      "acceptable": 183
+    },
+    "G01/person07": {
+      "unacceptable": 60,
+      "acceptable": 238
+    },
+    "G01/person08": {
+      "unacceptable": 64,
+      "acceptable": 229
+    },
+    "G01/person09": {
+      "unacceptable": 70,
+      "acceptable": 226
+    },
+    "G01/person10": {
+      "unacceptable": 93,
+      "acceptable": 205
+    },
+    "G03/person01": {
+      "unacceptable": 175,
+      "acceptable": 17
+    },
+    "G03/person02": {
+      "unacceptable": 301
+    },
+    "G03/person03": {
+      "unacceptable": 74,
+      "acceptable": 226
+    },
+    "G03/person04": {
+      "unacceptable": 64,
+      "acceptable": 236
+    },
+    "G03/person05": {
+      "unacceptable": 60,
+      "acceptable": 239
+    },
+    "G03/person06": {
+      "unacceptable": 60,
+      "acceptable": 243
+    },
+    "G03/person07": {
+      "unacceptable": 72,
+      "acceptable": 231
+    },
+    "G03/person08": {
+      "unacceptable": 290
+    },
+    "G03/person09": {
+      "unacceptable": 300
+    },
+    "G03/person10": {
+      "unacceptable": 300
+    },
+    "G04/person01": {
+      "unacceptable": 136,
+      "acceptable": 160
+    },
+    "G04/person02": {
+      "unacceptable": 157,
+      "acceptable": 112
+    },
+    "G04/person03": {
+      "unacceptable": 302
+    },
+    "G04/person04": {
+      "unacceptable": 165,
+      "acceptable": 102
+    },
+    "G04/person05": {
+      "unacceptable": 253,
+      "acceptable": 50
+    },
+    "G04/person06": {
+      "unacceptable": 295
+    },
+    "G04/person07": {
+      "unacceptable": 299
+    },
+    "G04/person08": {
+      "unacceptable": 300
+    },
+    "G04/person09": {
+      "unacceptable": 68,
+      "acceptable": 225
+    },
+    "G04/person10": {
+      "unacceptable": 304
+    }
+  },
+  "channel_counts": {
+    "8": {
+      "unacceptable": 1203,
+      "acceptable": 880
+    },
+    "16": {
+      "unacceptable": 4202,
+      "acceptable": 2501
+    }
+  },
+  "latency_ms": {
+    "median": 0.8287564996862784,
+    "p95": 1.0755680004876922
+  },
+  "independently_reviewed_windows": 0,
+  "artifact_detection_accuracy": null,
+  "implementation_sha256": {
+    "assessment.py": "adf5a5d4089f360ef6ff0be1df64dceceb025fe7e5fb1a113c99def9f669be47",
+    "acquisition.py": "f4f2ac7ceee0c75169b9250ee25a97e9d48167b5824e3388220b696c40ef27f6",
+    "replay.py": "02e5ab14c1ecb36fa8f300a2d38ac82454133d64f314b0b771a5a1b60249b3dd"
+  },
+  "interpretation": "Rule decisions and feature extraction only; not artifact ground truth or measured classification accuracy",
+  "trailing_samples": "Reported but not scored as complete offline windows; live gate checks all supplied samples"
+}

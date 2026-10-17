@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EEG Quality Dashboard</title>
+<style>
+:root{--bg:#f7f6f2;--panel:#fff;--fg:#1d2126;--muted:#5f6670;--line:#e2dfd8;--soft:#f0eee8;
+--pass:#1e7a46;--pass-bg:#e3f2e8;--fail:#b3261e;--fail-bg:#fbe4e1;--unk:#7a7f87;--unk-bg:#eceae5;
+--warn:#9a6400;--accent:#2b5fb4;--trace:#2f3a48;--grid:#ecebe6;--lane-fail:rgba(179,38,30,.08);--cursor:#2b5fb4}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--panel:#1d2024;--fg:#e7e5e0;--muted:#a1a6ad;
+--line:#30343a;--soft:#25292e;--pass:#74d39d;--pass-bg:#1c3326;--fail:#ff8a80;--fail-bg:#3d1f1d;--unk:#9da3ab;--unk-bg:#2a2e33;
+--warn:#f0c060;--accent:#8ab4ff;--trace:#c9d1db;--grid:#262a2f;--lane-fail:rgba(255,138,128,.10);--cursor:#8ab4ff}}
+:root[data-theme="dark"]{--bg:#15171a;--panel:#1d2024;--fg:#e7e5e0;--muted:#a1a6ad;--line:#30343a;--soft:#25292e;--pass:#74d39d;
+--pass-bg:#1c3326;--fail:#ff8a80;--fail-bg:#3d1f1d;--unk:#9da3ab;--unk-bg:#2a2e33;--warn:#f0c060;--accent:#8ab4ff;--trace:#c9d1db;
+--grid:#262a2f;--lane-fail:rgba(255,138,128,.10);--cursor:#8ab4ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1320px;margin:0 auto;padding:20px 16px 56px}
+h1{font-size:22px;margin:0}h2{font-size:15px;margin:0 0 10px}
+.muted{color:var(--muted)}code{font-size:12px}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--muted);font-size:13px;margin-top:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:none;color:var(--fg);padding:7px 14px;font:inherit;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.banner{display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:var(--soft);border:1px dashed var(--accent)}
+body.blind .banner{display:block}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:7px;padding:6px 11px;font:inherit;cursor:pointer}
+.btn:hover{border-color:var(--accent)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+select,input[type=text],textarea{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+.timeline{display:flex;gap:2px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
+.cell{flex:1 0 10px;min-width:10px;height:26px;border-radius:3px;border:0;cursor:pointer;padding:0;position:relative;background:var(--unk-bg)}
+.cell.pass{background:var(--pass)}.cell.fail{background:var(--fail)}.cell.unassessed{background:var(--unk-bg);outline:1px dashed var(--unk)}
+body.blind .cell.pass,body.blind .cell.fail{background:var(--unk)}
+.cell[aria-current="true"]{outline:3px solid var(--accent);outline-offset:1px;z-index:1}
+.cell .mark{position:absolute;inset:auto 0 -1px 0;height:5px;border-radius:0 0 3px 3px}
+.cell .mark.r1{background:var(--pass-bg);box-shadow:inset 0 0 0 1px var(--pass)}.cell .mark.r0{background:var(--fail-bg);box-shadow:inset 0 0 0 1px var(--fail)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+@media (max-width:960px){.layout{grid-template-columns:1fr}}
+.winhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-bottom:8px}
+.chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
+.chip.pass{background:var(--pass-bg);color:var(--pass)}.chip.fail{background:var(--fail-bg);color:var(--fail)}.chip.unassessed{background:var(--unk-bg);color:var(--unk)}
+body.blind .rule-only{display:none!important}
+.canvas-wrap{position:relative;width:100%}
+canvas{display:block;width:100%;border-radius:6px;background:var(--panel)}
+.gate{border-left:5px solid var(--unk);padding-left:12px}
+.gate.accepted{border-color:var(--pass)}.gate.withheld{border-color:var(--fail)}
+.gate h3{margin:0 0 4px;font-size:16px}.gate ul{margin:6px 0 0;padding-left:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.ch{border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px;cursor:default}
+.ch b{font-size:13px}.ch .st{float:right;font-weight:600}.ch.pass .st{color:var(--pass)}.ch.fail{background:var(--fail-bg);border-color:var(--fail)}
+.ch.fail .st{color:var(--fail)}.ch.unassessed .st{color:var(--unk)}.ch .why{color:var(--muted);margin-top:2px}
+body.blind .ch{background:none;border-color:var(--line)}body.blind .ch .st,body.blind .ch .why{display:none}
+.stack{display:grid;gap:14px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:10px}.tile b{display:block;font-size:20px}.tile span{color:var(--muted);font-size:12px}
+.bars{display:grid;gap:5px}.bar{display:grid;grid-template-columns:minmax(120px,190px) 1fr 52px;gap:8px;align-items:center;font-size:13px}
+.bar i{display:block;height:10px;border-radius:5px;background:var(--fail)}.bar .track{background:var(--soft);border-radius:5px}
+.findings{list-style:none;padding:0;margin:0;display:grid;gap:6px}.findings li{border-left:4px solid var(--warn);padding:6px 10px;background:var(--soft);border-radius:6px}
+.findings li.high{border-color:var(--fail)}
+.review{display:none}body.reviewing .review{display:block}
+.review .labels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.review .labels .btn{padding:10px;font-weight:600}
+.btn.good[aria-pressed="true"]{background:var(--pass);border-color:var(--pass);color:#fff}
+.btn.bad[aria-pressed="true"]{background:var(--fail);border-color:var(--fail);color:#fff}
+.progress{height:6px;background:var(--soft);border-radius:3px;overflow:hidden}.progress i{display:block;height:100%;background:var(--accent)}
+.kbd{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--muted)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media (max-width:760px){.two{grid-template-columns:1fr}}
+.note{color:var(--muted);font-size:12px;margin-top:14px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1>EEG Quality Dashboard</h1>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div class="seg" role="group" aria-label="Mode">
+    <button id="modeInspect" aria-pressed="true">Inspect</button>
+    <button id="modeReview" aria-pressed="false">Review</button>
+  </div>
+</header>
+
+<div class="banner" id="banner"><b>Blind review.</b> Rule decisions, fault markers, the gate decision and the session report are hidden so your judgement stays independent. Label each window from the raw signal.</div>
+
+<section class="panel" aria-label="Replay">
+  <div class="controls">
+    <button class="btn" id="prev" title="Previous window (←)">◀</button>
+    <button class="btn primary" id="play" title="Play / pause (space)">▶ Play</button>
+    <button class="btn" id="next" title="Next window (→)">▶</button>
+    <label class="muted">Speed <select id="speed"><option>1</option><option>2</option><option selected>4</option><option>8</option></select>×</label>
+    <label class="muted">Scale <select id="scale"><option value="auto">auto per channel</option><option value="50">±50 µV</option><option value="100">±100 µV</option><option value="250">±250 µV</option><option value="1000">±1000 µV</option></select></label>
+    <span class="muted" id="position"></span>
+  </div>
+  <div class="timeline" id="timeline" role="listbox" aria-label="Windows"></div>
+  <div class="layout">
+    <div>
+      <div class="winhead">
+        <div><b id="winTitle"></b> <span class="chip rule-only" id="winChip"></span></div>
+        <div class="muted rule-only" id="winReasons"></div>
+      </div>
+      <div class="canvas-wrap"><canvas id="signal" aria-label="Raw EEG of the selected window"></canvas></div>
+      <p class="note">Traces show raw µV with each channel's window mean removed for display only. Quality checks run on the unmodified raw samples.</p>
+    </div>
+    <div class="stack">
+      <div class="panel gate rule-only" id="gate"></div>
+      <div class="panel review" id="reviewPanel">
+        <h2>Your judgement</h2>
+        <label class="muted" for="reviewer">Reviewer</label>
+        <input type="text" id="reviewer" placeholder="Your name or initials" style="width:100%">
+        <div class="labels">
+          <button class="btn good" id="labelGood" aria-pressed="false">Acceptable <span class="kbd">A</span></button>
+          <button class="btn bad" id="labelBad" aria-pressed="false">Unacceptable <span class="kbd">U</span></button>
+        </div>
+        <textarea id="reviewNote" rows="2" placeholder="Optional note (e.g. blink, cable motion, dead channel)" style="width:100%"></textarea>
+        <div style="margin:10px 0 6px" class="muted" id="reviewProgressText"></div>
+        <div class="progress"><i id="reviewProgress" style="width:0"></i></div>
+        <div class="controls" style="margin-top:10px">
+          <label class="muted"><input type="checkbox" id="blind" checked> Blind to rules</label>
+          <label class="muted"><input type="checkbox" id="shuffle" checked> Random order</label>
+        </div>
+        <div class="controls">
+          <button class="btn" id="reveal" title="Show the rule decision for this window; recorded in the export">Reveal rule decision</button>
+          <button class="btn primary" id="exportReview">Export review record</button>
+        </div>
+        <p class="note">Export, then run <code>python -m signal_quality.dashboard import &lt;record&gt; --out annotations.jsonl</code> to validate it against the recording for training and agreement analysis.</p>
+      </div>
+      <div class="panel">
+        <h2>Channels <span class="muted rule-only" id="gridSummary"></span></h2>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel rule-only" style="margin-top:14px" aria-label="Session report">
+  <div class="controls" style="justify-content:space-between">
+    <h2 style="margin:0">Session report</h2>
+    <div class="controls" style="margin:0">
+      <button class="btn" id="exportJson">Export JSON</button>
+      <button class="btn" id="exportCsv">Export windows CSV</button>
+    </div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="two">
+    <div><h2>Most frequent problems <span class="muted">(windows)</span></h2><div class="bars" id="reasonBars"></div></div>
+    <div><h2>Affected channels <span class="muted">(% of windows flagged)</span></h2><div class="bars" id="channelBars"></div></div>
+  </div>
+  <h2 style="margin-top:14px">What to check</h2>
+  <ul class="findings" id="findings"></ul>
+  <p class="note" id="sessionNote"></p>
+</section>
+</main>
+
+<script id="payload" type="application/json">/*__PAYLOAD__*/null</script>
+<script>
+"use strict";
+const P = JSON.parse(document.getElementById("payload").textContent);
+const M = P.meta, W = P.windows, S = P.session, RT = P.reason_text;
+const C = M.channels.length, N = M.samples;
+const sig = (() => {
+  const bin = atob(P.signal), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Float32Array(bytes.buffer);
+})();
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const short = name => name.replace("EXG Channel ", "Ch ");
+const why = r => RT[r] || r.replace(/_/g, " ");
+const statusOf = w => w.status === "acceptable" ? "pass" : w.status === "unacceptable" ? "fail" : "unassessed";
+const store = {
+  key: "avatar-quality-review:" + M.source_sha256,
+  load() { try { return JSON.parse(localStorage.getItem(this.key) || "null"); } catch (e) { return null; } },
+  save(v) { try { localStorage.setItem(this.key, JSON.stringify(v)); } catch (e) {} }
+};
+
+const saved = store.load() || {};
+const state = {
+  i: 0, mode: "inspect", playing: false, cursor: null, scale: "auto",
+  blind: saved.blind !== undefined ? saved.blind : true,
+  shuffle: saved.shuffle !== undefined ? saved.shuffle : true,
+  reviewer: saved.reviewer || "", reviews: saved.reviews || {}, seen: saved.seen || {}
+};
+const assessed = W.filter(w => w.raw_sha256).map(w => w.index);
+function seededOrder(seedText) {
+  let h = 2166136261; for (const ch of seedText) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const order = assessed.slice();
+  for (let i = order.length - 1; i > 0; i--) { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; const j = h % (i + 1); [order[i], order[j]] = [order[j], order[i]]; }
+  return order;
+}
+const persist = () => store.save({reviewer: state.reviewer, reviews: state.reviews, seen: state.seen, blind: state.blind, shuffle: state.shuffle});
+const reviewOrder = () => state.shuffle ? seededOrder(M.source_sha256) : assessed;
+const isBlind = () => state.mode === "review" && state.blind && !state.seen[W[state.i].window_id];
+
+// ------------------------------------------------------------------ header + timeline
+$("meta").innerHTML = [
+  `<span><b>${esc(M.file)}</b></span>`, M.participant_id ? `<span>${esc(M.participant_id)} · ${esc(M.action_folder)}</span>` : "",
+  `<span>${esc(M.board)}</span>`, `<span>${M.duration_seconds.toFixed(1)} s · ${W.length} windows</span>`,
+  `<span>policy <code>${esc(M.quality_policy_id)}</code></span>`].join("");
+
+const tl = $("timeline");
+W.forEach(w => {
+  const b = document.createElement("button");
+  b.className = "cell " + statusOf(w); b.setAttribute("role", "option");
+  b.title = `Window ${w.index + 1}: ${w.t0.toFixed(1)}–${w.t1.toFixed(1)} s`;
+  b.innerHTML = '<span class="mark"></span>';
+  b.addEventListener("click", () => { stop(); select(w.index); });
+  tl.appendChild(b);
+});
+
+// ------------------------------------------------------------------ signal canvas
+const canvas = $("signal"), ctx = canvas.getContext("2d");
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function draw() {
+  const w = W[state.i], blind = isBlind();
+  const dpr = window.devicePixelRatio || 1, width = canvas.clientWidth;
+  const label = 64, lane = Math.max(20, Math.min(34, Math.floor(540 / C))), height = lane * C + 22;
+  canvas.style.height = height + "px"; canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
+  const plotW = width - label - 8, n = w.end - w.start, x = k => label + (k / Math.max(1, n - 1)) * plotW;
+  ctx.font = "11px system-ui,sans-serif"; ctx.textBaseline = "middle";
+  for (let c = 0; c < C; c++) {
+    const name = M.channels[c], info = w.channels[name], y0 = c * lane, mid = y0 + lane / 2;
+    if (!blind && info.status === "fail") { ctx.fillStyle = css("--lane-fail"); ctx.fillRect(label, y0, plotW, lane); }
+    ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(label, y0 + lane); ctx.lineTo(label + plotW, y0 + lane); ctx.stroke();
+    ctx.fillStyle = !blind && info.status === "fail" ? css("--fail") : css("--muted");
+    ctx.fillText(short(name), 6, mid);
+    const base = c * N + w.start; let mean = 0;
+    for (let k = 0; k < n; k++) mean += sig[base + k]; mean /= Math.max(1, n);
+    let amp;
+    if (state.scale === "auto") { amp = 5; for (let k = 0; k < n; k++) amp = Math.max(amp, Math.abs(sig[base + k] - mean)); }
+    else amp = Number(state.scale);
+    const half = lane * 0.44;
+    ctx.save(); ctx.beginPath(); ctx.rect(label, y0, plotW, lane); ctx.clip();
+    ctx.strokeStyle = css("--trace"); ctx.lineWidth = 1; ctx.beginPath();
+    for (let k = 0; k < n; k++) { const yy = mid - ((sig[base + k] - mean) / amp) * half; k ? ctx.lineTo(x(k), yy) : ctx.moveTo(x(k), yy); }
+    ctx.stroke();
+    if (!blind) {
+      const railed = info.rail_fraction > 0, jump = w.markers.jumps[name];
+      if (railed) { ctx.fillStyle = css("--fail"); ctx.textAlign = "right"; ctx.fillText(`rail ${(100 * info.rail_fraction).toFixed(0)}%`, label + plotW - 4, y0 + 8); ctx.textAlign = "left"; }
+      if (jump !== undefined) { const yy = mid - ((sig[base + jump] - mean) / amp) * half; ctx.strokeStyle = css("--fail"); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x(jump), yy, 5, 0, 2 * Math.PI); ctx.stroke(); }
+    }
+    ctx.restore();
+  }
+  if (!blind) {
+    ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+    for (const [list, color] of [[w.markers.discontinuities, css("--fail")], [w.markers.gaps, css("--warn")]]) {
+      ctx.strokeStyle = color;
+      for (const k of list) { ctx.beginPath(); ctx.moveTo(x(k), 0); ctx.lineTo(x(k), lane * C); ctx.stroke(); }
+    }
+    ctx.setLineDash([]);
+  }
+  if (state.cursor !== null) { ctx.strokeStyle = css("--cursor"); ctx.lineWidth = 2; const cx = label + state.cursor * plotW; ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, lane * C); ctx.stroke(); }
+  ctx.fillStyle = css("--muted");
+  for (let s = 0; s <= 4; s++) {
+    ctx.textAlign = s === 0 ? "left" : s === 4 ? "right" : "center";
+    ctx.fillText(`${(w.t0 + (w.t1 - w.t0) * s / 4).toFixed(1)} s`, label + plotW * s / 4, lane * C + 11);
+  }
+  ctx.textAlign = "left";
+}
+
+// ------------------------------------------------------------------ side panels
+function renderWindow() {
+  const w = W[state.i], st = statusOf(w), blind = isBlind();
+  document.body.classList.toggle("blind", blind);
+  [...tl.children].forEach((b, k) => {
+    b.setAttribute("aria-current", k === state.i ? "true" : "false");
+    const r = state.reviews[W[k].window_id]; const mark = b.firstChild;
+    mark.className = "mark" + (r ? " r" + r.label : "");
+  });
+  tl.children[state.i].scrollIntoView({block: "nearest", inline: "nearest"});
+  $("winTitle").textContent = `Window ${w.index + 1} of ${W.length} · ${w.t0.toFixed(1)}–${w.t1.toFixed(1)} s`;
+  const chip = $("winChip"); chip.className = "chip rule-only " + st;
+  chip.textContent = st === "pass" ? "passes checks" : st === "fail" ? "fails checks" : "not assessed";
+  $("winReasons").textContent = w.reasons.map(why).join(" · ");
+  $("position").textContent = state.mode === "review" ? "" : `${S.usable_windows}/${S.windows} windows pass`;
+
+  const g = w.gate, gate = $("gate");
+  gate.className = "panel gate rule-only " + (w.raw_sha256 ? g.status : "");
+  if (!w.raw_sha256) gate.innerHTML = `<h3>Not assessed</h3><div class="muted">Fewer than ${M.config.min_seconds} s remain at the end of the recording, so no decision is made and nothing is sent to a model.</div>`;
+  else if (g.status === "accepted") gate.innerHTML = `<h3 style="color:var(--pass)">Prediction allowed</h3><div class="muted">All configured checks passed and continuity was verified, so the gate would pass this exact window to the classifier.</div>`;
+  else gate.innerHTML = `<h3 style="color:var(--fail)">Prediction withheld</h3><div class="muted">Unreliable input blocks prediction; no drone command is produced for this window.</div><ul>${g.reasons.map(r => `<li>${esc(why(r))}</li>`).join("")}</ul>`;
+
+  const grid = $("grid"); grid.innerHTML = "";
+  let fails = 0;
+  M.channels.forEach(name => {
+    const info = w.channels[name], s = info.status; fails += s === "fail";
+    const d = document.createElement("div"); d.className = "ch " + s;
+    d.title = info.ptp_uv !== undefined ? `peak-to-peak ${info.ptp_uv.toFixed(1)} µV · max jump ${info.max_jump_uv.toFixed(1)} µV · rail ${(100 * info.rail_fraction).toFixed(1)}% · flat ${(100 * info.flat_fraction).toFixed(1)}%` : "not assessed";
+    d.innerHTML = `<b>${esc(short(name))}</b><span class="st">${s === "pass" ? "✓ pass" : s === "fail" ? "✗ fail" : "– unassessed"}</span>` +
+      (info.reasons.length ? `<div class="why">${info.reasons.map(r => esc(why(r).split(":")[0])).join("; ")}</div>` : "");
+    grid.appendChild(d);
+  });
+  $("gridSummary").textContent = w.raw_sha256 ? `${C - fails}/${C} pass` : "";
+  renderReview();
+  draw();
+}
+
+function renderReview() {
+  if (state.mode !== "review") return;
+  const w = W[state.i], r = state.reviews[w.window_id];
+  $("labelGood").setAttribute("aria-pressed", r && r.label === 1 ? "true" : "false");
+  $("labelBad").setAttribute("aria-pressed", r && r.label === 0 ? "true" : "false");
+  $("reviewNote").value = r ? r.note || "" : "";
+  const done = assessed.filter(k => state.reviews[W[k].window_id]).length;
+  $("reviewProgressText").textContent = `${done} of ${assessed.length} windows reviewed` + (w.raw_sha256 ? "" : " · this window cannot be reviewed");
+  $("reviewProgress").style.width = (100 * done / Math.max(1, assessed.length)) + "%";
+  $("reveal").disabled = !state.blind || !!state.seen[w.window_id];
+  $("labelGood").disabled = $("labelBad").disabled = !w.raw_sha256;
+}
+
+function label(value) {
+  const w = W[state.i];
+  if (!w.raw_sha256) return;
+  if (!state.reviewer.trim()) { $("reviewer").focus(); $("reviewer").placeholder = "Enter your name before labelling"; return; }
+  state.reviews[w.window_id] = {label: value, note: $("reviewNote").value.trim(),
+    reviewed_at_utc: new Date().toISOString(), rule_decision_seen: !!state.seen[w.window_id] || !state.blind};
+  persist(); step(1);
+}
+
+// ------------------------------------------------------------------ navigation + playback
+function select(i) { state.i = Math.max(0, Math.min(W.length - 1, i)); renderWindow(); }
+function step(d) {
+  if (state.mode === "review") {
+    const order = reviewOrder(); const at = order.indexOf(state.i);
+    select(order[Math.max(0, Math.min(order.length - 1, (at < 0 ? 0 : at + d)))]);
+  } else select(state.i + d);
+}
+let raf = null, last = 0;
+function frame(t) {
+  if (!state.playing) return;
+  const w = W[state.i], dt = last ? (t - last) / 1000 : 0; last = t;
+  state.cursor = (state.cursor || 0) + dt * Number($("speed").value) / Math.max(0.1, w.t1 - w.t0);
+  if (state.cursor >= 1) {
+    if (state.i >= W.length - 1) { stop(); return; }
+    state.cursor = 0; select(state.i + 1);
+  } else draw();
+  raf = requestAnimationFrame(frame);
+}
+function play() { if (state.i >= W.length - 1) select(0); state.playing = true; last = 0; state.cursor = 0; $("play").textContent = "❚❚ Pause"; raf = requestAnimationFrame(frame); }
+function stop() { state.playing = false; state.cursor = null; $("play").textContent = "▶ Play"; if (raf) cancelAnimationFrame(raf); draw(); }
+$("play").onclick = () => state.playing ? stop() : play();
+$("prev").onclick = () => { stop(); step(-1); };
+$("next").onclick = () => { stop(); step(1); };
+$("scale").onchange = e => { state.scale = e.target.value; draw(); };
+window.addEventListener("resize", draw);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input,textarea,select")) return;
+  if (e.key === "ArrowRight") { stop(); step(1); } else if (e.key === "ArrowLeft") { stop(); step(-1); }
+  else if (e.key === " ") { e.preventDefault(); state.playing ? stop() : play(); }
+  else if (state.mode === "review" && (e.key === "a" || e.key === "A")) label(1);
+  else if (state.mode === "review" && (e.key === "u" || e.key === "U")) label(0);
+});
+
+// ------------------------------------------------------------------ modes + review controls
+function setMode(mode) {
+  stop(); state.mode = mode;
+  $("modeInspect").setAttribute("aria-pressed", mode === "inspect"); $("modeReview").setAttribute("aria-pressed", mode === "review");
+  document.body.classList.toggle("reviewing", mode === "review");
+  $("banner").style.display = "";
+  if (mode === "review") { const order = reviewOrder(); const next = order.find(k => !state.reviews[W[k].window_id]); select(next !== undefined ? next : order[0]); }
+  else renderWindow();
+}
+$("modeInspect").onclick = () => setMode("inspect");
+$("modeReview").onclick = () => setMode("review");
+$("reviewer").value = state.reviewer;
+$("reviewer").oninput = e => { state.reviewer = e.target.value; persist(); };
+$("blind").checked = state.blind; $("shuffle").checked = state.shuffle;
+$("blind").onchange = e => { state.blind = e.target.checked; persist(); renderWindow(); };
+$("shuffle").onchange = e => { state.shuffle = e.target.checked; persist(); };
+$("labelGood").onclick = () => label(1);
+$("labelBad").onclick = () => label(0);
+$("reviewNote").onchange = () => { const r = state.reviews[W[state.i].window_id]; if (r) { r.note = $("reviewNote").value.trim(); persist(); } };
+$("reveal").onclick = () => { state.seen[W[state.i].window_id] = true; persist(); renderWindow(); };
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], {type}));
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const stem = M.file.replace(/\.[^.]+$/, "");
+$("exportReview").onclick = () => {
+  const reviews = assessed.map(k => W[k]).filter(w => state.reviews[w.window_id]).map(w => {
+    const r = state.reviews[w.window_id];
+    return {window_id: w.window_id, source_start_sample: w.start, source_end_sample_exclusive: w.end, raw_sha256: w.raw_sha256,
+            label: r.label, reviewed_at_utc: r.reviewed_at_utc, note: r.note || null,
+            rule_decision_seen: !!r.rule_decision_seen || !!state.seen[w.window_id]};
+  });
+  if (!state.reviewer.trim() || !reviews.length) { $("reviewer").focus(); return; }
+  const record = {format: M.review_format, tool: "avatar-quality-dashboard", source_path: M.path, source_sha256: M.source_sha256,
+    participant_id: M.participant_id, quality_policy_id: M.quality_policy_id, config: M.config, reviewer: state.reviewer.trim(),
+    blind: state.blind, random_order: state.shuffle, exported_at_utc: new Date().toISOString(), reviews};
+  download(`review_${stem}_${state.reviewer.trim().replace(/[^\w-]+/g, "_")}.json`, JSON.stringify(record, null, 2), "application/json");
+};
+
+// ------------------------------------------------------------------ session report
+function bars(el, entries, total, fmt) {
+  const max = Math.max(1, ...entries.map(e => e[1]));
+  el.innerHTML = entries.length ? entries.map(([k, v]) => `<div class="bar" title="${esc(why(k))}"><span>${esc(k.startsWith("EXG") ? short(k) : k.replace(/_/g, " "))}</span><div class="track"><i style="width:${100 * v / max}%"></i></div><span class="muted">${fmt(v)}</span></div>`).join("")
+    : '<div class="muted">None</div>';
+}
+$("tiles").innerHTML = [
+  [`${S.usable_windows} / ${S.windows}`, "windows pass the configured checks"],
+  [`${S.rejected_windows}`, `rejected (${S.windows ? (100 - S.usable_pct).toFixed(1) : 0}% rejection rate)`],
+  [`${S.gate_accepted}`, "windows the gate would pass to a model"],
+  [S.verdict, "session verdict"],
+  [S.dead_electrodes.length ? S.dead_electrodes.map(short).join(", ") : "none", "persistently dead electrodes"],
+  [S.assessment_latency_ms.median !== null ? S.assessment_latency_ms.median.toFixed(2) + " ms" : "–", "median assessment time per window"]
+].map(([b, s]) => `<div class="tile"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");
+bars($("reasonBars"), Object.entries(S.reasons), S.windows, v => v);
+bars($("channelBars"), Object.entries(S.channel_flagged_pct).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]), 100, v => v.toFixed(0) + "%");
+$("findings").innerHTML = S.findings.length ? S.findings.map(f => `<li class="${f.severity}"><b>${esc(f.kind.replace(/_/g, " "))}</b> — ${esc(f.evidence)}<div>${esc(f.action)}</div></li>`).join("")
+  : "<li>No recurring problems detected.</li>";
+$("sessionNote").textContent = (S.first_window_failed ? "The first window failed; start-up transients are common, so discard the first seconds of a recording. " : "") +
+  "Rejection rate describes the configured checks, not detection accuracy. Findings are heuristics pointing to likely causes, not verified diagnoses.";
+$("exportJson").onclick = () => download(`${stem}.quality-session.json`, JSON.stringify({meta: M, session: S,
+  windows: W.map(w => ({index: w.index, t0: w.t0, t1: w.t1, status: w.status, reasons: w.reasons, gate: w.gate,
+    bad_channels: Object.keys(w.channels).filter(k => w.channels[k].status === "fail"), window_id: w.window_id}))}, null, 2), "application/json");
+$("exportCsv").onclick = () => {
+  const rows = [["window", "start_s", "end_s", "status", "reasons", "bad_channels", "gate", "gate_reasons"]].concat(W.map(w => [
+    w.index + 1, w.t0.toFixed(3), w.t1.toFixed(3), w.status, w.reasons.join("; "),
+    Object.keys(w.channels).filter(k => w.channels[k].status === "fail").join("; "), w.gate.status, w.gate.reasons.join("; ")]));
+  download(`${stem}.quality-windows.csv`, rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"), "text/csv");
+};
+
+renderWindow();
+</script>
+</body>
+</html>

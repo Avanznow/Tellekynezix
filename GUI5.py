@@ -10,6 +10,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env.txt")
 from PySide6.QtWidgets import QApplication,QFileDialog, QMessageBox
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Signal, Slot, Property, QProcess, QUrl, QTimer
+from PySide6.QtGui import QDesktopServices
 from pdf2image import convert_from_path
 from djitellopy import Tello
 import random
@@ -23,10 +24,17 @@ from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from predictions_local.brainflowprocessor import BrainFlowDataProcessor
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
 from predictions_local.neurosityprocessor import NeurosityDataProcessor
+from signal_quality import QualityAssessor, QualityGatedPredictor, may_execute, withheld_result
+from signal_quality.config import load_default_config
+from signal_quality.dashboard import build as build_quality_dashboard
+from signal_quality.gui_view import preflight_view, quality_view
+from signal_quality.report import preflight as preflight_recording
+from sklearn.preprocessing import StandardScaler
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
 import asyncio
 import copy
+import tempfile
 import queue
 # from Developers.hofCharts import main as hofCharts, ticketsByDev_text NA
 
@@ -69,6 +77,11 @@ class BrainwavesBackend(QObject):
     naoEnded = Signal()
     enqueueMoveRequested = Signal(str)
     neurosityStatusChanged = Signal(str)
+    signalQualityChanged = Signal(str)
+    qualityViewChanged = Signal(dict)  # withholding indicator + channel grid (signal_quality.gui_view)
+    gnbParticipantStatusChanged = Signal(str)  # improved GaussianNB chain: participant id and calibration state
+    gnbTrainingCueChanged = Signal(dict)  # subject-specific GaussianNB: guided session progress (phase, command, seconds)
+    gnbTrainingFinished = Signal(dict)  # subject-specific GaussianNB: session summary (windows, model state, expectation)
 
     @Slot()
     def startNaoManual(self):
@@ -122,10 +135,30 @@ class BrainwavesBackend(QObject):
         self.flight_log = []  # List to store flight log entries
         self.predictions_log = []  # List to store prediction records
         self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("no_assessed_input")
+        # Deployed policy from signal_quality/default_config.json (verified 60 Hz mains).
+        self.quality_gate = QualityGatedPredictor(QualityAssessor(load_default_config()))
         self.current_data_mode = "synthetic"
         self.current_bci_source = "openbci"
         self.current_model = "Random Forest"  # Default model
         self.current_framework = "PyTorch"  # Default framework
+        # Improved GaussianNB chain (prediction-gaussiannb/pytorch/improved_gnb_inference.py): loaded on first use.
+        # The participant id selects the per-participant feature statistics; a new user calibrates once.
+        self.gnb_chain = None          # improved global chain of the selected framework (see _gnb_chain)
+        self.gnb_chains = {}           # backend -> ImprovedGaussianNBChain ("torch" = PyTorch, "tensorflow" = TensorFlow, "jax" = JAX)
+        self.gnb_subject_chains = {}   # backend -> SubjectSpecificGaussianNBChain
+        self.gnb_chain_lock = threading.Lock()
+        self.gnb_participant_id = os.environ.get("AVATAR_PARTICIPANT_ID", "user")
+        self._gnb_calibrating = False
+        # Subject-specific GaussianNB (prediction-gaussiannb/pytorch/subject_gnb_inference.py): "subject" runs the
+        # user's own model, fitted on their labelled windows from the guided interleaved cue session; "global" keeps
+        # the improved global chain. AVATAR_GNB_MODE selects the start mode.
+        self.gnb_mode = (os.environ.get("AVATAR_GNB_MODE", "global").strip().lower() or "global")
+        if self.gnb_mode not in ("global", "subject"):
+            self.gnb_mode = "global"
+        self.gnb_subject_chain = None
+        self._gnb_training = None             # the running TrainingSession (worker thread) or None
+        self._gnb_training_stop = threading.Event()
         self.image_paths = []  # Store converted image paths
         self.neurosity_processor = None
         self.neurosity_connected = False
@@ -186,12 +219,17 @@ class BrainwavesBackend(QObject):
             self.bcicon = None
 
     # Command queue helpers
-    def _queue_action(self, action: str, dist: int | None = None):
+    def _queue_action(self, action: str, dist: int | None = None, *, prediction_result=None):
         """
         Put a command into the Tello queue.
         dist is an optional distance override (cm) for movement commands.
         """
-        self.cmd_queue.put((action, dist))
+        self.cmd_queue.put((action, dist, prediction_result))
+
+    def _queue_prediction(self, result):
+        """Keep approval attached to the command until the worker dispatches it."""
+        if result is self.current_prediction_result and may_execute(result):
+            self._queue_action(result["prediction_label"], prediction_result=result)
 
     def _drone_loop(self):
         """
@@ -199,8 +237,13 @@ class BrainwavesBackend(QObject):
         It pulls commands from the queue and executes them in FIFO order.
         """
         while True:
-            action, dist = self.cmd_queue.get()
+            action, dist, approval = self.cmd_queue.get()
             try:
+                # Manual controls have no EEG approval; automatic commands must
+                # still match the current fresh decision when leaving the queue.
+                if approval is not None and (approval is not self.current_prediction_result or not may_execute(approval)):
+                    self.logMessage.emit(f"Queued prediction withheld: {action}")
+                    continue
                 # Set distance override if provided
                 old = self._movement_distance_override
                 if dist is not None:
@@ -234,195 +277,528 @@ class BrainwavesBackend(QObject):
         """ Select the machine learning model """
         self.logMessage.emit(f"Model selected: {model_name}")
         self.current_model = model_name
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("configuration_changed")
+        self.qualityViewChanged.emit(quality_view(self.current_prediction_result, self.quality_gate.assessor.config))
         self.flight_log.insert(0, f"Selected Model: {model_name}")
         self.flightLogUpdated.emit(self.flight_log)
+        if model_name == "GaussianNB":
+            self._emit_gnb_status()
 
     @Slot(str)
     def selectFramework(self, framework_name):
         """ Select the machine learning framework """
         self.logMessage.emit(f"Framework selected: {framework_name}")
         self.current_framework = framework_name
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("configuration_changed")
+        self.qualityViewChanged.emit(quality_view(self.current_prediction_result, self.quality_gate.assessor.config))
         self.flight_log.insert(0, f"Selected Framework: {framework_name}")
         self.flightLogUpdated.emit(self.flight_log)
+        if self.current_model == "GaussianNB":
+            self._emit_gnb_status()
 
     @Slot()
     def readMyMind(self):
-        """ Runs the selected model and processes the brainwave data. """
-        if self.current_model == "Random Forest":
-            if self.current_framework == "PyTorch":
-                prediction = self.run_random_forest_pytorch()
+        """Assess the actual capture; withheld outcomes never become commands."""
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("assessment_pending")
+        self.signalQualityChanged.emit("Assessing EEG input...")
+        try:
+            if self.current_model == "Band Power + SVM":
+                result = self.run_bandpower_svm()
+            elif self.current_model == "Riemannian + LR":
+                result = self.run_riemannian()
+            elif self.current_model == "Random Forest":
+                result = self.run_random_forest_pytorch() if self.current_framework == "PyTorch" else self.run_random_forest_tensorflow()
+            elif self.current_model == "GaussianNB":
+                result = self._run_gaussiannb(self.current_framework)      # PyTorch, TensorFlow or JAX chains
             else:
-                prediction = self.run_random_forest_tensorflow()
-        elif self.current_model == "GaussianNB":
-            if self.current_framework == "PyTorch":
-                prediction = self.run_gaussiannb_pytorch()
-            else:
-                prediction = self.run_gaussiannb_tensorflow()
-        else:  # Deep Learning
-            if self.current_framework == "PyTorch":
-                prediction = self.run_deep_learning_pytorch()
-                self.logMessage.emit("Getting prediction from pytorch using the deep learning model.")
-            else:
-                prediction = self.run_deep_learning_tensorflow()
-        self.logMessage.emit(f"Prediction received: {prediction}")
-        # Set current prediction
-        self.current_prediction_label = prediction
-
-        #auto mode is desired
-        self.doDroneTAction(prediction)
-
-        # Log the prediction
-        self.predictions_log.append({
-            "count": str(len(self.predictions_log) + 1),
-            "server": "Brainwave AI",
-            "label": prediction
-        })
+                result = self.run_deep_learning_pytorch() if self.current_framework == "PyTorch" else self.run_deep_learning_tensorflow()
+        except Exception as error:
+            result = self.quality_gate.withhold(f"prediction_failed: {error}")
+        self.current_prediction_result = result
+        quality = result.get("quality") if isinstance(result, dict) else None
+        if not may_execute(result):
+            self.current_prediction_label = ""
+            reason = result.get("withholding_reason", "missing_quality_decision") if isinstance(result, dict) else "missing_quality_decision"
+            message = f"Prediction withheld: {reason}"
+            if quality and quality.get("bad_channels"):
+                message += "; channels: " + ", ".join(quality["bad_channels"])
+            self.signalQualityChanged.emit(message)
+            self.logMessage.emit(message)
+            self.flight_log.insert(0, message)
+            self.predictions_log.append({"count": str(len(self.predictions_log) + 1), "server": "Quality gate", "label": "WITHHELD"})
+        else:
+            prediction = result["prediction_label"]
+            self.current_prediction_label = prediction
+            self.signalQualityChanged.emit("EEG passed configured quality checks")
+            self.logMessage.emit(f"Prediction received: {prediction}")
+            self._queue_prediction(result)
+            self.predictions_log.append({"count": str(len(self.predictions_log) + 1), "server": "Brainwave AI", "label": prediction})
+            self.flight_log.insert(0, f"Queued: {prediction} (Model: {self.current_model}, Framework: {self.current_framework})")
+        self.qualityViewChanged.emit(quality_view(result, self.quality_gate.assessor.config))
         self.predictionsTableUpdated.emit(self.predictions_log)
-
-        # Update Flight Log
-        self.flight_log.insert(0, f"Executed: {prediction} (Model: {self.current_model}, Framework: {self.current_framework})")
         self.flightLogUpdated.emit(self.flight_log)
 
-    def run_random_forest_pytorch(self):
-        """ Random Forest model processing with PyTorch backend """
-        print("Running Random Forest Model with PyTorch...")
+    def _choose_recording(self, title):
+        path, _ = QFileDialog.getOpenFileName(None, title, str(Path.home()), "OpenBCI recordings (*.txt)")
+        return path or None
+
+    @Slot()
+    def openQualityDashboard(self):
+        """Build the interactive quality dashboard for a recording and open it in the browser."""
+        path = self._choose_recording("Open EEG recording in the quality dashboard")
+        if path is None:
+            return
+        out_dir = Path(tempfile.gettempdir()) / "avatar_quality_dashboards"
         try:
-            if self.current_bci_source == "neurosity":
-                self.logMessage.emit("Using Neurosity for Random Forest prediction")
-                self.get_neurosity_brainwave_data()
-                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+            out, payload = build_quality_dashboard(path, out_dir / (Path(path).stem + ".quality.html"),
+                                                   self.quality_gate.assessor.config)
+        except (ValueError, OSError) as error:
+            self.logMessage.emit(f"Quality dashboard not built for {Path(path).name}: {error}")
+            return
+        session = payload["session"]
+        self.logMessage.emit(f"Quality dashboard: {session['usable_windows']}/{session['windows']} windows pass "
+                             f"({out})")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(out)))
 
-            # Use the BCI connection to get real brainwave data from OpenBCI
-            if hasattr(self, 'bcicon') and self.bcicon:
-                prediction_response = self.bcicon.bciConnectionController()
-                if prediction_response:
-                    return prediction_response.get('prediction_label', 'forward')
-        except Exception as e:
-            print(f"Error with PyTorch Random Forest: {e}")
+    @Slot()
+    def checkRecordingQuality(self):
+        """Preflight a recording file (e.g. right after a collection session) and show its channels."""
+        path = self._choose_recording("Check an EEG recording")
+        if path is None:
+            return
+        try:
+            result = preflight_recording(path, self.quality_gate.assessor.config)
+        except (ValueError, OSError) as error:
+            result = dict(path=path, error=str(error))
+        view = preflight_view(result, self.quality_gate.assessor.config)
+        self.qualityViewChanged.emit(view)
+        self.logMessage.emit(f"{Path(path).name}: {view['headline']}")
+        for reason in view["reasons"]:
+            self.logMessage.emit(f"  {reason}")
 
-        # Fallback to simulation with PyTorch-specific labels
-        time.sleep(1)
-        return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+    def run_riemannian(self):
+        # Load lazily: existing routes do not require pyRiemann installed.
+        from prediction_riemannian.predictor import AvatarRiemannianPredictor
+        model_path = os.environ.get("AVATAR_RIEMANNIAN_MODEL")
+        if not model_path:
+            return self.quality_gate.withhold("Set AVATAR_RIEMANNIAN_MODEL to an independently validated artifact")
+        predictor = AvatarRiemannianPredictor(model_path)
+        if predictor.artifact.get("task_labels_verified") is not True:
+            return self.quality_gate.withhold("task_labels_unverified_experimental_model")
+        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+            return self.quality_gate.withhold("Riemannian inference requires verified live OpenBCI acquisition")
+        if predictor.assessor.config.policy_id != self.quality_gate.assessor.config.policy_id:
+            return self.quality_gate.withhold("Riemannian quality policy differs from GUI policy")
+        predictor.gate = self.quality_gate
+        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
+                                           sample_time=predictor.config.seconds + 1)
+        capture = processor.get_quality_capture()
+        n = predictor.config.samples
+        if capture["raw"].shape[1] < n:
+            return self.quality_gate.withhold("Insufficient samples for Riemannian window")
+        for name in ("raw", "counters", "timestamps"):
+            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+        return predictor.predict_capture(capture)
+
+    def run_bandpower_svm(self):
+        # Load lazily: existing routes do not require extra classifier dependencies installed.
+        from prediction_bandpower.predictor import AvatarBandPowerSVMPredictor
+        model_path = os.environ.get("AVATAR_BANDPOWER_SVM_MODEL")
+        if not model_path:
+            return self.quality_gate.withhold("Set AVATAR_BANDPOWER_SVM_MODEL to an independently validated artifact")
+        predictor = AvatarBandPowerSVMPredictor(model_path)
+        if predictor.artifact.get("task_labels_verified") is not True:
+            return self.quality_gate.withhold("task_labels_unverified_experimental_model")
+        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+            return self.quality_gate.withhold("Band-power SVM inference requires verified live OpenBCI acquisition")
+        if predictor.assessor.config.policy_id != self.quality_gate.assessor.config.policy_id:
+            return self.quality_gate.withhold("Band-power SVM quality policy differs from GUI policy")
+        predictor.gate = self.quality_gate
+        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
+                                           sample_time=predictor.config.seconds + 1)
+        capture = processor.get_quality_capture()
+        n = predictor.config.samples
+        if capture["raw"].shape[1] < n:
+            return self.quality_gate.withhold("Insufficient samples for Band-power SVM window")
+        for name in ("raw", "counters", "timestamps"):
+            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+        return predictor.predict_capture(capture)
+
+    def _run_quality_gated_remote_rf(self):
+        if self.current_bci_source != "openbci":
+            return self.quality_gate.withhold("Neurosity quality contract needs raw timestamps, rate and physical channel metadata")
+        if not self.bcicon:
+            return self.quality_gate.withhold("BCI connection unavailable")
+        self.bcicon.set_mode(DataMode.LIVE if self.current_data_mode != "synthetic" else DataMode.SYNTHETIC)
+        return self.bcicon.bciConnectionController(quality_gate=self.quality_gate)
+
+    def run_random_forest_pytorch(self):
+        # Existing RF selection uses the remote RF service; assessment runs on
+        # its original capture before the HTTP request, not a second recording.
+        return self._run_quality_gated_remote_rf()
 
     def run_random_forest_tensorflow(self):
-        """ Random Forest model processing with TensorFlow backend """
-        print("Running Random Forest Model with TensorFlow...")
-        try:
-            if self.current_bci_source == "neurosity":
-                self.logMessage.emit("Using Neurosity for TensorFlow Random Forest prediction")
-                self.get_neurosity_brainwave_data()
-                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
-
-            # Use the BCI connection to get real brainwave data from OpenBCI
-            if hasattr(self, 'bcicon') and self.bcicon:
-                prediction_response = self.bcicon.bciConnectionController()
-                if prediction_response:
-                    return prediction_response.get('prediction_label', 'forward')
-        except Exception as e:
-            print(f"Error with TensorFlow Random Forest: {e}")
-
-        # Fallback to simulation with TensorFlow-specific labels
-        time.sleep(1)
-        return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+        return self._run_quality_gated_remote_rf()
 
     def run_deep_learning_pytorch(self):
-        """ Deep Learning model processing with PyTorch backend """
-        print("Running Deep Learning Model with PyTorch...")       
-        self.get_brainwave_data()
-        try:
-            model = DeeplearningPytorchPredictor()
-            pred_label = model(self.brainwave_data)
-            return pred_label
-        except Exception as e:
-            print(f"Error with PyTorch Deep Learning: {e}")
-            return "Error"
-    
-    def get_brainwave_data(self):
-        if self.current_bci_source == 'neurosity':
-            # print ("get_brainwave_data bug")
-            try:
-                return self.get_neurosity_brainwave_data()
-            except Exception as e:
-                self.logMessage.emit(f"Neurosity capture failed, falling back to OpenBCI/OpenBCI synthetic: {e}")
-                self.current_bci_source = 'openbci'
+        if self.current_bci_source != "openbci":
+            return self.quality_gate.withhold("Neurosity quality acquisition metadata unavailable")
+        board_id = BoardIds.SYNTHETIC_BOARD.value if self.current_data_mode == "synthetic" else BoardIds.CYTON_DAISY_BOARD.value
+        self.brainwave_processor = BrainFlowDataProcessor(board_id=board_id, sample_time=3)
+        capture = self.brainwave_processor.get_quality_capture()
+        def predict_same_capture(raw):
+            # Preserve the legacy CNN's scaling interface after raw assessment.
+            self.brainwave_data = torch.tensor(StandardScaler().fit_transform(raw.T), dtype=torch.float32)
+            return DeeplearningPytorchPredictor()(self.brainwave_data)
+        return self.quality_gate.predict(predict=predict_same_capture, **capture)
 
-        if self.current_data_mode == 'synthetic':
-            self.brainwave_processor = BrainFlowDataProcessor(board_id=BoardIds.SYNTHETIC_BOARD.value)
-            self.brainwave_data = self.brainwave_processor.get_tensor()
-            print("synethetic data retrieved")
-            return self.brainwave_data
-        else:
-            self.brainwave_processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value)
-            self.brainwave_data = self.brainwave_processor.get_tensor()
-            print("live Cyton Daisy data retrieved")
-            return self.brainwave_data
+    def get_brainwave_data(self):
+        if self.current_bci_source == "neurosity":
+            return self.get_neurosity_brainwave_data()
+        board_id = BoardIds.SYNTHETIC_BOARD.value if self.current_data_mode == "synthetic" else BoardIds.CYTON_DAISY_BOARD.value
+        self.brainwave_processor = BrainFlowDataProcessor(board_id=board_id)
+        self.brainwave_data = self.brainwave_processor.get_tensor()
+        return self.brainwave_data
 
     def run_deep_learning_tensorflow(self):
-        """ Deep Learning model processing with TensorFlow backend """
-        print("Running Deep Learning Model with TensorFlow...")
-        try:
-            # Simulate TensorFlow deep learning model processing
-            # In a real implementation, this would load and run a TensorFlow CNN model
-            time.sleep(2)  # Simulate longer processing time for deep learning
-            return random.choice(["forward", "backward", "left", "right", "takeoff", "land", "up", "down"])
-        except Exception as e:
-            print(f"Error with TensorFlow Deep Learning: {e}")
-            return "forward"
-    def run_gaussiannb_pytorch(self):
-        """ GaussianNB model processing with PyTorch backend """
-        print("Running GaussianNB Model with PyTorch...")
-        try:
-            if self.current_bci_source == "neurosity":
-                self.logMessage.emit("Using Neurosity for GaussianNB prediction")
-                self.get_neurosity_brainwave_data()
-                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
+        return self.quality_gate.withhold("TensorFlow CNN inference is not implemented; no simulated command substituted")
 
-            # Import the GaussianNB model
-            import sys
-            import os
-            sys.path.append(os.path.join(os.path.dirname(__file__), 'prediction-gaussiannb', 'pytorch'))
-            from gaussiannb_model import GaussianNB
-            
-            # Try to load trained model
-            model_path = os.path.join(os.path.dirname(__file__), 'prediction-gaussiannb', 'pytorch', 'gaussiannb_trained.pth')
-            
-            if os.path.exists(model_path):
-                # Load the trained model
-                checkpoint = torch.load(model_path)
-                model = GaussianNB(
-                    num_features=checkpoint['num_features'],
-                    num_classes=checkpoint['num_classes']
-                )
-                model.load_state_dict(checkpoint['model_state_dict'])
-                
-                # Get prediction from BCI connection
-                if hasattr(self, 'bcicon'):
-                    prediction_response = self.bcicon.bciConnectionController()
-                    if prediction_response:
-                        return prediction_response.get('prediction_label', 'forward')
-                
-                # Fallback
-                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
-            else:
-                print(f"GaussianNB model not found at {model_path}. Using simulation.")
-                return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
-                
-        except Exception as e:
-            print(f"Error with PyTorch GaussianNB: {e}")
-            return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
-    
-    def run_gaussiannb_tensorflow(self):
-        """ GaussianNB model processing with TensorFlow backend """
-        print("Running GaussianNB Model with TensorFlow...")
+    # ---- GaussianNB: the improved chains of prediction-gaussiannb (PyTorch, TensorFlow or JAX decision model) ----
+    GNB_BACKENDS = {"PyTorch": "torch", "TensorFlow": "tensorflow", "JAX": "jax"}
+    GNB_LABELS = {"torch": "PyTorch", "tensorflow": "TensorFlow", "jax": "JAX"}
+
+    def _gnb_backend(self, framework=None):
+        """The GaussianNB implementation behind the selected framework ('torch', 'tensorflow' or 'jax')."""
+        framework = self.current_framework if framework is None else framework
+        backend = self.GNB_BACKENDS.get(framework)
+        if backend is None:
+            raise ValueError(f"GaussianNB is not implemented for the {framework} framework (PyTorch, TensorFlow or JAX)")
+        return backend
+
+    def _gnb_chain(self, framework=None):
+        """Load the improved GaussianNB chain of the selected framework once (features, participant scaler, LDA
+        projection, PyTorch GaussianNB, TensorFlow GaussianNBTF or JAX GaussianNBJAX)."""
+        backend = self._gnb_backend(framework)
+        with self.gnb_chain_lock:
+            if backend not in self.gnb_chains:
+                gnb_dir = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch"
+                if str(gnb_dir) not in sys.path:
+                    sys.path.insert(0, str(gnb_dir))
+                from improved_gnb_inference import ImprovedGaussianNBChain
+                chain = ImprovedGaussianNBChain(backend=backend)
+                self.gnb_chains[backend] = chain
+                self.logMessage.emit(f"GaussianNB chain loaded ({self._gnb_label(backend)}): {len(chain.feature_names)} features -> "
+                                     f"participant z-score -> {chain.projection} -> GaussianNB, {chain.window_size}-sample windows; "
+                                     f"{len(chain.calibrations)} stored calibration(s)")
+            self.gnb_chain = self.gnb_chains[backend]
+            return self.gnb_chain
+
+    @classmethod
+    def _gnb_label(cls, backend):
+        return cls.GNB_LABELS.get(backend, str(backend))
+
+    def _emit_gnb_status(self):
+        backend = self.GNB_BACKENDS.get(self.current_framework)
+        subject_chain = self.gnb_subject_chains.get(backend)
+        global_chain = self.gnb_chains.get(backend)
+        if backend is None:
+            status = f"not available for the {self.current_framework} framework"
+        elif self._gnb_training is not None:
+            status = "training session running..."
+        elif self._gnb_calibrating:
+            status = "calibrating..."
+        elif self.gnb_mode == "subject":
+            status = ("my model: not loaded" if subject_chain is None
+                      else "my model: " + subject_chain.participant_status(self.gnb_participant_id))
+        elif global_chain is None:
+            status = "not loaded"
+        else:
+            status = global_chain.participant_status(self.gnb_participant_id)
+        tag = f" [{self.current_framework}]" if backend is not None else ""
+        self.gnbParticipantStatusChanged.emit(f"{self.gnb_participant_id}{tag}: {status}")
+
+    @Slot(result=str)
+    def gaussianNBParticipant(self):
+        return self.gnb_participant_id
+
+    @Slot(str)
+    def setGaussianNBParticipant(self, participant):
+        """Participant id used by the improved GaussianNB chain (own statistics after calibration, else global)."""
+        participant = str(participant).strip()
+        if not participant:
+            self.logMessage.emit("GaussianNB participant id must not be empty")
+            self._emit_gnb_status()
+            return
+        self.gnb_participant_id = participant
+        self.logMessage.emit(f"GaussianNB participant: {participant}")
+        self._emit_gnb_status()
+
+    def _log_gnb_calibration(self, entry):
+        self.logMessage.emit(f"GaussianNB calibrated '{entry['participant']}': {entry['n_windows']} windows from "
+                             f"{entry.get('n_blocks_kept', '?')}/{entry.get('n_blocks', '?')} usable 2 s blocks "
+                             f"({entry['source']})")
+
+    @Slot()
+    def calibrateGaussianNB(self):
+        """Record AVATAR_GNB_CALIBRATION_SECONDS (default 30) s of unlabelled EEG from the current participant and
+        register their feature statistics; runs in a worker thread so the window stays responsive."""
+        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+            self.logMessage.emit("GaussianNB calibration requires live OpenBCI acquisition")
+            return
+        if self._gnb_calibrating:
+            self.logMessage.emit("GaussianNB calibration already running")
+            return
+        participant = self.gnb_participant_id
         try:
-            # Note: GaussianNB with TensorFlow is not implemented yet
-            # For now, fallback to simulation
-            print("TensorFlow backend for GaussianNB not implemented. Using simulation.")
-            time.sleep(1)
-            return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
-        except Exception as e:
-            print(f"Error with TensorFlow GaussianNB: {e}")
-            return "forward"
+            seconds = max(10, int(os.environ.get("AVATAR_GNB_CALIBRATION_SECONDS", "30")))
+        except ValueError:
+            seconds = 30
+        self._gnb_calibrating = True
+        self._emit_gnb_status()
+        self.logMessage.emit(f"GaussianNB calibration ({self.current_framework}): recording {seconds} s of EEG for '{participant}' "
+                             "(sit still, eyes open, headset settled)")
+
+        def work():
+            try:
+                chain = self._gnb_chain()
+                processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value, sample_time=seconds)
+                capture = processor.get_quality_capture()
+                entry = chain.calibrate_from_capture(participant, capture, assessor=self.quality_gate.assessor)
+                self._log_gnb_calibration(entry)
+            except Exception as error:
+                self.logMessage.emit(f"GaussianNB calibration failed: {error}")
+            finally:
+                self._gnb_calibrating = False
+                self._emit_gnb_status()
+
+        threading.Thread(target=work, daemon=True).start()
+
+    @Slot()
+    def calibrateGaussianNBFromRecording(self):
+        """Calibrate the current participant from one of their OpenBCI GUI recordings (no headset needed)."""
+        path = self._choose_recording("Calibrate GaussianNB from an EEG recording of this participant")
+        if path is None:
+            return
+        try:
+            entry = self._gnb_chain().calibrate_from_recording(self.gnb_participant_id, path,
+                                                               assessor=self.quality_gate.assessor)
+            self._log_gnb_calibration(entry)
+        except Exception as error:
+            self.logMessage.emit(f"GaussianNB calibration from {Path(path).name} failed: {error}")
+        self._emit_gnb_status()
+
+    # ---- GaussianNB subject-specific mode: the user's own model from a guided labelled session -------------------
+    def _gnb_subject_chain(self, framework=None):
+        """Load the subject-specific chain of the selected framework once (three views -> 435 features -> the user's
+        statistics and model, PyTorch GaussianNB, TensorFlow GaussianNBTF or JAX GaussianNBJAX)."""
+        backend = self._gnb_backend(framework)
+        with self.gnb_chain_lock:
+            if backend not in self.gnb_subject_chains:
+                gnb_dir = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch"
+                if str(gnb_dir) not in sys.path:
+                    sys.path.insert(0, str(gnb_dir))
+                from subject_gnb_inference import SubjectSpecificGaussianNBChain
+                chain = SubjectSpecificGaussianNBChain(backend=backend)
+                self.gnb_subject_chains[backend] = chain
+                self.logMessage.emit(f"GaussianNB subject-specific chain loaded ({self._gnb_label(backend)}): {chain.n_features} features "
+                                     f"-> own statistics -> own LDA + GaussianNB -> 5-window context -> vote gate; "
+                                     f"{chain.window_size}-sample windows; {len(chain.users)} stored user model(s) in {chain.users_dir}")
+            self.gnb_subject_chain = self.gnb_subject_chains[backend]
+            return self.gnb_subject_chain
+
+    @Slot(result=str)
+    def gaussianNBMode(self):
+        return self.gnb_mode
+
+    @Slot(str)
+    def setGaussianNBMode(self, mode):
+        """'global': the improved global chain (any user, 49 % on Data_clean); 'subject': the user's own model
+        (84 % per participant on Data_clean), which needs this user's guided training session first."""
+        mode = str(mode).strip().lower()
+        if mode not in ("global", "subject"):
+            self.logMessage.emit(f"Unknown GaussianNB mode: {mode}")
+            return
+        self.gnb_mode = mode
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("configuration_changed")
+        self.qualityViewChanged.emit(quality_view(self.current_prediction_result, self.quality_gate.assessor.config))
+        if mode == "subject":
+            try:
+                self._gnb_subject_chain()
+            except Exception as error:
+                self.logMessage.emit(f"GaussianNB subject-specific chain failed to load: {error}")
+            self.logMessage.emit("GaussianNB mode: my model (subject-specific; trained from this user's own labelled "
+                                 "windows, acts only when 4 of the last 5 window votes agree)")
+        else:
+            self.logMessage.emit("GaussianNB mode: global chain (one model for every user)")
+        self._emit_gnb_status()
+
+    @Slot(result="QVariant")
+    def gaussianNBTrainingPlan(self):
+        """The guided session the GUI runs (AVATAR_GNB_TRAIN_ROUNDS / _CUE_SECONDS / _REST_SECONDS): schedule
+        length, duration and the notebook's learning-curve expectation."""
+        gnb_dir = Path(__file__).resolve().parent / "prediction-gaussiannb" / "pytorch"
+        if str(gnb_dir) not in sys.path:
+            sys.path.insert(0, str(gnb_dir))
+        from subject_gnb_inference import session_plan_from_env
+        return session_plan_from_env().as_dict()
+
+    @Slot(result="QVariant")
+    def gaussianNBUserInfo(self):
+        """What is stored for the current participant: windows and cues per command, expectation, self-check."""
+        try:
+            return self._gnb_subject_chain().participant_info(self.gnb_participant_id)
+        except Exception as error:
+            return dict(participant=self.gnb_participant_id, status=f"unavailable: {error}", has_model=False)
+
+    @Slot()
+    def startGaussianNBTraining(self):
+        """Guided labelled session for the current participant: interleaved cues (every round presents every command
+        once in a fresh random order) with rest gaps, the EEG of every cue quality-checked per 2 s block, windowed and
+        labelled; then the user's statistics and model are fitted from all their stored windows and saved under
+        predictions_local/gnb_users/<id>/. Runs in a worker thread; progress arrives on gnbTrainingCueChanged."""
+        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+            self.logMessage.emit("GaussianNB training requires live OpenBCI acquisition")
+            return
+        if self._gnb_training is not None or self._gnb_calibrating:
+            self.logMessage.emit("GaussianNB: a training session or calibration is already running")
+            return
+        participant = self.gnb_participant_id
+        try:
+            chain = self._gnb_subject_chain()
+            from subject_gnb_inference import BrainFlowStream, TrainingSession, session_plan_from_env
+            plan = session_plan_from_env()
+        except Exception as error:
+            self.logMessage.emit(f"GaussianNB training could not start: {error}")
+            return
+        self._gnb_training_stop.clear()
+        stream = BrainFlowStream(board_id=BoardIds.CYTON_DAISY_BOARD.value)
+        session = TrainingSession(chain, participant, plan, stream, present=self.gnbTrainingCueChanged.emit,
+                                  should_stop=self._gnb_training_stop.is_set, assessor=self.quality_gate.assessor)
+        self._gnb_training = session
+        self._emit_gnb_status()
+        info = plan.as_dict()
+        self.logMessage.emit(f"GaussianNB training session ({self._gnb_label(chain.backend)}) for '{participant}': {plan.rounds} rounds x {len(plan.commands)} "
+                             f"commands x {plan.cue_seconds:.0f} s cues with {plan.rest_seconds:.0f} s rest, about "
+                             f"{info['total_minutes']} min. Think the cued command for the whole cue; {info['expectation']}")
+
+        def work():
+            try:
+                summary = session.run()
+                self.logMessage.emit(f"GaussianNB training session {summary['session_id']}: {summary['cues_done']}/{summary['n_cues']} "
+                                     f"cues, {summary['windows_total']} labelled windows; {summary['message']}"
+                                     + (f"; cue-grouped self-check {100 * summary['cue_cv']['accuracy']:.0f} % "
+                                        f"(5-window context {100 * summary['cue_cv']['context_accuracy']:.0f} %)"
+                                        if summary.get("cue_cv") else ""))
+                self.gnbTrainingFinished.emit(summary)
+            except Exception as error:
+                self.logMessage.emit(f"GaussianNB training session failed: {error}")
+                self.gnbTrainingFinished.emit(dict(trained=False, message=str(error), participant=participant,
+                                                   session_id=session.session_id))
+            finally:
+                self._gnb_training = None
+                self._emit_gnb_status()
+
+        threading.Thread(target=work, daemon=True).start()
+
+    @Slot()
+    def stopGaussianNBTraining(self):
+        """Stop the running session after the current second; the cues recorded so far are kept and fitted."""
+        if self._gnb_training is None:
+            self.logMessage.emit("GaussianNB: no training session is running")
+            return
+        self._gnb_training_stop.set()
+        self.logMessage.emit("GaussianNB training: stopping; the windows collected so far are kept")
+
+    @Slot()
+    def trainGaussianNBFromFolder(self):
+        """Train (or extend) the current participant's model from a folder of their labelled OpenBCI GUI recordings
+        laid out like Data_clean: <folder>/<command>/OpenBCI-RAW-*.txt. Every recording counts as one cue."""
+        folder = QFileDialog.getExistingDirectory(None, "Folder with this user's labelled recordings (<command>/OpenBCI-RAW-*.txt)",
+                                                  str(Path.home()))
+        if not folder:
+            return
+        try:
+            user = self._gnb_subject_chain().train_from_folder(self.gnb_participant_id, folder, assessor=self.quality_gate.assessor)
+            cv = user.meta.get("cue_cv")
+            self.logMessage.emit(f"GaussianNB trained '{user.participant}' from {Path(folder).name}: {user.status()}"
+                                 + (f"; cue-grouped self-check {100 * cv['accuracy']:.0f} %" if cv else ""))
+        except Exception as error:
+            self.logMessage.emit(f"GaussianNB training from {Path(folder).name} failed: {error}")
+        self._emit_gnb_status()
+
+    def _run_gaussiannb_subject(self, framework=None):
+        """Subject-specific mode: three views -> 435 features -> the user's statistics and model -> 5-window context
+        -> vote-agreement gate (>= 4 of the last 5 window votes). Only accepted raw captures reach it."""
+        chain = self._gnb_subject_chain(framework)
+        self._emit_gnb_status()
+        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
+                                           sample_time=int(chain.capture_seconds) + 2)
+        capture = processor.get_quality_capture()
+        n = chain.capture_samples
+        if capture["raw"].shape[1] < n:
+            return self.quality_gate.withhold("Insufficient samples for the GaussianNB 5-window context")
+        for name in ("raw", "counters", "timestamps"):
+            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+        result = chain.predict_capture(capture, self.gnb_participant_id, gate=self.quality_gate)
+        decision = chain.last_decision
+        if decision is not None:
+            probs = ", ".join(f"{k} {v:.2f}" for k, v in decision["probabilities"].items())
+            self.logMessage.emit(f"GaussianNB (my model, {self._gnb_label(chain.backend)}): {decision['label']} - {decision['agreement']}/{decision['votes']} window "
+                                 f"votes for '{decision['command']}' (need {decision['votes_needed']}); participant "
+                                 f"'{decision['participant']}' {decision['participant_status']}; {probs}")
+        return result
+
+    def run_gaussiannb_pytorch(self):
+        """Improved chain with the PyTorch GaussianNB: loader filtering -> 128-sample windows -> 570 features ->
+        participant z-score -> LDA -> GaussianNB -> 5-window causal context -> per-class thresholds."""
+        return self._run_gaussiannb("PyTorch")
+
+    def run_gaussiannb_tensorflow(self):
+        """The same chains with the TensorFlow GaussianNBTF as the decision model (artifacts of
+        prediction-gaussiannb/tensorflow/gaussiannb_train.ipynb: 125-sample windows, argmax decision)."""
+        return self._run_gaussiannb("TensorFlow")
+
+    def run_gaussiannb_jax(self):
+        """The same chains with the JAX GaussianNBJAX as the decision model, on the CPU (artifacts of
+        prediction-gaussiannb/jax/instructions_log_gnb_jax.ipynb: 125-sample windows with a 50-sample stride, argmax
+        decision); calibrations and user models live in predictions_local/gnb_calibration_jax and gnb_users_jax."""
+        return self._run_gaussiannb("JAX")
+
+    def _run_gaussiannb(self, framework):
+        """Only accepted raw captures reach the chain. In subject-specific mode (setGaussianNBMode("subject")) the
+        user's own model of the selected framework runs instead of the global chain."""
+        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+            return self.quality_gate.withhold("GaussianNB inference requires verified live OpenBCI acquisition")
+        if framework not in self.GNB_BACKENDS:
+            return self.quality_gate.withhold(f"GaussianNB is not implemented for the {framework} framework")
+        if self._gnb_calibrating:
+            return self.quality_gate.withhold("GaussianNB calibration in progress")
+        if self._gnb_training is not None:
+            return self.quality_gate.withhold("GaussianNB training session in progress")
+        if self.gnb_mode == "subject":
+            return self._run_gaussiannb_subject(framework)
+        chain = self._gnb_chain(framework)
+        self._emit_gnb_status()
+        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
+                                           sample_time=int(chain.capture_seconds) + 2)
+        capture = processor.get_quality_capture()
+        n = chain.capture_samples
+        if capture["raw"].shape[1] < n:
+            return self.quality_gate.withhold("Insufficient samples for the GaussianNB 5-window context")
+        for name in ("raw", "counters", "timestamps"):
+            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+        result = chain.predict_capture(capture, self.gnb_participant_id, gate=self.quality_gate)
+        decision = chain.last_decision
+        if decision is not None:
+            probs = ", ".join(f"{k} {v:.2f}" for k, v in decision["probabilities"].items())
+            self.logMessage.emit(f"GaussianNB ({framework}): {decision['label']} ({decision['context_windows']}-window context; "
+                                 f"participant '{decision['participant']}' {decision['participant_status']}; {probs})")
+        return result
+
     @Slot(str)
     def notWhatIWasThinking(self, manual_action):
         # Handle manual action input
@@ -440,15 +816,17 @@ class BrainwavesBackend(QObject):
 
     @Slot()
     def executeAction(self):
-        # Execute the current prediction
-        if self.current_prediction_label:
-            self.flight_log.insert(0, f"Executed: {self.current_prediction_label}")
-            self.flightLogUpdated.emit(self.flight_log)
-            self.logMessage.emit(f"Executed action: {self.current_prediction_label}")
+        result = self.current_prediction_result
+        if not may_execute(result):
+            self.current_prediction_label = ""
+            self.current_prediction_result = withheld_result("prediction_missing_or_expired")
+            self.signalQualityChanged.emit("Prediction withheld: obtain a fresh accepted EEG capture")
+            self.logMessage.emit("No fresh quality-approved prediction to execute")
+            return
+        self._queue_prediction(result)
+        self.flight_log.insert(0, f"Queued: {result['prediction_label']}")
+        self.flightLogUpdated.emit(self.flight_log)
 
-            # send it to the drone
-            self.doDroneTAction(self.current_prediction_label)
-            
     @Slot()
     def connectDrone(self):
         self.doDroneTAction('connect')
@@ -926,6 +1304,8 @@ class BrainwavesBackend(QObject):
     #Allows the user to switch between the OpenBCI or Neurosity Crown headsets
     @Slot(str)
     def setBCISource(self, source):
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("acquisition_changed")
         self.logMessage.emit(f"Switching BCI source to: {source}")
 
         if source == "neurosity":
@@ -943,6 +1323,8 @@ class BrainwavesBackend(QObject):
         Set data mode to either synthetic or live based on radio button selection.
         """
         
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("acquisition_changed")
         self.current_data_mode = mode
 
         if mode == "synthetic":
@@ -969,6 +1351,8 @@ class BrainwavesBackend(QObject):
 
     @Slot(str)
     def setBCISource(self, source):
+        self.current_prediction_label = ""
+        self.current_prediction_result = withheld_result("acquisition_changed")
         self.logMessage.emit(f"Switching BCI source to: {source}")
 
         if source == "neurosity":
