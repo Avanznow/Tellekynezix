@@ -880,6 +880,27 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
         jobs.append(dict(model=models[1], condition=c3, seed=seed, Xtr=(Xtr - mu) / sd, ytr=y[tr], Xte=(Xte - mu) / sd, yte=y[te]))
     say(f"{len(jobs)} fits of the original models in {n_jobs} worker processes (the forest is the slow part)")
     rows = Parallel(n_jobs=n_jobs, backend="loky")(delayed(_project_model_job)(j) for j in jobs)
+
+    # ---- the best GNB model, the subject-specific chain, fitted in each framework under the same six hold-outs
+    # (the main notebook's _subject_chain of cell 19/36: ParticipantScaler -> SubjectSpecificGaussianNB with the
+    # global fallback, on the 435 subject features), so that the old models are compared with the best GNB in
+    # PyTorch, TensorFlow and JAX on identical splits
+    Xs, parts = data["X_sub"], data["parts"]
+    if window_subsample is not None and window_subsample < len(data["y"]):
+        Xs, parts = Xs[keep], parts[keep]
+    gnb_rows = []
+    for seed in range(n_repeats):
+        tr, te = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed).split(Xs, y, groups))
+        sc = ParticipantScaler().fit(Xs[tr], parts[tr])
+        Ztr, Zte = sc.transform(Xs[tr], parts[tr]), sc.transform(Xs[te], parts[te])
+        for b in BACKENDS:
+            t1 = time.perf_counter()
+            m = SubjectSpecificGaussianNB(n_components=5, shrinkage="auto", min_windows=S.MIN_WINDOWS, backend=b).fit(Ztr, y[tr], parts[tr])
+            pred = np.asarray(m.predict_log_proba(Zte, parts[te])).argmax(1)
+            gnb_rows.append(dict(Model=f"GaussianNB subject-specific chain ({BACKEND_LABEL[b]})", Condition=c3, Seed=seed,
+                                 n_train=int(len(tr)), n_test=int(len(te)), **_scores(y[te], pred), seconds=time.perf_counter() - t1))
+            say(f"GNB subject chain ({BACKEND_LABEL[b]}), seed {seed}: accuracy {gnb_rows[-1]['Accuracy']:.4f}, macro-F1 {gnb_rows[-1]['Macro-F1']:.4f}")
+    rows = gnb_rows + list(rows)
     for r in rows:
         r["Reported"] = reported.get(r["Model"], float("nan")) if r["Condition"].startswith("1.") else float("nan")
         say(f"{r['Model']}, {r['Condition'][:2]} seed {r['Seed']}: accuracy {r['Accuracy']:.4f}, macro-F1 {r['Macro-F1']:.4f} in {r['seconds']:.0f} s")
@@ -895,45 +916,51 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
     summ["rows_used"] = len(sub)
     write_csv(summ, "defense_project_models_benchmark.csv")
 
-    # ---- figure
+    # ---- figure: the best GNB model in each framework against the project's original models, accuracy and macro-F1
     conds = [c1, c2, c3]
     cond_label = {c1: f"as reported: own loader, random split of rows ({len(sub):,} rows)",
                   c2: "same code and rows, split by recording",
-                  c3: f"same code on the verified windows (570 features), {n_repeats} recording-grouped hold-outs"}
-    colors = ["#9e9e9e", "#ff8c00", "#3987e5"]
-    fig, ax = plt.subplots(figsize=(11, 6.4))
-    names = list(models)
-    w = 0.8 / (len(conds) + 1)
-    for j, c in enumerate(conds):
-        for i, name in enumerate(names):
-            r = summ[(summ["Model"] == name) & (summ["Condition"] == c)]
-            if not len(r):
-                continue
-            v = float(r["Accuracy"].iloc[0]); sd = float(r["Accuracy_sd"].iloc[0]) if int(r["runs"].iloc[0]) > 1 else 0.0
-            bar = ax.bar(i + (j - (len(conds) - 1) / 2) * w, v, w, color=colors[j], yerr=sd if sd else None, capsize=3,
-                         label=cond_label[c] if i == 0 else None)
-            ax.text(bar[0].get_x() + w / 2, v + 0.02 + sd, f"{v:.3f}", ha="center", va="bottom", fontsize=8)
-    for i, name in enumerate(names):
-        if name in reported:
-            ax.plot([i - 0.45, i + 0.45], [reported[name]] * 2, color="#333333", lw=1.2, ls=":",
-                    label="test accuracy stored in the project's pickle" if i == 0 else None)
-    gnb = PYTORCH_DIR / "final_model_benchmark_project_models_summary.csv"
-    if gnb.exists():
-        b = pd.read_csv(gnb)
-        for key, lab, col in (("subject-specific", "GNB subject-specific chain, same six hold-outs", "#ee4c2c"), ("improved", "GNB improved global chain, same six hold-outs", "#d62728")):
-            r = b[b["Model"].str.contains(key)]
-            if len(r):
-                ax.axhline(float(r["Accuracy Mean"].iloc[0]), color=col, lw=1.0, ls="-." if key == "improved" else "-", label=lab)
-    ax.axhline(CHANCE, color="#555555", ls="--", lw=1)
-    ax.text(len(names) - 0.55, CHANCE + 0.012, "chance", fontsize=8, color="#555555")
-    ax.set_xticks(range(len(names)))
-    ax.set_xticklabels(names)
-    ax.set_ylim(0, 1.08)
-    ax.set_ylabel("accuracy")
-    ax.set_title("The project's original random forest and MLP, run as written on Data_clean, under three data splits", fontsize=10)
-    ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.08), frameon=False, ncol=2)
-    ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
+                  c3: f"on the verified windows, {n_repeats} recording-grouped hold-outs (GNB: 435 subject features; RF and MLP: 570 features)"}
+    colors = {c1: "#9e9e9e", c2: "#ff8c00", c3: "#3987e5"}
+    fw_colors = {"PyTorch": "#ee4c2c", "TensorFlow": "#ff8c00", "JAX": "#3987e5"}
+    gnb_names = [f"GaussianNB subject-specific chain ({BACKEND_LABEL[b]})" for b in BACKENDS]
+    old_names = list(models)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6.2))
+    for ax, metric in zip(axes, ("Accuracy", "Macro-F1")):
+        sd_col = metric + "_sd"
+        x = 0.0; ticks = []; labels = []
+        for name in gnb_names:
+            r = summ[(summ["Model"] == name) & (summ["Condition"] == c3)]
+            v, sd = float(r[metric].iloc[0]), float(r[sd_col].iloc[0])
+            fwk = name.split("(")[-1].rstrip(")")
+            ax.bar(x, v, 0.6, color=fw_colors[fwk], yerr=sd, capsize=3, label=f"GNB subject-specific chain, {fwk}" if metric == "Accuracy" else None)
+            ax.text(x, v + 0.02 + sd, f"{v:.3f}", ha="center", va="bottom", fontsize=8)
+            ticks.append(x); labels.append(f"GNB\n{fwk}"); x += 0.8
+        x += 0.5
+        w = 0.28
+        for name in old_names:
+            for j, c in enumerate(conds):
+                r = summ[(summ["Model"] == name) & (summ["Condition"] == c)]
+                if not len(r):
+                    continue
+                v = float(r[metric].iloc[0]); sd = float(r[sd_col].iloc[0]) if int(r["runs"].iloc[0]) > 1 else 0.0
+                ax.bar(x + (j - 1) * w, v, w, color=colors[c], yerr=sd if sd else None, capsize=3,
+                       label=cond_label[c] if (name == old_names[0] and metric == "Accuracy") else None)
+                ax.text(x + (j - 1) * w, v + 0.02 + sd, f"{v:.3f}", ha="center", va="bottom", fontsize=7.5)
+            if name in reported and metric == "Accuracy":
+                ax.plot([x - 1.5 * w, x - 0.5 * w], [reported[name]] * 2, color="#333333", lw=1.4, ls=":",
+                        label="test accuracy stored in the project's pickle" if name == old_names[0] else None)
+            ticks.append(x); labels.append(name.replace(" (MLP)", "\n(MLP)").replace("JAX random forest", "JAX random\nforest")); x += 1.2
+        ax.axhline(CHANCE, color="#555555", ls="--", lw=1)
+        ax.text(ticks[-1] + 0.3, CHANCE + 0.012, "chance", fontsize=8, color="#555555", ha="right")
+        ax.set_xticks(ticks); ax.set_xticklabels(labels, fontsize=8.5)
+        ax.set_ylim(0, 1.08); ax.set_ylabel(metric.lower() if metric == "Accuracy" else "macro-F1")
+        ax.set_title(f"{metric}: best GNB per framework against the project's original models", fontsize=10)
+        ax.spines[["top", "right"]].set_visible(False)
+    fig.suptitle("The project's original random forest and MLP, run as written on Data_clean, against the subject-specific GaussianNB chain in PyTorch, TensorFlow and JAX",
+                 fontsize=10.5, x=0.01, ha="left")
+    fig.legend(fontsize=8, loc="lower center", bbox_to_anchor=(0.5, -0.01), frameon=False, ncol=2)
+    fig.tight_layout(rect=(0, 0.13, 1, 0.96))
     fig.savefig(HERE / "defense_project_models_benchmark.png")
     plt.close(fig)
     say(f"wrote defense_project_models_benchmark.png in {time.perf_counter() - t0:.0f} s")

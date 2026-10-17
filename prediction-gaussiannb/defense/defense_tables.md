@@ -245,12 +245,15 @@
 
 | Model | Condition | runs | Accuracy | Accuracy_sd | Macro-F1 | Macro-F1_sd | Balanced accuracy | Reported | n_train | n_test | seconds | rows_in_loader | files_in_loader | rows_used |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| JAX random forest | 1. as reported: own loader, random split of rows | 1 | 0.930 |  | 0.930 |  | 0.930 | 0.944 | 21000.000 | 6000.000 | 411.517 | 291200 | 1820 | 30000 |
-| JAX deep learning (MLP) | 1. as reported: own loader, random split of rows | 1 | 0.958 |  | 0.957 |  | 0.957 | 0.936 | 21000.000 | 6000.000 | 30.359 | 291200 | 1820 | 30000 |
-| JAX random forest | 2. same code and rows, split by recording | 1 | 0.846 |  | 0.850 |  | 0.851 |  | 24055.000 | 5945.000 | 458.808 | 291200 | 1820 | 30000 |
-| JAX deep learning (MLP) | 2. same code and rows, split by recording | 1 | 0.906 |  | 0.905 |  | 0.908 |  | 24055.000 | 5945.000 | 30.398 | 291200 | 1820 | 30000 |
-| JAX random forest | 3. same code on the verified windows (570 features), split by recording | 6 | 0.509 | 0.035 | 0.501 | 0.039 | 0.506 |  | 9672.333 | 2416.667 | 120.685 | 291200 | 1820 | 30000 |
-| JAX deep learning (MLP) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.702 | 0.030 | 0.697 | 0.033 | 0.699 |  | 9672.333 | 2416.667 | 13.347 | 291200 | 1820 | 30000 |
+| GaussianNB subject-specific chain (PyTorch) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.839 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 5.171 | 291200 | 1820 | 30000 |
+| GaussianNB subject-specific chain (TensorFlow) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.838 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 5.414 | 291200 | 1820 | 30000 |
+| GaussianNB subject-specific chain (JAX) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.838 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 16.798 | 291200 | 1820 | 30000 |
+| JAX random forest | 1. as reported: own loader, random split of rows | 1 | 0.930 |  | 0.930 |  | 0.930 | 0.944 | 21000.000 | 6000.000 | 409.353 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 1. as reported: own loader, random split of rows | 1 | 0.958 |  | 0.957 |  | 0.957 | 0.936 | 21000.000 | 6000.000 | 29.293 | 291200 | 1820 | 30000 |
+| JAX random forest | 2. same code and rows, split by recording | 1 | 0.846 |  | 0.850 |  | 0.851 |  | 24055.000 | 5945.000 | 458.172 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 2. same code and rows, split by recording | 1 | 0.906 |  | 0.905 |  | 0.908 |  | 24055.000 | 5945.000 | 29.400 | 291200 | 1820 | 30000 |
+| JAX random forest | 3. same code on the verified windows (570 features), split by recording | 6 | 0.509 | 0.035 | 0.501 | 0.039 | 0.506 |  | 9672.333 | 2416.667 | 120.956 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.702 | 0.030 | 0.697 | 0.033 | 0.699 |  | 9672.333 | 2416.667 | 13.289 | 291200 | 1820 | 30000 |
 
 ## defense_decision_model_latency.csv
 
