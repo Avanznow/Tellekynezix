@@ -1,5 +1,0 @@
-Protocol,Chain,Window acc (mean),Window acc (std),"File acc, majority vote (mean)"
-5-fold by recording (seed 42),GaussianNBJAX improved global chain (570 feats + participant z + LDA5),0.4913072125154475,0.015377334746191343,0.6003952500644576
-5-fold by recording (seed 42),"GaussianNBJAX subject-specific chain (435 feats, own LDA + own NB per participant)",0.8389434371122781,0.017730891187491268,0.8957259891104699
-5-fold by participant (held-out people),GaussianNBJAX improved global chain (570 feats + participant z + LDA5),0.18015620670969643,0.02061508928647709,0.181182776481659
-5-fold by participant (held-out people),"GaussianNBJAX subject-specific chain (435 feats, own LDA + own NB per participant)",0.18325273430155398,0.016515345291965116,0.18095824322864837

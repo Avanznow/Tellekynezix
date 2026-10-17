@@ -1,6 +1,0 @@
-rule,windows_flagged,rejected_by_this_rule_alone,borderline_within_1_5x,far_beyond_2x,median_ratio_to_threshold
-flat_channel,3514,0,667,2847,
-adc_saturation,3812,6,0,3812,100.0
-excessive_amplitude,2738,176,268,2340,27.264646710711325
-excessive_sample_jump,2204,7,311,1847,77.76243421583584
-excessive_line_noise,0,0,0,0,
