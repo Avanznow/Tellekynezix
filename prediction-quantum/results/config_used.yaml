@@ -1,0 +1,57 @@
+data:
+  data_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/Data_clean
+  cache_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache
+  max_windows_per_class: 2000
+  subsample_seed: 0
+  n_jobs_load: -1
+split:
+  test_fraction: 0.2
+  val_fraction: 0.1
+  seeds:
+  - 0
+  - 1
+  - 2
+encoding:
+  n_qubits:
+  - 4
+  - 6
+  - 8
+  angle_range:
+  - 0.0
+  - 3.141592653589793
+  clip_percentiles:
+  - 1.0
+  - 99.0
+vqc:
+  n_layers:
+  - 1
+  - 2
+  - 4
+  epochs: 40
+  batch_size: 64
+  lr: 0.01
+mlp:
+  hidden: 64
+  epochs: 40
+  batch_size: 64
+  lr: 0.01
+noise:
+  probabilities:
+  - 0.0
+  - 0.01
+  - 0.05
+  - 0.1
+  max_qubits: 6
+  seeds:
+  - 0
+  batch_size: 256
+latency:
+  repeats: 50
+  warmup: 5
+compute:
+  n_jobs: 2
+  torch_threads: 2
+report:
+  reference_qubits: 6
+  reference_layers: 2
+output_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results

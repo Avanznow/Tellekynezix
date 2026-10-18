@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest>=8
+nbformat>=5
+nbclient>=0.10
+matplotlib>=3.8

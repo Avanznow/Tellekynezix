@@ -1,0 +1,233 @@
+{
+  "(whole dataset)": [
+    {
+      "kind": "startup_transient",
+      "severity": "medium",
+      "evidence": "first 2 s window of a recording fails 100% of the time vs 52% for later windows",
+      "action": "Discard the first seconds of every recording (or start saving only after the stream has settled)."
+    },
+    {
+      "kind": "mixed_hardware",
+      "severity": "medium",
+      "evidence": "recordings from different board configurations: 16ch@125Hz, 8ch@250Hz",
+      "action": "Use one board configuration (e.g. 16-channel Cyton+Daisy at 125 Hz) for every session of a study."
+    },
+    {
+      "kind": "systematic_electrode",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 dead (flat/railed) for 6 participants: G03/person08, G03/person09, G03/person10, G04/person07, G04/person08, G04/person10",
+      "action": "Likely hardware rather than individual contact: inspect EXG Channel 15's cap lead, connector and board pin, and confirm it is enabled in the GUI before the next session."
+    },
+    {
+      "kind": "systematic_electrode",
+      "severity": "high",
+      "channel": "EXG Channel 4",
+      "evidence": "EXG Channel 4 dead (flat/railed) for 3 participants: G01/person01, G01/person04, G01/person05",
+      "action": "Likely hardware rather than individual contact: inspect EXG Channel 4's cap lead, connector and board pin, and confirm it is enabled in the GUI before the next session."
+    }
+  ],
+  "G01/person01": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 4",
+      "evidence": "EXG Channel 4 stuck at the ADC rail (no signal) in 96% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 4, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G01/person02": [],
+  "G01/person03": [],
+  "G01/person04": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 4",
+      "evidence": "EXG Channel 4 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 4, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 6",
+      "evidence": "EXG Channel 6 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 6, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G01/person05": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 0",
+      "evidence": "EXG Channel 0 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 0, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 3",
+      "evidence": "EXG Channel 3 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 3, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 4",
+      "evidence": "EXG Channel 4 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 4, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G01/person06": [],
+  "G01/person07": [],
+  "G01/person08": [],
+  "G01/person09": [],
+  "G01/person10": [],
+  "G03/person01": [
+    {
+      "kind": "wireless_dropouts",
+      "severity": "medium",
+      "evidence": "packet loss or acquisition gaps in 74% of windows after start-up",
+      "action": "Move the USB dongle closer (USB extension), check the battery, and reduce 2.4 GHz interference."
+    }
+  ],
+  "G03/person02": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 11",
+      "evidence": "EXG Channel 11 saturated at the ADC rail in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 11, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G03/person03": [],
+  "G03/person04": [],
+  "G03/person05": [],
+  "G03/person06": [],
+  "G03/person07": [],
+  "G03/person08": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 15, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G03/person09": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 15, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G03/person10": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 15, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G04/person01": [
+    {
+      "kind": "wireless_dropouts",
+      "severity": "medium",
+      "evidence": "packet loss or acquisition gaps in 24% of windows after start-up",
+      "action": "Move the USB dongle closer (USB extension), check the battery, and reduce 2.4 GHz interference."
+    }
+  ],
+  "G04/person02": [
+    {
+      "kind": "wireless_dropouts",
+      "severity": "medium",
+      "evidence": "packet loss or acquisition gaps in 45% of windows after start-up",
+      "action": "Move the USB dongle closer (USB extension), check the battery, and reduce 2.4 GHz interference."
+    }
+  ],
+  "G04/person03": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 14",
+      "evidence": "EXG Channel 14 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 14, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G04/person04": [],
+  "G04/person05": [],
+  "G04/person06": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 5",
+      "evidence": "EXG Channel 5 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 5, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 11",
+      "evidence": "EXG Channel 11 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 11, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 13",
+      "evidence": "EXG Channel 13 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 13, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G04/person07": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 15, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G04/person08": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 2",
+      "evidence": "EXG Channel 2 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 2, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 15, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ],
+  "G04/person09": [],
+  "G04/person10": [
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 3",
+      "evidence": "EXG Channel 3 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 3, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 14",
+      "evidence": "EXG Channel 14 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 14, check its lead and pin, and confirm the channel is enabled in the GUI."
+    },
+    {
+      "kind": "electrode_contact",
+      "severity": "high",
+      "channel": "EXG Channel 15",
+      "evidence": "EXG Channel 15 stuck at the ADC rail (no signal) in 100% of its windows",
+      "action": "Re-seat / re-gel EXG Channel 15, check its lead and pin, and confirm the channel is enabled in the GUI."
+    }
+  ]
+}

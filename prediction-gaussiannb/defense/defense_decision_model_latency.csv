@@ -1,0 +1,11 @@
+Model,Device,n_train,first_fit_ms,second_fit_ms,first_predict_ms,steady_predict_ms,steady_predict_p90_ms
+PyTorch GaussianNB,CPU,600,0.714,0.406,0.506,0.051,0.059
+PyTorch GaussianNB,CUDA,600,57.608,1.158,37.79,0.106,0.119
+TensorFlow GaussianNBTF,CPU,600,38.098,1.841,7.256,1.016,1.249
+JAX GaussianNBJAX,CPU,600,524.837,1.568,77.882,0.21,0.221
+PyTorch GaussianNB,CPU,9670,1.156,0.892,0.123,0.049,0.051
+PyTorch GaussianNB,CUDA,9670,1.313,1.122,0.169,0.108,0.119
+TensorFlow GaussianNBTF,CPU,9670,2.743,1.978,1.235,1.007,1.074
+JAX GaussianNBJAX,CPU,9670,283.868,1.692,0.348,0.211,0.234
+JAX GaussianNBJAX,GPU,600,1007.002,4.561,134.525,0.459,1.105
+JAX GaussianNBJAX,GPU,9670,589.17,3.63,0.552,0.499,0.588

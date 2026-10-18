@@ -1,0 +1,7 @@
+Priority,Action,Why it helps
+1,Move from GaussianNB to sequence-aware models (1D CNN / TCN / EEGNet / Transformer),Captures temporal dependencies and non-Gaussian structure that NB ignores.
+2,Use subject/session-aware splits and domain adaptation,Reduces train-test drift and improves out-of-session generalization.
+3,Improve signal preprocessing (band-pass + notch + artifact rejection/ICA),Raises signal-to-noise ratio before classification.
+4,"Increase robust feature diversity (CSP/Riemannian covariance, wavelets, entropy)",Adds discriminative structure beyond independent per-feature Gaussian assumptions.
+5,Cost-sensitive training and focal losses for minority commands,Improves Macro-F1 and per-class recall under imbalance.
+6,"Use calibrated ensembles (e.g., LightGBM/XGBoost + calibration)",Usually stronger tabular baseline than GaussianNB for heterogeneous EEG features.

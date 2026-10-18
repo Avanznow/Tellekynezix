@@ -1,0 +1,1199 @@
+{
+  "dataset": [
+    {
+      "Quantity": "Files under Data_clean",
+      "Value": 3648,
+      "Detail": "eeg_data.load_recordings"
+    },
+    {
+      "Quantity": "Named OpenBCI recordings found",
+      "Value": 1826,
+      "Detail": "eeg_data.load_recordings"
+    },
+    {
+      "Quantity": "Recordings loaded (16ch_125hz, 15 channels)",
+      "Value": 1394,
+      "Detail": "eeg_data.load_recordings"
+    },
+    {
+      "Quantity": "Recordings skipped (other board, unreadable or unlabelled)",
+      "Value": 432,
+      "Detail": "422 of another board"
+    },
+    {
+      "Quantity": "2 s blocks assessed",
+      "Value": 6703,
+      "Detail": "signal_quality policy on the kept channels"
+    },
+    {
+      "Quantity": "2 s blocks kept",
+      "Value": 3249,
+      "Detail": "48.5 %"
+    },
+    {
+      "Quantity": "Recordings with usable data",
+      "Value": 883,
+      "Detail": "at least one kept block"
+    },
+    {
+      "Quantity": "Participants with usable data",
+      "Value": "18 of 23",
+      "Detail": "none usable: G03/person02, G04/person03, G04/person06, G04/person08, G04/person10"
+    },
+    {
+      "Quantity": "Windows in the feature caches",
+      "Value": 12089,
+      "Detail": "128 samples (1.024 s), stride 64"
+    },
+    {
+      "Quantity": "Recordings in the caches",
+      "Value": 883,
+      "Detail": "one contiguous block of windows each"
+    },
+    {
+      "Quantity": "Participants in the caches",
+      "Value": 18,
+      "Detail": "G01/person08, G01/person09, G01/person10, G03/person01, G03/person03, G03/person04, G03/person05, G03/person06, G03/person07, G03/person08, G03/person09, G03/person10, G04/person01, G04/person02, G04/person04, G04/person05, G04/person07, G04/person09"
+    },
+    {
+      "Quantity": "Windows per recording (median, min, max)",
+      "Value": "15 (3-23)",
+      "Detail": ""
+    },
+    {
+      "Quantity": "Windows: backward",
+      "Value": 1882,
+      "Detail": "train 1506, test 376"
+    },
+    {
+      "Quantity": "Windows: forward",
+      "Value": 1866,
+      "Detail": "train 1492, test 374"
+    },
+    {
+      "Quantity": "Windows: landing",
+      "Value": 2117,
+      "Detail": "train 1693, test 424"
+    },
+    {
+      "Quantity": "Windows: left",
+      "Value": 1987,
+      "Detail": "train 1589, test 398"
+    },
+    {
+      "Quantity": "Windows: right",
+      "Value": 1963,
+      "Detail": "train 1571, test 392"
+    },
+    {
+      "Quantity": "Windows: takeoff",
+      "Value": 2274,
+      "Detail": "train 1819, test 455"
+    },
+    {
+      "Quantity": "Training windows (notebook split)",
+      "Value": 9670,
+      "Detail": "707 recordings"
+    },
+    {
+      "Quantity": "Test windows (notebook split)",
+      "Value": 2419,
+      "Detail": "176 recordings"
+    },
+    {
+      "Quantity": "Participants with an own model",
+      "Value": 17,
+      "Detail": "fallback: G03/person01"
+    }
+  ],
+  "progression": {
+    "original": 0.260438197602315,
+    "original_pca_dims": 62,
+    "improved": 0.49855312112443156,
+    "subject": 0.8458040512608516
+  },
+  "statistics": [
+    {
+      "Statistic": "Window accuracy",
+      "Chain": "Improved global chain",
+      "Estimate": 0.49855312112443156,
+      "95 % low": 0.4786462162932725,
+      "95 % high": 0.5184646140607564,
+      "n": 2419,
+      "Detail": "Wilson interval"
+    },
+    {
+      "Statistic": "Per-recording accuracy",
+      "Chain": "Improved global chain",
+      "Estimate": 0.625,
+      "95 % low": 0.5515243322125547,
+      "95 % high": 0.6931356047880792,
+      "n": 176,
+      "Detail": "Wilson interval"
+    },
+    {
+      "Statistic": "Gated accuracy (4 of 5, accepted decisions)",
+      "Chain": "Improved global chain",
+      "Estimate": 0.7537414965986394,
+      "95 % low": 0.721328649780423,
+      "95 % high": 0.7835157867577911,
+      "n": 735,
+      "Detail": "coverage 0.426 of 1725 decisions"
+    },
+    {
+      "Statistic": "Cohen's kappa (windows)",
+      "Chain": "Improved global chain",
+      "Estimate": 0.3981856434851594,
+      "95 % low": NaN,
+      "95 % high": NaN,
+      "n": 2419,
+      "Detail": "0 = chance agreement, 1 = perfect"
+    },
+    {
+      "Statistic": "Window accuracy",
+      "Chain": "Subject-specific chain",
+      "Estimate": 0.8458040512608516,
+      "95 % low": 0.8308653879267334,
+      "95 % high": 0.859646157460342,
+      "n": 2419,
+      "Detail": "Wilson interval"
+    },
+    {
+      "Statistic": "Per-recording accuracy",
+      "Chain": "Subject-specific chain",
+      "Estimate": 0.9034090909090909,
+      "95 % low": 0.8507675131165523,
+      "95 % high": 0.9388168290218576,
+      "n": 176,
+      "Detail": "Wilson interval"
+    },
+    {
+      "Statistic": "Gated accuracy (4 of 5, accepted decisions)",
+      "Chain": "Subject-specific chain",
+      "Estimate": 0.9421885753613214,
+      "95 % low": 0.9289815694743063,
+      "95 % high": 0.9530636195655139,
+      "n": 1453,
+      "Detail": "coverage 0.842 of 1725 decisions"
+    },
+    {
+      "Statistic": "Cohen's kappa (windows)",
+      "Chain": "Subject-specific chain",
+      "Estimate": 0.8148656623074764,
+      "95 % low": NaN,
+      "95 % high": NaN,
+      "n": 2419,
+      "Detail": "0 = chance agreement, 1 = perfect"
+    },
+    {
+      "Statistic": "McNemar exact test, Subject-specific chain vs Improved global chain (windows)",
+      "Chain": "both",
+      "Estimate": 2.6099134237932483e-172,
+      "95 % low": NaN,
+      "95 % high": NaN,
+      "n": 2419,
+      "Detail": "exact p = 2.6e-172; Improved global chain right and Subject-specific chain wrong: 99, the reverse: 939; chi-square with continuity correction 678.2 (p = 1.7e-149)"
+    },
+    {
+      "Statistic": "Protocol A, window accuracy per fold: improved minus baseline",
+      "Chain": "both",
+      "Estimate": 0.2364985804982082,
+      "95 % low": 0.20173625465068218,
+      "95 % high": 0.2612649855312113,
+      "n": 5,
+      "Detail": "range over the 5 folds; Wilcoxon signed-rank p = 0.0625 (the smallest two-sided p with 5 folds is 0.0625); folds [0.236, 0.244, 0.261, 0.202, 0.24]"
+    },
+    {
+      "Statistic": "Protocol A, window accuracy per fold: subject minus improved",
+      "Chain": "both",
+      "Estimate": 0.3539458933005538,
+      "95 % low": 0.3228476821192053,
+      "95 % high": 0.3935510541546093,
+      "n": 5,
+      "Detail": "range over the 5 folds; Wilcoxon signed-rank p = 0.0625 (the smallest two-sided p with 5 folds is 0.0625); folds [0.349, 0.336, 0.368, 0.394, 0.323]"
+    }
+  ],
+  "vote_gate_deployed": [
+    {
+      "Chain": "Improved global chain",
+      "Agreement needed": "4 of 5",
+      "Coverage": 0.4260869565217391,
+      "Accuracy of accepted decisions": 0.7537414965986394,
+      "Decisions": 1725,
+      "Accepted": 735
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Agreement needed": "4 of 5",
+      "Coverage": 0.8423188405797102,
+      "Accuracy of accepted decisions": 0.9421885753613214,
+      "Decisions": 1725,
+      "Accepted": 1453
+    }
+  ],
+  "itr": [
+    {
+      "Chain": "Improved global chain",
+      "Decision": "single window (1.02 s)",
+      "Seconds per decision": 1.024,
+      "Accuracy": 0.49855312112443156,
+      "Coverage": 1.0,
+      "Bits per decision": 0.4206449450191603,
+      "Bits per minute": 24.647164747216422,
+      "n": 2419
+    },
+    {
+      "Chain": "Improved global chain",
+      "Decision": "5-window context (3.07 s)",
+      "Seconds per decision": 3.072,
+      "Accuracy": 0.6086956521739131,
+      "Coverage": 1.0,
+      "Bits per decision": 0.7107458084815783,
+      "Bits per minute": 13.881754071905826,
+      "n": 1725
+    },
+    {
+      "Chain": "Improved global chain",
+      "Decision": "gated context, 4 of 5 votes (3.07 s)",
+      "Seconds per decision": 3.072,
+      "Accuracy": 0.7537414965986394,
+      "Coverage": 0.4260869565217391,
+      "Bits per decision": 1.2078740070908958,
+      "Bits per minute": 10.051940616075727,
+      "n": 735
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Decision": "single window (1.02 s)",
+      "Seconds per decision": 1.024,
+      "Accuracy": 0.8458040512608516,
+      "Coverage": 1.0,
+      "Bits per decision": 1.6066887815164106,
+      "Bits per minute": 94.14192079197718,
+      "n": 2419
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Decision": "5-window context (3.07 s)",
+      "Seconds per decision": 3.072,
+      "Accuracy": 0.8973913043478261,
+      "Coverage": 1.0,
+      "Bits per decision": 1.8695016524761896,
+      "Bits per minute": 36.51370414992558,
+      "n": 1725
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Decision": "gated context, 4 of 5 votes (3.07 s)",
+      "Seconds per decision": 3.072,
+      "Accuracy": 0.9421885753613214,
+      "Coverage": 0.8423188405797102,
+      "Bits per decision": 2.132033408914152,
+      "Bits per minute": 35.075232599097184,
+      "n": 1453
+    }
+  ],
+  "confound_controls": [
+    {
+      "Control": "Held-out participants (5-fold by participant)",
+      "Classifier": "improved global chain",
+      "Value": 0.1841,
+      "Reference": 0.1667,
+      "Reference_meaning": "chance",
+      "Notebook": "0.18",
+      "Reading": "nothing transfers across people"
+    },
+    {
+      "Control": "Held-out participants (5-fold by participant)",
+      "Classifier": "subject-specific chain",
+      "Value": 0.1891,
+      "Reference": 0.1667,
+      "Reference_meaning": "chance",
+      "Notebook": "0.18",
+      "Reading": "nothing transfers across people"
+    },
+    {
+      "Control": "Acquisition time only, no EEG (label of the nearest training window in time)",
+      "Classifier": "time of the window",
+      "Value": 0.8849,
+      "Reference": 0.1667,
+      "Reference_meaning": "chance",
+      "Notebook": "0.97",
+      "Reading": "the split lets time alone predict the command"
+    },
+    {
+      "Control": "Labels permuted across recordings within participant (3 seeds)",
+      "Classifier": "subject-specific chain",
+      "Value": 0.1591,
+      "Reference": 0.1667,
+      "Reference_meaning": "chance",
+      "Notebook": "0.15",
+      "Reading": "the chain learns nothing from shuffled labels: no leak through features"
+    },
+    {
+      "Control": "Train on the first 60 % of every command block, test on the last 40 %",
+      "Classifier": "subject-specific chain",
+      "Value": 0.6771,
+      "Reference": 0.8458,
+      "Reference_meaning": "same chain, notebook split",
+      "Notebook": "0.66",
+      "Reading": "accuracy falls with time distance to the training recordings"
+    },
+    {
+      "Control": "First half vs second half of the SAME command block",
+      "Classifier": "LDA + GaussianNB, leave-one-recording-out",
+      "Value": 0.7574,
+      "Reference": 0.5,
+      "Reference_meaning": "chance (2 classes)",
+      "Notebook": "0.73",
+      "Reading": "windows carry the session's drift, not only the command"
+    },
+    {
+      "Control": "Errors of the subject-specific chain landing on the adjacent block in time",
+      "Classifier": "subject-specific chain",
+      "Value": 0.6939,
+      "Reference": 0.3394,
+      "Reference_meaning": "if errors ignored time",
+      "Notebook": "0.79",
+      "Reading": "confusions follow the recording order"
+    }
+  ],
+  "permutation_test": {
+    "n_permutations": 100,
+    "observed_accuracy": 0.856425282544998,
+    "null_mean": 0.16169526998744246,
+    "null_std": 0.018186771825568014,
+    "null_min": 0.12222687316868983,
+    "null_max": 0.20887400586019256,
+    "p_value": 0.009900990099009901,
+    "windows": 2389,
+    "participants": 17
+  },
+  "heldout_participants_subject_chain": {
+    "accuracy": 0.18843576805360246,
+    "folds": [
+      0.18891257995735608,
+      0.18124006359300476,
+      0.22022279348757498,
+      0.19364534134821812,
+      0.16140350877192983
+    ],
+    "windows": 12089
+  },
+  "per_participant_weighted_accuracy": 0.8458040512608516,
+  "per_participant_accuracy": {
+    "G01/person08": 0.9855072463768116,
+    "G01/person09": 0.8787878787878788,
+    "G01/person10": 0.7696969696969697,
+    "G03/person03": 0.8857142857142857,
+    "G03/person04": 0.8910891089108911,
+    "G03/person05": 0.7696969696969697,
+    "G03/person06": 0.9454545454545454,
+    "G03/person07": 0.8553191489361702,
+    "G03/person08": 0.916030534351145,
+    "G03/person09": 0.7647058823529411,
+    "G03/person10": 0.7076923076923077,
+    "G04/person01": 0.9481481481481482,
+    "G04/person02": 0.5303030303030303,
+    "G04/person04": 0.9439252336448598,
+    "G04/person05": 0.9041666666666667,
+    "G04/person07": 0.9487179487179487,
+    "G04/person09": 0.7465753424657534
+  },
+  "learning_curve": [
+    {
+      "k": "1",
+      "accuracy": 0.5374121537825548,
+      "notebook": 0.5374121537825548
+    },
+    {
+      "k": "2",
+      "accuracy": 0.656056221579165,
+      "notebook": 0.656056221579165
+    },
+    {
+      "k": "3",
+      "accuracy": 0.6932616783794957,
+      "notebook": 0.6932616783794957
+    },
+    {
+      "k": "4",
+      "accuracy": 0.7453493178999586,
+      "notebook": 0.7453493178999586
+    },
+    {
+      "k": "6",
+      "accuracy": 0.8131459280694502,
+      "notebook": 0.8131459280694502
+    },
+    {
+      "k": "8",
+      "accuracy": 0.8544853245142621,
+      "notebook": 0.8544853245142621
+    },
+    {
+      "k": "all",
+      "accuracy": 0.8458040512608516,
+      "notebook": 0.8458040512608516
+    }
+  ],
+  "time_distance": [
+    {
+      "Gap to nearest training window": "< 2 s",
+      "Windows": 307,
+      "Accuracy": 0.8599348534201955,
+      "Wilson low": 0.8166498468566242,
+      "Wilson high": 0.8943235245699827
+    },
+    {
+      "Gap to nearest training window": "2-10 s",
+      "Windows": 199,
+      "Accuracy": 0.8743718592964824,
+      "Wilson low": 0.8211240258258065,
+      "Wilson high": 0.9134398095052915
+    },
+    {
+      "Gap to nearest training window": "10-15 s",
+      "Windows": 672,
+      "Accuracy": 0.8928571428571429,
+      "Wilson low": 0.8671991096459954,
+      "Wilson high": 0.9140492039362842
+    },
+    {
+      "Gap to nearest training window": "15-20 s",
+      "Windows": 634,
+      "Accuracy": 0.8359621451104101,
+      "Wilson low": 0.8051296056674454,
+      "Wilson high": 0.8627479586839802
+    },
+    {
+      "Gap to nearest training window": "20-30 s",
+      "Windows": 442,
+      "Accuracy": 0.8144796380090498,
+      "Wilson low": 0.7755861578573056,
+      "Wilson high": 0.8479538796653527
+    },
+    {
+      "Gap to nearest training window": "30-60 s",
+      "Windows": 135,
+      "Accuracy": 0.8740740740740741,
+      "Wilson low": 0.8075771524740151,
+      "Wilson high": 0.9198712682916518
+    },
+    {
+      "Gap to nearest training window": "> 1 min",
+      "Windows": 30,
+      "Accuracy": 0.0,
+      "Wilson low": 0.0,
+      "Wilson high": 0.11351339476145204
+    }
+  ],
+  "subject_ablation": [
+    {
+      "Variant": "all four groups, LDA 5 (deployed)",
+      "Features": 435,
+      "LDA dims": 5,
+      "Accuracy": 0.8458040512608516,
+      "Macro-F1": 0.8435227517728593,
+      "Context-5 Acc": 0.8916907813145928,
+      "Per-recording Acc": 0.9034090909090909,
+      "Delta vs deployed": 0.0
+    },
+    {
+      "Variant": "without log-covariance 1-40 Hz",
+      "Features": 315,
+      "LDA dims": 5,
+      "Accuracy": 0.8114923522116577,
+      "Macro-F1": 0.8078993698588568,
+      "Context-5 Acc": 0.8598594460520876,
+      "Per-recording Acc": 0.8522727272727273,
+      "Delta vs deployed": -0.034311699049193845
+    },
+    {
+      "Variant": "without log-covariance, first difference",
+      "Features": 315,
+      "LDA dims": 5,
+      "Accuracy": 0.8305084745762712,
+      "Macro-F1": 0.8278685562738383,
+      "Context-5 Acc": 0.8788755684167011,
+      "Per-recording Acc": 0.9204545454545454,
+      "Delta vs deployed": -0.01529557668458037
+    },
+    {
+      "Variant": "without log-covariance 30-45 Hz",
+      "Features": 315,
+      "LDA dims": 5,
+      "Accuracy": 0.8321620504340637,
+      "Macro-F1": 0.8303365063370781,
+      "Context-5 Acc": 0.8656469615543613,
+      "Per-recording Acc": 0.9261363636363636,
+      "Delta vs deployed": -0.013642000826787903
+    },
+    {
+      "Variant": "without multitaper band powers",
+      "Features": 360,
+      "LDA dims": 5,
+      "Accuracy": 0.8342290202563043,
+      "Macro-F1": 0.8314841700109,
+      "Context-5 Acc": 0.8776353865233567,
+      "Per-recording Acc": 0.8977272727272727,
+      "Delta vs deployed": -0.011575031004547265
+    },
+    {
+      "Variant": "all four groups, LDA 1",
+      "Features": 435,
+      "LDA dims": 1,
+      "Accuracy": 0.5489871847871021,
+      "Macro-F1": 0.5441607147605891,
+      "Context-5 Acc": 0.5969408846630839,
+      "Per-recording Acc": 0.6306818181818182,
+      "Delta vs deployed": -0.2968168664737495
+    },
+    {
+      "Variant": "all four groups, LDA 2",
+      "Features": 435,
+      "LDA dims": 2,
+      "Accuracy": 0.6696982224059529,
+      "Macro-F1": 0.6660373888070309,
+      "Context-5 Acc": 0.7044233154195949,
+      "Per-recording Acc": 0.7045454545454546,
+      "Delta vs deployed": -0.17610582885489867
+    },
+    {
+      "Variant": "all four groups, LDA 3",
+      "Features": 435,
+      "LDA dims": 3,
+      "Accuracy": 0.7631252583712278,
+      "Macro-F1": 0.7617560404463166,
+      "Context-5 Acc": 0.8081852004960728,
+      "Per-recording Acc": 0.8352272727272727,
+      "Delta vs deployed": -0.08267879288962376
+    },
+    {
+      "Variant": "all four groups, LDA 4",
+      "Features": 435,
+      "LDA dims": 4,
+      "Accuracy": 0.8222405952873088,
+      "Macro-F1": 0.8209150755822465,
+      "Context-5 Acc": 0.8631665977676726,
+      "Per-recording Acc": 0.8977272727272727,
+      "Delta vs deployed": -0.023563455973542813
+    }
+  ],
+  "lda_scatter": {
+    "participant": "G03/person03",
+    "windows": 210,
+    "own_lda_accuracy": 0.8857142857142857,
+    "global_lda_accuracy": 0.5095238095238095
+  },
+  "decision_timeline": {
+    "participant": "G03/person03",
+    "recordings": [
+      "Backward",
+      "Forward",
+      "Landing",
+      "Left",
+      "Right",
+      "Takeoff"
+    ],
+    "windows": 85,
+    "window_accuracy": 0.8588235294117647,
+    "decisions": 61,
+    "accepted": 46,
+    "accuracy_accepted": 1.0
+  },
+  "confidence": {
+    "Improved global chain": {
+      "decisions": 1725,
+      "accuracy": 0.6086956521739131,
+      "median_confidence_correct": 0.9985330607228886,
+      "median_confidence_wrong": 0.9495434738062022,
+      "share_above_0_99_correct": 0.6228571428571429,
+      "share_above_0_99_wrong": 0.3214814814814815,
+      "share_unanimous_correct": 0.28285714285714286,
+      "share_unanimous_wrong": 0.1037037037037037
+    },
+    "Subject-specific chain": {
+      "decisions": 1725,
+      "accuracy": 0.8973913043478261,
+      "median_confidence_correct": 1.0,
+      "median_confidence_wrong": 0.9999999998874027,
+      "share_above_0_99_correct": 0.9922480620155039,
+      "share_above_0_99_wrong": 0.8870056497175142,
+      "share_unanimous_correct": 0.7351421188630491,
+      "share_unanimous_wrong": 0.20903954802259886
+    }
+  },
+  "framework_equivalence": [
+    {
+      "Comparison": "PyTorch vs TensorFlow, same stored model arrays",
+      "Windows": 2389,
+      "Decision agreement": 1.0,
+      "Max |difference in class probability|": 3.6930085448583228e-06,
+      "Accuracy PyTorch": NaN,
+      "Accuracy other": NaN
+    },
+    {
+      "Comparison": "PyTorch vs JAX, same stored model arrays",
+      "Windows": 2389,
+      "Decision agreement": 1.0,
+      "Max |difference in class probability|": 3.753591267474654e-06,
+      "Accuracy PyTorch": NaN,
+      "Accuracy other": NaN
+    },
+    {
+      "Comparison": "PyTorch vs TensorFlow, separately fitted on the same training windows",
+      "Windows": 2389,
+      "Decision agreement": 0.9987442444537463,
+      "Max |difference in class probability|": NaN,
+      "Accuracy PyTorch": 0.856425282544998,
+      "Accuracy other": 0.8560066973629133
+    },
+    {
+      "Comparison": "PyTorch vs JAX, separately fitted on the same training windows",
+      "Windows": 2389,
+      "Decision agreement": 0.9987442444537463,
+      "Max |difference in class probability|": NaN,
+      "Accuracy PyTorch": 0.856425282544998,
+      "Accuracy other": 0.8560066973629133
+    }
+  ],
+  "framework_performance": [
+    {
+      "Framework": "PyTorch",
+      "Chain": "subject-specific chain",
+      "Windows": 2389,
+      "Participants": 17,
+      "Accuracy": 0.856425282544998,
+      "Macro-F1": 0.8545843238663141,
+      "Balanced accuracy": 0.8551354333768234,
+      "Cohen's kappa": 0.8275193366048993,
+      "Agreement with PyTorch": 1.0,
+      "F1 backward": 0.8473684210526315,
+      "F1 forward": 0.8101644245142003,
+      "F1 landing": 0.8790123456790123,
+      "F1 left": 0.8536285362853628,
+      "F1 right": 0.8507109004739336,
+      "F1 takeoff": 0.8866213151927438,
+      "Notebook protocol A window accuracy": 0.8427424035436897,
+      "Notebook protocol A per-recording accuracy": 0.9003293716036828,
+      "Notebook window size": 128,
+      "Notebook window stride": 64
+    },
+    {
+      "Framework": "TensorFlow",
+      "Chain": "subject-specific chain",
+      "Windows": 2389,
+      "Participants": 17,
+      "Accuracy": 0.8560066973629133,
+      "Macro-F1": 0.8540756966534011,
+      "Balanced accuracy": 0.8546509372527923,
+      "Cohen's kappa": 0.8270172785704303,
+      "Agreement with PyTorch": 0.9987442444537463,
+      "F1 backward": 0.8462549277266754,
+      "F1 forward": 0.8071748878923767,
+      "F1 landing": 0.8790123456790123,
+      "F1 left": 0.854679802955665,
+      "F1 right": 0.8507109004739336,
+      "F1 takeoff": 0.8866213151927438,
+      "Notebook protocol A window accuracy": 0.8403432812529944,
+      "Notebook protocol A per-recording accuracy": 0.8913019448751861,
+      "Notebook window size": 125,
+      "Notebook window stride": 62
+    },
+    {
+      "Framework": "JAX",
+      "Chain": "subject-specific chain",
+      "Windows": 2389,
+      "Participants": 17,
+      "Accuracy": 0.8560066973629133,
+      "Macro-F1": 0.8540756966534011,
+      "Balanced accuracy": 0.8546509372527923,
+      "Cohen's kappa": 0.8270172785704303,
+      "Agreement with PyTorch": 0.9987442444537463,
+      "F1 backward": 0.8462549277266754,
+      "F1 forward": 0.8071748878923767,
+      "F1 landing": 0.8790123456790123,
+      "F1 left": 0.854679802955665,
+      "F1 right": 0.8507109004739336,
+      "F1 takeoff": 0.8866213151927438,
+      "Notebook protocol A window accuracy": 0.8389434371122781,
+      "Notebook protocol A per-recording accuracy": 0.8957259891104699,
+      "Notebook window size": 125,
+      "Notebook window stride": 50
+    }
+  ],
+  "model_complexity": [
+    {
+      "Model": "Improved global chain",
+      "Stage": "participant z-score (18 participants + global)",
+      "Parameters": 21660,
+      "Artifact": "torch_gaussiannb_participant_scaler.joblib",
+      "Size on disk (KB)": 171.6,
+      "Note": "mean and std of 570 features; a new user adds 1140 from a calibration recording"
+    },
+    {
+      "Model": "Improved global chain",
+      "Stage": "LDA projection (570 -> 5)",
+      "Parameters": 2850,
+      "Artifact": "torch_gaussiannb_preprocessing.joblib",
+      "Size on disk (KB)": 5131.3,
+      "Note": "the fitted sklearn LDA also stores two 570 x 570 matrices the live chain never uses"
+    },
+    {
+      "Model": "Improved global chain",
+      "Stage": "GaussianNB (6 classes x 5 dims) + thresholds",
+      "Parameters": 72,
+      "Artifact": "torch_gaussiannb_improved_features.pth",
+      "Size on disk (KB)": 25.8,
+      "Note": "priors, means, variances, per-class thresholds"
+    },
+    {
+      "Model": "Improved global chain",
+      "Stage": "total",
+      "Parameters": 24582,
+      "Artifact": "three files",
+      "Size on disk (KB)": 5328.700000000001,
+      "Note": "the 5.1 MB is the sklearn LDA object; the projection itself is 23 KB"
+    },
+    {
+      "Model": "Subject-specific chain",
+      "Stage": "one user's z-score",
+      "Parameters": 870,
+      "Artifact": "torch_gaussiannb_subject_scaler.joblib",
+      "Size on disk (KB)": 131.8,
+      "Note": "the artifact holds 18 participants + global"
+    },
+    {
+      "Model": "Subject-specific chain",
+      "Stage": "one user's LDA projection (435 -> 5)",
+      "Parameters": 2175,
+      "Artifact": "torch_gaussiannb_subject_models.joblib",
+      "Size on disk (KB)": 323.6,
+      "Note": "the artifact holds 17 own models + the global fallback"
+    },
+    {
+      "Model": "Subject-specific chain",
+      "Stage": "one user's GaussianNB (6 classes x 5 dims)",
+      "Parameters": 66,
+      "Artifact": "torch_gaussiannb_subject_models.joblib",
+      "Size on disk (KB)": NaN,
+      "Note": "priors, means, variances"
+    },
+    {
+      "Model": "Subject-specific chain",
+      "Stage": "total per user",
+      "Parameters": 3111,
+      "Artifact": "model.npz per user in the GUI's store",
+      "Size on disk (KB)": NaN,
+      "Note": "all 18 models + scaler: 455.4 KB"
+    },
+    {
+      "Model": "Subject-specific chain",
+      "Stage": "fit of one user's model (631 windows of G03/person03)",
+      "Parameters": null,
+      "Artifact": "",
+      "Size on disk (KB)": NaN,
+      "Note": "median 269 ms over 20 fits (p90 303 ms): z-score, LDA, GaussianNB"
+    },
+    {
+      "Model": "RandomForest (PyTorch notebook)",
+      "Stage": "saved artifact",
+      "Parameters": null,
+      "Artifact": "prediction-random-forest/pytorch/custom_rf.pt.gz",
+      "Size on disk (KB)": 8387.1,
+      "Note": "gzip-compressed state; parameters not counted (not loaded here)"
+    },
+    {
+      "Model": "RandomForest (JAX notebook)",
+      "Stage": "saved artifact",
+      "Parameters": null,
+      "Artifact": "prediction-random-forest/JAX/trained_classifier_rf_jax.pkl",
+      "Size on disk (KB)": 799.7,
+      "Note": "pickle; parameters not counted (not loaded here)"
+    },
+    {
+      "Model": "JAX MLP (deep learning notebook)",
+      "Stage": "saved artifact",
+      "Parameters": null,
+      "Artifact": "prediction_deep_learning/JAX/trained_classifier_dl_jax.pkl",
+      "Size on disk (KB)": 213.2,
+      "Note": "pickle; parameters not counted (not loaded here)"
+    }
+  ],
+  "per_recording": {
+    "Improved global chain": {
+      "accuracy": 0.625,
+      "recordings": 176,
+      "correct": 110
+    },
+    "Subject-specific chain": {
+      "accuracy": 0.9034090909090909,
+      "recordings": 176,
+      "correct": 159
+    }
+  },
+  "gated": {
+    "Improved global chain": {
+      "coverage": 0.4260869565217391,
+      "accuracy_accepted": 0.7537414965986394,
+      "decisions": 1725,
+      "accepted": 735
+    },
+    "Subject-specific chain": {
+      "coverage": 0.8423188405797102,
+      "accuracy_accepted": 0.9421885753613214,
+      "decisions": 1725,
+      "accepted": 1453
+    }
+  },
+  "deployed_pr_roc": [
+    {
+      "Chain": "Improved global chain",
+      "Class": "macro",
+      "Average precision": 0.5187001479846775,
+      "ROC AUC": 0.8139576770348881,
+      "Support": 2419,
+      "Prevalence (AP of a random scorer)": 0.16666666666666666
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Class": "macro",
+      "Average precision": 0.9223090170934535,
+      "ROC AUC": 0.9805382265825049,
+      "Support": 2419,
+      "Prevalence (AP of a random scorer)": 0.16666666666666666
+    }
+  ],
+  "decision_model_latency": [
+    {
+      "Model": "PyTorch GaussianNB",
+      "Device": "CPU",
+      "n_train": 600,
+      "first_fit_ms": 0.714,
+      "second_fit_ms": 0.406,
+      "first_predict_ms": 0.506,
+      "steady_predict_ms": 0.051,
+      "steady_predict_p90_ms": 0.059
+    },
+    {
+      "Model": "PyTorch GaussianNB",
+      "Device": "CUDA",
+      "n_train": 600,
+      "first_fit_ms": 57.608,
+      "second_fit_ms": 1.158,
+      "first_predict_ms": 37.79,
+      "steady_predict_ms": 0.106,
+      "steady_predict_p90_ms": 0.119
+    },
+    {
+      "Model": "TensorFlow GaussianNBTF",
+      "Device": "CPU",
+      "n_train": 600,
+      "first_fit_ms": 38.098,
+      "second_fit_ms": 1.841,
+      "first_predict_ms": 7.256,
+      "steady_predict_ms": 1.016,
+      "steady_predict_p90_ms": 1.249
+    },
+    {
+      "Model": "JAX GaussianNBJAX",
+      "Device": "CPU",
+      "n_train": 600,
+      "first_fit_ms": 524.837,
+      "second_fit_ms": 1.568,
+      "first_predict_ms": 77.882,
+      "steady_predict_ms": 0.21,
+      "steady_predict_p90_ms": 0.221
+    },
+    {
+      "Model": "PyTorch GaussianNB",
+      "Device": "CPU",
+      "n_train": 9670,
+      "first_fit_ms": 1.156,
+      "second_fit_ms": 0.892,
+      "first_predict_ms": 0.123,
+      "steady_predict_ms": 0.049,
+      "steady_predict_p90_ms": 0.051
+    },
+    {
+      "Model": "PyTorch GaussianNB",
+      "Device": "CUDA",
+      "n_train": 9670,
+      "first_fit_ms": 1.313,
+      "second_fit_ms": 1.122,
+      "first_predict_ms": 0.169,
+      "steady_predict_ms": 0.108,
+      "steady_predict_p90_ms": 0.119
+    },
+    {
+      "Model": "TensorFlow GaussianNBTF",
+      "Device": "CPU",
+      "n_train": 9670,
+      "first_fit_ms": 2.743,
+      "second_fit_ms": 1.978,
+      "first_predict_ms": 1.235,
+      "steady_predict_ms": 1.007,
+      "steady_predict_p90_ms": 1.074
+    },
+    {
+      "Model": "JAX GaussianNBJAX",
+      "Device": "CPU",
+      "n_train": 9670,
+      "first_fit_ms": 283.868,
+      "second_fit_ms": 1.692,
+      "first_predict_ms": 0.348,
+      "steady_predict_ms": 0.211,
+      "steady_predict_p90_ms": 0.234
+    },
+    {
+      "Model": "JAX GaussianNBJAX",
+      "Device": "GPU",
+      "n_train": 600,
+      "first_fit_ms": 1007.002,
+      "second_fit_ms": 4.561,
+      "first_predict_ms": 134.525,
+      "steady_predict_ms": 0.459,
+      "steady_predict_p90_ms": 1.105
+    },
+    {
+      "Model": "JAX GaussianNBJAX",
+      "Device": "GPU",
+      "n_train": 9670,
+      "first_fit_ms": 589.17,
+      "second_fit_ms": 3.63,
+      "first_predict_ms": 0.552,
+      "steady_predict_ms": 0.499,
+      "steady_predict_p90_ms": 0.588
+    }
+  ],
+  "latency_per_capture": [
+    {
+      "Chain": "Improved global chain",
+      "Framework": "PyTorch",
+      "Capture samples": 384,
+      "Capture seconds": 3.07,
+      "Windows": 5,
+      "Features": 570,
+      "Signal to features ms": 3.43,
+      "Features to decision ms": 0.45,
+      "Total ms (median)": 3.9,
+      "Total ms (p90)": 3.99
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Framework": "PyTorch",
+      "Capture samples": 384,
+      "Capture seconds": 3.07,
+      "Windows": 5,
+      "Features": 435,
+      "Signal to features ms": 4.23,
+      "Features to decision ms": 0.19,
+      "Total ms (median)": 4.41,
+      "Total ms (p90)": 4.61
+    },
+    {
+      "Chain": "Improved global chain",
+      "Framework": "TensorFlow",
+      "Capture samples": 373,
+      "Capture seconds": 2.98,
+      "Windows": 5,
+      "Features": 570,
+      "Signal to features ms": 3.25,
+      "Features to decision ms": 1.3,
+      "Total ms (median)": 4.6,
+      "Total ms (p90)": 4.65
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Framework": "TensorFlow",
+      "Capture samples": 373,
+      "Capture seconds": 2.98,
+      "Windows": 5,
+      "Features": 435,
+      "Signal to features ms": 4.27,
+      "Features to decision ms": 1.36,
+      "Total ms (median)": 5.6,
+      "Total ms (p90)": 6.06
+    },
+    {
+      "Chain": "Improved global chain",
+      "Framework": "JAX",
+      "Capture samples": 325,
+      "Capture seconds": 2.6,
+      "Windows": 5,
+      "Features": 570,
+      "Signal to features ms": 3.2,
+      "Features to decision ms": 0.4,
+      "Total ms (median)": 3.67,
+      "Total ms (p90)": 3.78
+    },
+    {
+      "Chain": "Subject-specific chain",
+      "Framework": "JAX",
+      "Capture samples": 325,
+      "Capture seconds": 2.6,
+      "Windows": 5,
+      "Features": 435,
+      "Signal to features ms": 4.17,
+      "Features to decision ms": 0.39,
+      "Total ms (median)": 4.56,
+      "Total ms (p90)": 4.68
+    }
+  ],
+  "project_models_benchmark": [
+    {
+      "Model": "GaussianNB subject-specific chain (PyTorch)",
+      "Condition": "3. same code on the verified windows (570 features), split by recording",
+      "runs": 6,
+      "Accuracy": 0.8411328807003904,
+      "Accuracy_sd": 0.01642665241402353,
+      "Macro-F1": 0.8388427290912249,
+      "Macro-F1_sd": 0.019361987173065656,
+      "Balanced accuracy": 0.841319439070602,
+      "Reported": NaN,
+      "n_train": 9672.333333333334,
+      "n_test": 2416.6666666666665,
+      "seconds": 5.170800559833576,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "GaussianNB subject-specific chain (TensorFlow)",
+      "Condition": "3. same code on the verified windows (570 features), split by recording",
+      "runs": 6,
+      "Accuracy": 0.840720309707424,
+      "Accuracy_sd": 0.016364263487385605,
+      "Macro-F1": 0.8384164165310143,
+      "Macro-F1_sd": 0.019299686832639613,
+      "Balanced accuracy": 0.8409042349075692,
+      "Reported": NaN,
+      "n_train": 9672.333333333334,
+      "n_test": 2416.6666666666665,
+      "seconds": 5.414333233999969,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "GaussianNB subject-specific chain (JAX)",
+      "Condition": "3. same code on the verified windows (570 features), split by recording",
+      "runs": 6,
+      "Accuracy": 0.840720309707424,
+      "Accuracy_sd": 0.016364263487385605,
+      "Macro-F1": 0.8384164165310143,
+      "Macro-F1_sd": 0.019299686832639613,
+      "Balanced accuracy": 0.8409042349075692,
+      "Reported": NaN,
+      "n_train": 9672.333333333334,
+      "n_test": 2416.6666666666665,
+      "seconds": 16.797612178666288,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "JAX random forest",
+      "Condition": "1. as reported: own loader, random split of rows",
+      "runs": 1,
+      "Accuracy": 0.9298333333333333,
+      "Accuracy_sd": NaN,
+      "Macro-F1": 0.9299472458550554,
+      "Macro-F1_sd": NaN,
+      "Balanced accuracy": 0.9303813281635573,
+      "Reported": 0.9436305070656692,
+      "n_train": 21000.0,
+      "n_test": 6000.0,
+      "seconds": 409.3529199950008,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "JAX deep learning (MLP)",
+      "Condition": "1. as reported: own loader, random split of rows",
+      "runs": 1,
+      "Accuracy": 0.9576666666666667,
+      "Accuracy_sd": NaN,
+      "Macro-F1": 0.9574584192648546,
+      "Macro-F1_sd": NaN,
+      "Balanced accuracy": 0.9573965606555501,
+      "Reported": 0.9359673857688904,
+      "n_train": 21000.0,
+      "n_test": 6000.0,
+      "seconds": 29.293101100998683,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "JAX random forest",
+      "Condition": "2. same code and rows, split by recording",
+      "runs": 1,
+      "Accuracy": 0.8460891505466779,
+      "Accuracy_sd": NaN,
+      "Macro-F1": 0.8498528295263457,
+      "Macro-F1_sd": NaN,
+      "Balanced accuracy": 0.8508453329822928,
+      "Reported": NaN,
+      "n_train": 24055.0,
+      "n_test": 5945.0,
+      "seconds": 458.17161243400005,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "JAX deep learning (MLP)",
+      "Condition": "2. same code and rows, split by recording",
+      "runs": 1,
+      "Accuracy": 0.9061396131202691,
+      "Accuracy_sd": NaN,
+      "Macro-F1": 0.9054836528384488,
+      "Macro-F1_sd": NaN,
+      "Balanced accuracy": 0.9077054382757274,
+      "Reported": NaN,
+      "n_train": 24055.0,
+      "n_test": 5945.0,
+      "seconds": 29.39982445900023,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "JAX random forest",
+      "Condition": "3. same code on the verified windows (570 features), split by recording",
+      "runs": 6,
+      "Accuracy": 0.5089871278682543,
+      "Accuracy_sd": 0.03461793085433816,
+      "Macro-F1": 0.5006625615273904,
+      "Macro-F1_sd": 0.03930723862902009,
+      "Balanced accuracy": 0.50563959016198,
+      "Reported": NaN,
+      "n_train": 9672.333333333334,
+      "n_test": 2416.6666666666665,
+      "seconds": 120.95610329949916,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    },
+    {
+      "Model": "JAX deep learning (MLP)",
+      "Condition": "3. same code on the verified windows (570 features), split by recording",
+      "runs": 6,
+      "Accuracy": 0.7017864979385676,
+      "Accuracy_sd": 0.030123022048900824,
+      "Macro-F1": 0.6971496819322724,
+      "Macro-F1_sd": 0.03333832603468094,
+      "Balanced accuracy": 0.6987540650083705,
+      "Reported": NaN,
+      "n_train": 9672.333333333334,
+      "n_test": 2416.6666666666665,
+      "seconds": 13.288878114000303,
+      "rows_in_loader": 291200,
+      "files_in_loader": 1820,
+      "rows_used": 30000
+    }
+  ]
+}

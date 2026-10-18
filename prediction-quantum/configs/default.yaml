@@ -1,0 +1,42 @@
+# Benchmark of a variational quantum classifier against classical baselines on the Avatar EEG windows (issue #52).
+# Relative paths are resolved from the prediction-quantum directory. Run:
+#   python -m prediction_quantum.run_benchmark --config configs/default.yaml [--data-dir /path/to/Data_clean]
+data:
+  data_dir: ../Data_clean            # the OpenBCI recordings (repo root); --data-dir overrides
+  cache_dir: results/cache            # window features cache, rebuilt from data_dir when missing (not committed)
+  max_windows_per_class: 2000         # fixed-seed subsample of the windows of every command before splitting
+  subsample_seed: 0
+  n_jobs_load: -1                     # worker processes for reading the recordings
+split:
+  test_fraction: 0.2                  # share of RECORDINGS held out for testing (GroupShuffleSplit, one per seed)
+  val_fraction: 0.1                   # share of recordings held out from the training recordings for validation
+  seeds: [0, 1, 2]                    # one split, one model initialisation and one run of every model per seed
+encoding:
+  n_qubits: [4, 6, 8]                 # PCA components = qubits; one circuit grid and one set of PCA baselines each
+  angle_range: [0.0, 3.141592653589793]
+  clip_percentiles: [1.0, 99.0]       # training percentiles of each component mapped to the angle range
+vqc:
+  n_layers: [1, 2, 4]                 # StronglyEntanglingLayers depth
+  epochs: 40
+  batch_size: 64
+  lr: 0.01                            # Adam
+mlp:
+  hidden: 64
+  epochs: 40                          # same budget, same optimiser, same loop as the circuit
+  batch_size: 64
+  lr: 0.01
+noise:
+  probabilities: [0.0, 0.01, 0.05, 0.1]   # depolarising probability per qubit after the embedding and each layer
+  max_qubits: 6                       # density-matrix simulation scales as 4^n
+  seeds: [0]
+  batch_size: 256
+latency:
+  repeats: 50                         # single-window inference calls; the median is reported
+  warmup: 5
+compute:
+  n_jobs: 8                           # training runs in parallel processes
+  torch_threads: 2                    # torch threads per process (also used for the latency measurements)
+report:
+  reference_qubits: 6                 # circuit size shown in the convergence figure and the headline comparison
+  reference_layers: 2
+output_dir: results

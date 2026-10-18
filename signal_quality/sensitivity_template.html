@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Threshold Sensitivity</title>
+<style>
+:root{color-scheme:light;--page:#f9f9f7;--surface-1:#fcfcfb;--text-primary:#0b0b0b;--text-secondary:#52514e;--muted:#898781;
+--grid:#e1e0d9;--axis:#c3c2b7;--border:rgba(11,11,11,.10);--series-1:#2a78d6;--series-2:#eb6834;--band:#f0efec;
+--seq-100:#cde2fb;--seq-700:#0d366b;--good:#006300;--critical:#d03b3b}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--page:#0d0d0d;--surface-1:#1a1a19;
+--text-primary:#fff;--text-secondary:#c3c2b7;--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);--series-1:#3987e5;
+--series-2:#d95926;--band:#262624;--seq-100:#184f95;--seq-700:#cde2fb;--good:#0ca30c;--critical:#e66767}}
+:root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface-1:#1a1a19;--text-primary:#fff;--text-secondary:#c3c2b7;
+--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);--series-1:#3987e5;--series-2:#d95926;--band:#262624;
+--seq-100:#184f95;--seq-700:#cde2fb;--good:#0ca30c;--critical:#e66767}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text-primary);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 56px}
+h1{font-size:24px;margin:0}h2{font-size:17px;margin:32px 0 6px}p{margin:4px 0}
+.sub,.note{color:var(--text-secondary)}.note{font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0 6px}
+.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.tile b{display:block;font-size:22px;font-weight:600}.tile span{color:var(--text-secondary);font-size:12.5px}
+.takeaways{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px 16px 12px 30px;margin:12px 0}
+.takeaways li{margin:4px 0}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);margin:8px 0}
+.legend i{display:inline-block;width:18px;height:2px;vertical-align:middle;margin-right:6px}
+.legend i.band{height:12px;width:14px;background:var(--band);border:1px solid var(--axis)}
+.legend i.cur{height:12px;width:0;border-left:2px dashed var(--text-secondary)}
+.multiples{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.multiples{grid-template-columns:1fr}}
+.chart{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:12px 12px 6px;position:relative}
+.chart h3{font-size:14px;margin:0 0 2px}.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;
+padding:8px 10px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;min-width:190px;z-index:2}
+.tip b{display:block;margin-bottom:2px}.tip .sw{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:5px}
+table{border-collapse:collapse;width:100%;font-size:13px;background:var(--surface-1)}
+th,td{padding:6px 9px;border-bottom:1px solid var(--grid);text-align:left;vertical-align:top}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+.ok{color:var(--good);font-weight:600}.chg{color:var(--critical);font-weight:600}
+details summary{cursor:pointer;color:var(--text-secondary);margin:8px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Threshold Sensitivity</h1>
+<p class="sub" id="sub"></p>
+<div class="tiles" id="tiles"></div>
+<ul class="takeaways" id="takeaways"></ul>
+
+<h2>Rejection rate as each threshold changes</h2>
+<p class="note">One threshold varies, the others stay at their configured values. All four charts share the same vertical scale.</p>
+<div class="legend">
+  <span><i style="background:var(--series-1)"></i>All windows</span>
+  <span><i style="background:var(--series-2)"></i>After each recording's start-up window</span>
+  <span><i class="band"></i>Plausible range</span>
+  <span><i class="cur"></i>Current setting</span>
+</div>
+<div class="multiples" id="multiples"></div>
+<details><summary>Show sweep data as a table</summary><div class="scroll"><table id="sweepTable"></table></div></details>
+
+<section id="reviewSection" style="display:none">
+<h2>Against independent reviewers</h2>
+<p class="note" id="reviewNote"></p>
+<div class="legend">
+  <span><i style="background:var(--series-1)"></i>False acceptance (rules pass a window reviewers reject)</span>
+  <span><i style="background:var(--series-2)"></i>False rejection (rules reject a window reviewers accept)</span>
+</div>
+<div class="multiples" id="reviewMultiples"></div>
+</section>
+
+<h2>Peak-to-peak × jump limits together</h2>
+<p class="note">Rejection rate of all windows for every combination; the outlined cell is the current setting. Hover a cell for details.</p>
+<div class="chart" id="heat"></div>
+
+<h2>How decisive each rule is</h2>
+<p class="note">Borderline windows sit just past the limit and would flip with a modest change; windows far past it would not.</p>
+<div class="scroll"><table id="margins"></table></div>
+
+<h2>Participant verdicts across the plausible ranges</h2>
+<p class="note" id="stabilityNote"></p>
+<div class="scroll"><table id="stability"></table></div>
+<p class="note" style="margin-top:20px" id="interpretation"></p>
+</main>
+
+<script id="payload" type="application/json">/*__PAYLOAD__*/null</script>
+<script>
+"use strict";
+const R = JSON.parse(document.getElementById("payload").textContent);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pct = v => v === null || v === undefined ? "–" : (100 * v).toFixed(1) + "%";
+const fmt = v => v >= 1000 ? v.toLocaleString() : String(+v.toPrecision(3));
+const PARAMS = Object.keys(R.sweeps), B = R.baseline;
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; };
+
+// ---------------------------------------------------------------- header, tiles, takeaways
+$("sub").textContent = `Replay of ${R.verification.windows.toLocaleString()} windows · policy ${R.quality_policy_id} · current decisions reproduced exactly`;
+const plausiblePoints = PARAMS.filter(p => R.plausible_ranges[p]).flatMap(p => R.sweeps[p].filter(pt => pt.value >= R.plausible_ranges[p][0] && pt.value <= R.plausible_ranges[p][1]));
+const lo = Math.min(...plausiblePoints.map(p => p.rejection_rate)), hi = Math.max(...plausiblePoints.map(p => p.rejection_rate));
+$("tiles").innerHTML = [
+  [pct(B.rejection_rate), "windows rejected with current thresholds"],
+  [pct(B.rejection_rate_after_startup), "rejected after excluding start-up windows"],
+  [`${pct(lo)} – ${pct(hi)}`, "rejection range over plausible single-threshold changes"],
+  [`${R.stable_participants} / ${R.participants}`, "participants whose verdict never changes in those ranges"],
+].map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join("");
+const m = R.margins, take = [];
+take.push(`Across plausible single-threshold changes the rejection rate stays between ${pct(lo)} and ${pct(hi)} (currently ${pct(B.rejection_rate)}), so the headline rejection rate does not hinge on one cutoff.`);
+for (const [rule, label] of [["adc_saturation", "rail-occupancy"], ["flat_channel", "flat-signal"]]) {
+  const sweep = R.sweeps[rule === "adc_saturation" ? "max_rail_fraction" : "max_flat_fraction"];
+  const rates = sweep.map(p => p.rejection_rate);
+  if (Math.max(...rates) - Math.min(...rates) < 0.001)
+    take.push(`The ${label} limit has no visible effect over its whole sweep: ${m[rule].far_beyond_2x.toLocaleString()} of ${m[rule].windows_flagged.toLocaleString()} flagged windows are ${rule === "flat_channel" ? "completely flat" : "at least twice past the limit"}, and ${m[rule].rejected_by_this_rule_alone ? "only " + m[rule].rejected_by_this_rule_alone : "no"} rejection${m[rule].rejected_by_this_rule_alone === 1 ? "" : "s"} depend${m[rule].rejected_by_this_rule_alone === 1 ? "s" : ""} on this rule alone.`);
+}
+const amp = m.excessive_amplitude, jmp = m.excessive_sample_jump;
+take.push(`The peak-to-peak and jump limits are where judgement matters: ${amp.borderline_within_1_5x} and ${jmp.borderline_within_1_5x} flagged windows sit within 1.5× of their limits. Independent reviews are what should settle these values.`);
+const changed = R.stability.filter(s => !s.stable);
+take.push(changed.length ? `${changed.length} participant verdict${changed.length > 1 ? "s change" : " changes"} somewhere in the plausible ranges (see the table below); the other ${R.participants - changed.length} are unaffected.` : "No participant's verdict changes anywhere in the plausible ranges.");
+$("takeaways").innerHTML = take.map(t => `<li>${esc(t)}</li>`).join("");
+
+// ---------------------------------------------------------------- line small multiples
+function lineChart(container, param, series, yDomain, tipRows) {
+  const pts = R.sweeps[param], W = 520, H = 240, L = 46, Rt = 112, T = 10, Bt = 40;
+  const logX = param !== "max_flat_fraction" && param !== "max_line_ratio";
+  const xs = pts.map(p => p.value), x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const tx = v => logX ? Math.log(v) : v;
+  const X = v => L + (tx(v) - tx(x0)) / (tx(x1) - tx(x0)) * (W - L - Rt);
+  const Y = v => T + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * (H - T - Bt);
+  const box = document.createElement("div"); box.className = "chart";
+  box.innerHTML = `<h3>${esc(R.labels[param])}</h3>`;
+  container.appendChild(box);
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": R.labels[param]}, box);
+  if (R.plausible_ranges[param]) {
+    const [pl, ph] = R.plausible_ranges[param];
+    el("rect", {x: X(Math.max(pl, x0)), y: T, width: X(Math.min(ph, x1)) - X(Math.max(pl, x0)), height: H - T - Bt, fill: "var(--band)"}, svg);
+  }
+  const step = yDomain[1] - yDomain[0] > 0.3 ? 0.1 : 0.05;
+  for (let k = 0, v = yDomain[0]; v <= yDomain[1] + 1e-9; k++, v = yDomain[0] + k * step) {
+    const y = Y(v);
+    el("line", {x1: L, x2: W - Rt, y1: y, y2: y, stroke: k ? "var(--grid)" : "var(--axis)", "stroke-width": 1}, svg);
+    el("text", {x: L - 6, y: y + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)"}, svg).textContent = Math.round(v * 100) + "%";
+  }
+  // Tick labels: the current setting first, then any value that does not collide with a drawn label.
+  const drawn = [];
+  [...pts].sort((a, b) => b.is_baseline - a.is_baseline).forEach(p => {
+    const px = X(p.value);
+    if (drawn.some(d => Math.abs(d - px) < 36)) return;
+    drawn.push(px);
+    el("text", {x: px, y: H - Bt + 16, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)"}, svg).textContent = fmt(p.value);
+  });
+  const base = pts.find(p => p.is_baseline);
+  el("line", {x1: X(base.value), x2: X(base.value), y1: T, y2: H - Bt, stroke: "var(--text-secondary)", "stroke-dasharray": "4 3", "stroke-width": 1.5}, svg);
+  el("text", {x: X(base.value) + 4, y: T + 11, "font-size": 11, fill: "var(--text-secondary)"}, svg).textContent = "current";
+  const ends = [];
+  series.forEach(s => {
+    const valid = pts.filter(p => s.get(p) !== null && s.get(p) !== undefined);
+    if (!valid.length) return;
+    el("path", {d: valid.map((p, k) => `${k ? "L" : "M"}${X(p.value).toFixed(1)},${Y(s.get(p)).toFixed(1)}`).join(""), fill: "none",
+                stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round"}, svg);
+    const last = valid[valid.length - 1]; ends.push({y: Y(s.get(last)), label: s.short, x: X(last.value)});
+  });
+  ends.sort((a, b) => a.y - b.y);
+  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 13) ends[k].y = ends[k - 1].y + 13;
+  ends.forEach(e => el("text", {x: e.x + 6, y: e.y + 4, "font-size": 11, fill: "var(--text-secondary)"}, svg).textContent = e.label);
+  // crosshair + tooltip
+  const cross = el("line", {y1: T, y2: H - Bt, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden"}, svg);
+  const dots = series.map(s => el("circle", {r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden"}, svg));
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const hit = el("rect", {x: L, y: T, width: W - L - Rt, height: H - T - Bt, fill: "transparent"}, svg);
+  hit.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect(), vx = (ev.clientX - r.left) / r.width * W;
+    const p = pts.reduce((a, b) => Math.abs(X(b.value) - vx) < Math.abs(X(a.value) - vx) ? b : a);
+    cross.setAttribute("x1", X(p.value)); cross.setAttribute("x2", X(p.value)); cross.setAttribute("visibility", "visible");
+    series.forEach((s, k) => { const v = s.get(p); if (v === null || v === undefined) { dots[k].setAttribute("visibility", "hidden"); return; }
+      dots[k].setAttribute("cx", X(p.value)); dots[k].setAttribute("cy", Y(v)); dots[k].setAttribute("visibility", "visible"); });
+    tip.innerHTML = `<b>${esc(fmt(p.value))}${p.is_baseline ? " (current)" : ""}</b>` + tipRows(p);
+    tip.style.display = "block";
+    const bx = box.getBoundingClientRect(), left = ev.clientX - bx.left + 14;
+    tip.style.left = Math.min(left, bx.width - tip.offsetWidth - 8) + "px"; tip.style.top = (ev.clientY - bx.top + 12) + "px";
+  });
+  hit.addEventListener("pointerleave", () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); });
+}
+const all = PARAMS.flatMap(p => R.sweeps[p].flatMap(pt => [pt.rejection_rate, pt.rejection_rate_after_startup]));
+const yDom = [Math.max(0, Math.floor(Math.min(...all) * 10) / 10), Math.min(1, Math.ceil(Math.max(...all) * 10) / 10)];
+const rateRows = p => `<div><span class="sw" style="background:var(--series-1)"></span>All windows ${pct(p.rejection_rate)}</div>
+  <div><span class="sw" style="background:var(--series-2)"></span>After start-up ${pct(p.rejection_rate_after_startup)}</div>
+  <div class="note">vs current: +${p.newly_rejected} rejected, +${p.newly_accepted} accepted</div>
+  <div class="note">participants good ${p.verdicts.good || 0} · review ${p.verdicts.review || 0} · unusable ${p.verdicts.unusable || 0}</div>`;
+PARAMS.forEach(p => lineChart($("multiples"), p, [
+  {get: pt => pt.rejection_rate, color: "var(--series-1)", short: "All"},
+  {get: pt => pt.rejection_rate_after_startup, color: "var(--series-2)", short: "After start-up"}], yDom, rateRows));
+$("sweepTable").innerHTML = `<tr><th>Threshold</th><th class="num">Value</th><th class="num">Rejected</th><th class="num">After start-up</th><th class="num">+rejected</th><th class="num">+accepted</th><th class="num">Good / review / unusable</th></tr>` +
+  PARAMS.flatMap(param => R.sweeps[param].map(p => `<tr><td>${esc(R.labels[param])}</td><td class="num">${esc(fmt(p.value))}${p.is_baseline ? " *" : ""}</td><td class="num">${pct(p.rejection_rate)}</td><td class="num">${pct(p.rejection_rate_after_startup)}</td><td class="num">${p.newly_rejected}</td><td class="num">${p.newly_accepted}</td><td class="num">${p.verdicts.good || 0} / ${p.verdicts.review || 0} / ${p.verdicts.unusable || 0}</td></tr>`)).join("");
+
+// ---------------------------------------------------------------- reviewer curves (only with reviews)
+if (R.reviewed_windows > 0) {
+  $("reviewSection").style.display = "";
+  $("reviewNote").textContent = `${R.reviewed_windows} independently reviewed windows (majority label; sampling-weighted when weights are present). Choosing thresholds on these same reviews is in-sample: confirm on held-out reviews.`;
+  const rv = PARAMS.flatMap(p => R.sweeps[p].flatMap(pt => pt.reviews ? [pt.reviews.false_acceptance_rate, pt.reviews.false_rejection_rate] : [])).filter(v => v !== null);
+  const dom = [0, Math.min(1, Math.ceil(Math.max(0.1, ...rv) * 10) / 10)];
+  PARAMS.forEach(p => lineChart($("reviewMultiples"), p, [
+    {get: pt => pt.reviews && pt.reviews.false_acceptance_rate, color: "var(--series-1)", short: "False accept"},
+    {get: pt => pt.reviews && pt.reviews.false_rejection_rate, color: "var(--series-2)", short: "False reject"}], dom,
+    pt => `<div><span class="sw" style="background:var(--series-1)"></span>False acceptance ${pct(pt.reviews.false_acceptance_rate)}</div>
+           <div><span class="sw" style="background:var(--series-2)"></span>False rejection ${pct(pt.reviews.false_rejection_rate)}</div>
+           <div class="note">agreement ${pct(pt.reviews.agreement)}</div>`));
+}
+
+// ---------------------------------------------------------------- heatmap
+(function heat() {
+  const ptps = [...new Set(R.grid.map(g => g.max_ptp_uv))], jumps = [...new Set(R.grid.map(g => g.max_jump_uv))];
+  const W = 760, H = 330, L = 70, T = 10, Bt = 44, Rt = 90, cw = (W - L - Rt) / ptps.length, ch = (H - T - Bt) / jumps.length;
+  const box = $("heat"); const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Rejection rate by peak-to-peak and jump limits"}, box);
+  const rates = R.grid.map(g => g.rejection_rate), r0 = Math.min(...rates), r1 = Math.max(...rates);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const mix = t => { const a = hex(css("--seq-100")), b = hex(css("--seq-700")); return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`; };
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const cells = [];
+  R.grid.forEach(g => {
+    const i = ptps.indexOf(g.max_ptp_uv), j = jumps.indexOf(g.max_jump_uv);
+    const t = (g.rejection_rate - r0) / Math.max(1e-9, r1 - r0);
+    const rect = el("rect", {x: L + i * cw + 1, y: T + (jumps.length - 1 - j) * ch + 1, width: cw - 2, height: ch - 2, rx: 3}, svg);
+    cells.push([rect, t]);
+    const current = g.max_ptp_uv === R.baseline_config.max_ptp_uv && g.max_jump_uv === R.baseline_config.max_jump_uv;
+    if (current) { rect.setAttribute("stroke", "var(--text-primary)"); rect.setAttribute("stroke-width", 2.5); }
+    rect.addEventListener("pointermove", ev => {
+      tip.innerHTML = `<b>Peak-to-peak ${fmt(g.max_ptp_uv)} µV · jump ${fmt(g.max_jump_uv)} µV${current ? " (current)" : ""}</b>
+        <div>Rejected ${pct(g.rejection_rate)}</div><div>After start-up ${pct(g.rejection_rate_after_startup)}</div>`;
+      tip.style.display = "block"; const bx = box.getBoundingClientRect();
+      tip.style.left = Math.min(ev.clientX - bx.left + 14, bx.width - tip.offsetWidth - 8) + "px"; tip.style.top = (ev.clientY - bx.top + 12) + "px";
+    });
+    rect.addEventListener("pointerleave", () => tip.style.display = "none");
+  });
+  const paint = () => cells.forEach(([r, t]) => r.setAttribute("fill", mix(t)));
+  paint(); matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paint);
+  ptps.forEach((v, i) => el("text", {x: L + i * cw + cw / 2, y: H - Bt + 16, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)"}, svg).textContent = fmt(v));
+  jumps.forEach((v, j) => el("text", {x: L - 8, y: T + (jumps.length - 1 - j) * ch + ch / 2 + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)"}, svg).textContent = fmt(v));
+  el("text", {x: L + (W - L - Rt) / 2, y: H - 6, "text-anchor": "middle", "font-size": 12, fill: "var(--text-secondary)"}, svg).textContent = "Peak-to-peak limit (µV)";
+  el("text", {x: 14, y: T + (H - T - Bt) / 2, "text-anchor": "middle", "font-size": 12, fill: "var(--text-secondary)", transform: `rotate(-90 14 ${T + (H - T - Bt) / 2})`}, svg).textContent = "Jump limit (µV)";
+  const gx = W - Rt + 24, gh = H - T - Bt;
+  const grad = el("linearGradient", {id: "g", x1: 0, y1: 1, x2: 0, y2: 0}, el("defs", {}, svg));
+  const s0 = el("stop", {offset: 0}, grad), s1 = el("stop", {offset: 1}, grad);
+  const paintLegend = () => { s0.setAttribute("stop-color", mix(0)); s1.setAttribute("stop-color", mix(1)); };
+  paintLegend(); matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintLegend);
+  el("rect", {x: gx, y: T, width: 12, height: gh, fill: "url(#g)", rx: 3}, svg);
+  el("text", {x: gx + 18, y: T + 10, "font-size": 11, fill: "var(--muted)"}, svg).textContent = pct(r1);
+  el("text", {x: gx + 18, y: T + gh, "font-size": 11, fill: "var(--muted)"}, svg).textContent = pct(r0);
+})();
+
+// ---------------------------------------------------------------- tables
+const ruleName = {flat_channel: "Flat signal", adc_saturation: "Rail saturation", excessive_amplitude: "Peak-to-peak", excessive_sample_jump: "Sample jump", excessive_line_noise: "Line noise"};
+$("margins").innerHTML = `<tr><th>Rule</th><th class="num">Windows flagged</th><th class="num">Rejected by this rule alone</th><th class="num">Borderline (&lt;1.5× limit)</th><th class="num">Far past limit</th><th class="num">Median distance</th></tr>` +
+  Object.entries(R.margins).map(([k, v]) => `<tr><td>${ruleName[k] || k}</td><td class="num">${v.windows_flagged.toLocaleString()}</td><td class="num">${v.rejected_by_this_rule_alone.toLocaleString()}</td>
+  <td class="num">${v.borderline_within_1_5x.toLocaleString()}</td><td class="num">${v.far_beyond_2x.toLocaleString()}${k === "flat_channel" ? " (completely flat)" : " (≥2×)"}</td>
+  <td class="num">${v.median_ratio_to_threshold === null ? "–" : v.median_ratio_to_threshold.toFixed(1) + "×"}</td></tr>`).join("");
+const ranges = Object.entries(R.plausible_ranges).map(([k, [a, b]]) => `${R.labels[k].split(" (")[0].toLowerCase()} ${fmt(a)}–${fmt(b)}`).join("; ");
+$("stabilityNote").textContent = `Plausible ranges: ${ranges}. A verdict is good (≥70% usable windows), review, or unusable (<30%).`;
+$("stability").innerHTML = `<tr><th>Participant</th><th>Current verdict</th><th>Across plausible ranges</th></tr>` +
+  R.stability.map(s => `<tr><td>${esc(s.participant_id)}</td><td>${esc(s.baseline_verdict)}</td><td>${s.stable ? '<span class="ok">✓ unchanged</span>' : '<span class="chg">changes:</span> ' + esc(s.changes)}</td></tr>`).join("");
+$("interpretation").textContent = R.interpretation;
+</script>
+</body>
+</html>

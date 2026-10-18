@@ -1,0 +1,81 @@
+run_id: vqc_q8_l4_s1
+model: vqc
+label: VQC 8q x 4 layers
+family: VQC
+input: PCA-8 angles
+n_qubits: 8
+n_layers: 4
+seed: 1
+split_csv: split_seed1.csv
+output_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results
+features:
+  cache_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results/cache
+  data_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/Data_clean
+  cache_key: 4df6a3d7e7044283
+  spec:
+    board: 16ch_125hz
+    exclude_channels:
+    - EXG Channel 15
+    quality_filter: true
+    bandpass_hz:
+    - 1.0
+    - 40.0
+    notch_hz: 60.0
+    filter_order: 4
+    sfreq: 125.0
+    channels:
+    - EXG Channel 0
+    - EXG Channel 1
+    - EXG Channel 2
+    - EXG Channel 3
+    - EXG Channel 4
+    - EXG Channel 5
+    - EXG Channel 6
+    - EXG Channel 7
+    - EXG Channel 8
+    - EXG Channel 9
+    - EXG Channel 10
+    - EXG Channel 11
+    - EXG Channel 12
+    - EXG Channel 13
+    - EXG Channel 14
+    window_size: 128
+    window_stride: 64
+    min_segment_rows: 8
+    feature_version: improved_logcov_dcov_tkeo_hybridlog_car_v1
+    labels:
+    - backward
+    - forward
+    - landing
+    - left
+    - right
+    - takeoff
+torch_threads: 2
+versions:
+  python: 3.12.3
+  torch: 2.14.1+cpu
+  pennylane: 0.45.1
+  numpy: 2.5.4
+  scipy: 1.18.1
+  scikit_learn: 1.9.1
+  pandas: 3.0.6
+training:
+  n_layers:
+  - 1
+  - 2
+  - 4
+  epochs: 40
+  batch_size: 64
+  lr: 0.01
+  optimizer: Adam
+  loss: cross-entropy
+  checkpoint: best validation accuracy
+encoder: encoders/encoder_q8_s1.joblib
+circuit:
+  embedding: AngleEmbedding(RY)
+  ansatz: StronglyEntanglingLayers
+  measurement: PauliZ on every qubit
+  head: Linear(n_qubits, 6)
+  device: default.qubit
+  interface: torch
+  diff_method: backprop
