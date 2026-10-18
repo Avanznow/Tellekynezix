@@ -1,6 +1,6 @@
 data:
   data_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/Data_clean
-  cache_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results/cache
+  cache_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache
   max_windows_per_class: 2000
   subsample_seed: 0
   n_jobs_load: -1
@@ -49,9 +49,9 @@ latency:
   repeats: 50
   warmup: 5
 compute:
-  n_jobs: 8
+  n_jobs: 2
   torch_threads: 2
 report:
   reference_qubits: 6
   reference_layers: 2
-output_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results
+output_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results

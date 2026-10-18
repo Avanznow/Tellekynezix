@@ -1,6 +1,6 @@
 # Benchmark: variational quantum classifier against classical baselines on Avatar EEG windows
 
-Deliverable of upstream issue Avanznow/Tellekynezix#52 (the benchmark step of the QML chain #49-#52). Every number below comes from a CSV in `results/` written by one command (`python -m prediction_quantum.run_benchmark --config configs/default.yaml`); see README.md for the environment. Generated 2026-10-17 18:02:00.
+Deliverable of upstream issue Avanznow/Tellekynezix#52 (the benchmark step of the QML chain #49-#52). Every number below comes from a CSV in `results/` written by one command (`python -m prediction_quantum.run_benchmark --config configs/default.yaml`); see README.md for the environment. Generated 2026-10-17 21:39:56.
 
 ## Headline
 
@@ -234,23 +234,23 @@ cd prediction-quantum
 python -m prediction_quantum.run_benchmark --config configs/default.yaml --data-dir ../Data_clean
 ```
 
-The command rebuilds the feature cache from `Data_clean` when missing, writes every CSV, figure and this report, and skips finished runs (`--force` redoes them; `--quick` is a few-minute smoke version). Compute time of the run that produced this report: 2 min in total (features and splits 0 s, training 0.0 min with 8 parallel processes, latency 0 s, noise sweep 1.5 min). Source: `results/timing.json`.
+The command rebuilds the feature cache from `Data_clean` when missing, writes every CSV, figure and this report, and skips finished runs (`--force` redoes them; `--quick` is a few-minute smoke version). Compute time of the run that produced this report: 0 min in total (features and splits 0 s, training 0.0 min with 2 parallel processes, latency 0 s, noise sweep 0.0 min). Source: `results/timing.json`.
 
 | environment |  |
 |---|---|
 | python | 3.12.3 |
-| torch | 2.14.1+cpu |
+| torch | 2.12.1+cu130 |
 | pennylane | 0.45.1 |
-| numpy | 2.5.4 |
-| scipy | 1.18.1 |
-| scikit_learn | 1.9.1 |
-| pandas | 3.0.6 |
+| numpy | 2.5.0 |
+| scipy | 1.18.0 |
+| scikit_learn | 1.9.0 |
+| pandas | 3.0.3 |
 | cpu | 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz |
 | logical_cpus | 16 |
 | torch_threads | 2 |
-| n_jobs | 8 |
+| n_jobs | 2 |
 | platform | Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39 |
-| generated | 2026-10-17 18:02:00 |
+| generated | 2026-10-17 21:39:56 |
 
 Source: `results/environment.json`. Tests: `pytest tests/`.
 

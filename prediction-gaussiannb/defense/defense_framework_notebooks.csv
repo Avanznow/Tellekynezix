@@ -1,0 +1,13 @@
+Framework,Chain,Protocol,Window_accuracy,File_accuracy,window_size,window_stride,capture_samples
+PyTorch,improved global chain,5-fold by recording (seed 42),0.4887965102431358,0.6251978692329985,128,64,384
+PyTorch,improved global chain,5-fold by participant,0.1840961292793942,0.1840955061652106,128,64,384
+PyTorch,subject-specific chain,5-fold by recording (seed 42),0.8427424035436897,0.9003293716036828,128,64,384
+PyTorch,subject-specific chain,5-fold by participant,0.1890848574316167,0.1939595098162436,128,64,384
+TensorFlow,improved global chain,5-fold by recording (seed 42),0.4926846721183566,0.6082470586258106,125,62,373
+TensorFlow,subject-specific chain,5-fold by recording (seed 42),0.8403432812529944,0.8913019448751861,125,62,373
+TensorFlow,improved global chain,5-fold by participant (held-out people),0.1850621729337794,0.1801077049806644,125,62,373
+TensorFlow,subject-specific chain,5-fold by participant (held-out people),0.183599417909348,0.1810386718372728,125,62,373
+JAX,improved global chain,5-fold by recording (seed 42),0.4913072125154475,0.6003952500644576,125,50,325
+JAX,subject-specific chain,5-fold by recording (seed 42),0.8389434371122781,0.8957259891104699,125,50,325
+JAX,improved global chain,5-fold by participant (held-out people),0.1801562067096964,0.181182776481659,125,50,325
+JAX,subject-specific chain,5-fold by participant (held-out people),0.1832527343015539,0.1809582432286483,125,50,325

@@ -59,7 +59,7 @@
   },
   "segments_too_short": 0,
   "nonfinite_samples_zeroed": 0,
-  "seconds": 7.6,
+  "seconds": 7.8,
   "subsample": {
     "max_windows_per_class": 2000,
     "seed": 0,
@@ -76,5 +76,5 @@
     }
   },
   "chance_level": 0.17096939647803044,
-  "feature_cache": "/home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results/cache/features_4df6a3d7e7044283.npz"
+  "feature_cache": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache/features_4df6a3d7e7044283.npz"
 }

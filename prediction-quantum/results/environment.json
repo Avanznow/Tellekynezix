@@ -1,15 +1,15 @@
 {
   "python": "3.12.3",
-  "torch": "2.14.1+cpu",
+  "torch": "2.12.1+cu130",
   "pennylane": "0.45.1",
-  "numpy": "2.5.4",
-  "scipy": "1.18.1",
-  "scikit_learn": "1.9.1",
-  "pandas": "3.0.6",
+  "numpy": "2.5.0",
+  "scipy": "1.18.0",
+  "scikit_learn": "1.9.0",
+  "pandas": "3.0.3",
   "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
   "logical_cpus": 16,
   "torch_threads": 2,
-  "n_jobs": 8,
+  "n_jobs": 2,
   "platform": "Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39",
-  "generated": "2026-10-17 18:02:00"
+  "generated": "2026-10-17 21:39:56"
 }

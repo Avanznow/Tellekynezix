@@ -1,0 +1,8 @@
+Control,Classifier,Value,Reference,Reference_meaning,Notebook,Reading
+Held-out participants (5-fold by participant),improved global chain,0.1841,0.1667,chance,0.18,nothing transfers across people
+Held-out participants (5-fold by participant),subject-specific chain,0.1891,0.1667,chance,0.18,nothing transfers across people
+"Acquisition time only, no EEG (label of the nearest training window in time)",time of the window,0.8849,0.1667,chance,0.97,the split lets time alone predict the command
+Labels permuted across recordings within participant (3 seeds),subject-specific chain,0.1591,0.1667,chance,0.15,the chain learns nothing from shuffled labels: no leak through features
+"Train on the first 60 % of every command block, test on the last 40 %",subject-specific chain,0.6771,0.8458,"same chain, notebook split",0.66,accuracy falls with time distance to the training recordings
+First half vs second half of the SAME command block,"LDA + GaussianNB, leave-one-recording-out",0.7574,0.5,chance (2 classes),0.73,"windows carry the session's drift, not only the command"
+Errors of the subject-specific chain landing on the adjacent block in time,subject-specific chain,0.6939,0.3394,if errors ignored time,0.79,confusions follow the recording order

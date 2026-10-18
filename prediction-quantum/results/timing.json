@@ -2,7 +2,7 @@
   "data_seconds": 0.2,
   "training_seconds": 0.0,
   "latency_seconds": 0.0,
-  "noise_seconds": 90.3,
+  "noise_seconds": 0.0,
   "total_seconds_this_invocation": 0.3,
-  "total_seconds_phases": 90.5
+  "total_seconds_phases": 0.2
 }
