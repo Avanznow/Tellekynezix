@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from robot_services.models import Measurement, OperatingMode, SampleQuality, SensorSample
 from robot_services.simulation import SimulationRobotService
@@ -83,6 +83,28 @@ class SimulationTelemetryTests(unittest.IsolatedAsyncioTestCase):
             started = asyncio.get_running_loop().time()
             await anext(stream)
             self.assertGreaterEqual(asyncio.get_running_loop().time() - started, .02)
+        finally:
+            await stream.aclose()
+
+    async def test_early_timer_wakeup_waits_until_minimum_deadline(self):
+        stream = self.service.stream_telemetry(.02)
+        await anext(stream)
+        loop = MagicMock()
+        loop.time.side_effect = [0, 0, .005, .02]
+        waits = []
+
+        async def early_timeout(awaitable, timeout):
+            awaitable.close()
+            waits.append(timeout)
+            raise TimeoutError
+
+        try:
+            with patch("robot_services.simulation.asyncio.get_running_loop", return_value=loop), \
+                 patch("robot_services.simulation.asyncio.wait_for", side_effect=early_timeout):
+                await anext(stream)
+            self.assertEqual(len(waits), 2)
+            self.assertAlmostEqual(waits[0], .02)
+            self.assertAlmostEqual(waits[1], .015)
         finally:
             await stream.aclose()
 

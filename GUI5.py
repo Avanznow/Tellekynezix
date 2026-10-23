@@ -27,6 +27,7 @@ from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPr
 from predictions_local.neurosityprocessor import NeurosityDataProcessor
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
+from robot_services.qt_simulation import SimulationController
 import asyncio
 import copy
 import queue
@@ -1057,6 +1058,8 @@ if __name__ == "__main__":
     tab_controller = TabController()
     print("TabController created")
     manual_nao_controller = ManualNaoController()
+    nao_simulation = SimulationController()
+    app.aboutToQuit.connect(nao_simulation.close)
     drone_camera_controller = DroneCameraController()
 
     # Initialize backend before loading QML
@@ -1074,6 +1077,7 @@ if __name__ == "__main__":
     print("Controllers exposed to QML")
     engine.rootContext().setContextProperty("fileShufflerGui", shuffler_api)  # For file shuffler
     engine.rootContext().setContextProperty("manualNaoController", manual_nao_controller)
+    engine.rootContext().setContextProperty("naoSimulation", nao_simulation)
     engine.rootContext().setContextProperty("droneCameraController", drone_camera_controller)
 
     # Load QML

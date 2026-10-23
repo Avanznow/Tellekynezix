@@ -221,9 +221,17 @@ class SimulationRobotService(RobotService):
         async def snapshots():
             while not session_end.is_set():
                 yield await self.read_telemetry()
-                try:
-                    await asyncio.wait_for(session_end.wait(), timeout=interval)
-                except TimeoutError:
-                    pass
+                # Async timers may wake up one clock tick early on Windows.
+                # Recheck the deadline to honor minimum sample spacing.
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + interval
+                while not session_end.is_set():
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        break
+                    try:
+                        await asyncio.wait_for(session_end.wait(), timeout=remaining)
+                    except TimeoutError:
+                        pass
 
         return snapshots()
