@@ -9,6 +9,10 @@ class RobotConnectionError(RobotServiceError):
     """The backend is disconnected or communication failed."""
 
 
+class RobotBusyError(RobotServiceError):
+    """Another posture operation is already in progress."""
+
+
 class UnsupportedOperationError(RobotServiceError):
     """The backend does not support the requested operation or posture."""
 
