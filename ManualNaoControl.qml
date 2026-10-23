@@ -220,33 +220,13 @@ Rectangle {
                     gaitPhase: naoSimulation.motion.gait_phase
                 }
             }
-            Label {
-                anchors.top: parent.top
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.topMargin: 16
-                width: parent.width - 24
-                text: "SIMULATION\nNo hardware connection"
-                color: "#d0ec8b"
-                font.bold: true
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-            }
-            Label {
-                anchors.top: parent.top
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.topMargin: 58
-                width: parent.width - 24
-                text: "Procedural visual motion\nSensors remain constant test fixtures."
-                color: "white"
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-            }
             CheckBox {
                 id: followRobotCheck
                 objectName: "simulationFollowCamera"
-                anchors.top: parent.top
-                anchors.topMargin: 96
-                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.bottom: departureLabel.top
+                anchors.bottomMargin: 4
                 text: "Follow robot"
                 checked: false
                 palette.windowText: "white"
@@ -258,10 +238,11 @@ Rectangle {
                 }
             }
             Label {
+                id: departureLabel
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.margins: 12
-                text: "Grid: 1 scene unit\nGreen disc: starting point"
+                text: "Initial departure: Green point."
                 color: "white"
                 font.pixelSize: 11
             }
