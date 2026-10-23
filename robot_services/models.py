@@ -105,6 +105,25 @@ class RobotStatus:
 
 
 @dataclass(frozen=True)
+class MotionState:
+    """Visual simulation state, separate from sensor telemetry.
+
+    x/z are arbitrary scene units, heading is degrees, gait_phase is radians.
+    sit_amount and gait_weight are normalized animation blends, not joint angles.
+    action is idle, posture, forward, backward, turn_left, turn_right or settling.
+    This describes a visual model, not physical balance or robot odometry.
+    """
+
+    x: float = 0.0
+    z: float = 0.0
+    heading: float = 0.0
+    gait_phase: float = 0.0
+    gait_weight: float = 0.0
+    sit_amount: float = 0.0
+    action: str = "idle"
+
+
+@dataclass(frozen=True)
 class PostureResult:
     """Command outcome; only COMPLETED_VERIFIED confirms the observed posture."""
 

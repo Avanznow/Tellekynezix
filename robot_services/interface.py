@@ -3,7 +3,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
-from .models import PostureResult, RobotStatus, TelemetrySnapshot
+from .models import MotionState, PostureResult, RobotStatus, TelemetrySnapshot
+from .errors import UnsupportedOperationError
 
 
 class RobotService(ABC):
@@ -39,6 +40,30 @@ class RobotService(ABC):
     @abstractmethod
     async def get_posture(self) -> str | None:
         """Return observed posture, or None when connected but unknown."""
+
+    async def get_motion_capabilities(self) -> tuple[str, ...]:
+        """Return supported continuous motion names; empty for unsupported backends."""
+        return ()
+
+    async def get_motion_state(self) -> MotionState:
+        """Return visual/odometry state only when the backend supports it."""
+        raise UnsupportedOperationError("Motion state is not supported")
+
+    async def start_motion(self, command: str, speed: float = 0.5) -> MotionState:
+        """Start a supported continuous motion at normalized speed 0 < speed <= 1.
+
+        Return after acceptance; motion continues until stopped or disconnected.
+        Unsupported backends must not silently emulate physical motion.
+        """
+        raise UnsupportedOperationError("Continuous motion is not supported")
+
+    async def stop_motion(self) -> MotionState:
+        """Halt travel/turning, then settle to Stand where supported.
+
+        Position and heading must stay fixed during settling. Stop during a
+        posture transition freezes its pose and marks the posture unknown.
+        """
+        raise UnsupportedOperationError("Motion stopping is not supported")
 
     @abstractmethod
     async def read_telemetry(self) -> TelemetrySnapshot:

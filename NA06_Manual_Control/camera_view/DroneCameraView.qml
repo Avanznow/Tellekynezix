@@ -10,6 +10,9 @@ Rectangle {
     border.width: 2
 
     property var cameraController: null
+    property bool controlsEnabled: cameraController !== null
+    property string placeholderText: "Camera Ready"
+    property string availabilityText: ""
     property bool recording: false
     property string latestFrameDebug: ""
 
@@ -110,8 +113,15 @@ Rectangle {
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Camera Ready"
+                    text: droneCameraViewRoot.placeholderText
                     font.pixelSize: 14
+                    color: "#BDC3C7"
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: droneCameraViewRoot.availabilityText
+                    visible: text !== ""
+                    font.pixelSize: 12
                     color: "#BDC3C7"
                 }
             }
@@ -156,11 +166,13 @@ Rectangle {
             spacing: 10
 
             Button {
+                objectName: "naoCameraStartButton"
                 text: "Start Stream"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 Layout.alignment: Qt.AlignVCenter
-                enabled: true
+                enabled: droneCameraViewRoot.controlsEnabled && !recording
+                opacity: enabled ? 1 : 0.5
                 background: Rectangle {
                     color: "#4A5B7B"
                     radius: 8
@@ -186,11 +198,13 @@ Rectangle {
 
             Button {
                 id: stopButton
+                objectName: "naoCameraStopButton"
                 text: "Stop Stream"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 Layout.alignment: Qt.AlignVCenter
-                enabled: true
+                enabled: droneCameraViewRoot.controlsEnabled && recording
+                opacity: enabled ? 1 : 0.5
                 background: Rectangle {
                     color: "#4A5B7B" // "#78808f" - for disabled
                     radius: 8
@@ -217,11 +231,13 @@ Rectangle {
 
             Button {
                 id: captureButton
+                objectName: "naoCameraCaptureButton"
                 text: "Capture"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 Layout.alignment: Qt.AlignVCenter
-                enabled: true
+                enabled: droneCameraViewRoot.controlsEnabled && recording
+                opacity: enabled ? 1 : 0.5
                 background: Rectangle {
                     color: "#4A5B7B" // "#78808f" - for disabled
                     radius: 8
@@ -249,8 +265,4 @@ Rectangle {
         console.log("DroneCameraView loaded; cameraController:", cameraController)
     }
 
-    onRecordingChanged: {
-        captureButton.enabled = recording
-        stopButton.enabled = recording
-    }
 }

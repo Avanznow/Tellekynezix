@@ -18,14 +18,16 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick3D
-import "Nao.mesh"
+import "NA06_Manual_Control/rigid_model"
+import "NA06_Manual_Control/camera_view" as NaoCamera
 
 Rectangle {
     id: root
     objectName: "naoSimulationView"
     color: "#2f2f2f"
-    property bool animationInProgress: false
-    property int heading: 0
+    property alias followRobot: followRobotCheck.checked
+    property real cameraAnchorX: 0
+    property real cameraAnchorZ: 0
 
     Connections {
         target: naoSimulation
@@ -43,28 +45,6 @@ Rectangle {
         if (!sample || !sample.values || !sample.values[key]) return "Unavailable"
         var item = sample.values[key]
         return item.value === null ? "Unavailable" : Number(item.value).toFixed(2) + " " + item.unit
-    }
-
-    function preview(action) {
-        if (animationInProgress) return
-        var start = naoModel.position
-        if (action === "left" || action === "right") {
-            var step = action === "left" ? -90 : 90
-            heading += step
-            rotateAnim.from = naoModel.eulerRotation
-            rotateAnim.to = Qt.vector3d(0, heading, 0)
-            animationInProgress = true
-            rotateAnim.start()
-        } else {
-            var distance = action === "forward" ? 50 : -50
-            var angle = heading * Math.PI / 180
-            moveAnim.from = start
-            moveAnim.to = Qt.vector3d(start.x + distance * Math.sin(angle), start.y,
-                                     start.z + distance * Math.cos(angle))
-            animationInProgress = true
-            moveAnim.start()
-        }
-        appendLog("Viewer preview: " + action + " (visual only; sensor values unchanged).")
     }
 
     RowLayout {
@@ -87,7 +67,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Label {
-                    text: "Viewer preview controls\nVisual movement only"
+                    text: "Motion controls\nChoose a direction; standing is automatic"
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
@@ -97,16 +77,16 @@ Rectangle {
                     Layout.fillWidth: true
                     Repeater {
                         model: [
-                            {label: "Backward", action: "backward", icon: "back.png"},
-                            {label: "Forward", action: "forward", icon: "forward.png"},
-                            {label: "Right", action: "right", icon: "right.png"},
-                            {label: "Left", action: "left", icon: "left.png"}
+                            {label: "Walking Backward", action: "backward", icon: "back.png"},
+                            {label: "Walking Forward", action: "forward", icon: "forward.png"},
+                            {label: "Turn Right", action: "turn_right", icon: "right.png"},
+                            {label: "Turn Left", action: "turn_left", icon: "left.png"}
                         ]
                         delegate: Button {
-                            objectName: "simulationPreview_" + modelData.action
+                            objectName: "simulationMotion_" + modelData.action
                             Layout.fillWidth: true
                             Layout.preferredHeight: Math.min(110, root.height * 0.17)
-                            enabled: !root.animationInProgress
+                            enabled: naoSimulation.canSwitchMotion
                             contentItem: Column {
                                 spacing: 4
                                 Image {
@@ -120,11 +100,11 @@ Rectangle {
                                     text: modelData.label
                                 }
                             }
-                            onClicked: root.preview(modelData.action)
+                            onClicked: naoSimulation.requestMotion(modelData.action)
                         }
                     }
                 }
-                Label { text: "Simulated posture (status only)"; color: "white" }
+                Label { text: "Simulated posture"; color: "white" }
                 RowLayout {
                     Layout.fillWidth: true
                     Button {
@@ -141,6 +121,13 @@ Rectangle {
                         enabled: naoSimulation.connected && !naoSimulation.busy && !naoSimulation.pending
                         onClicked: naoSimulation.requestPosture("Sit")
                     }
+                }
+                Button {
+                    objectName: "simulationStopButton"
+                    text: naoSimulation.stopping ? "Stopping..." : "Stop"
+                    Layout.fillWidth: true
+                    enabled: naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
+                    onClicked: naoSimulation.stopMotion()
                 }
                 Label { text: "Console"; color: "white" }
                 ScrollView {
@@ -170,18 +157,67 @@ Rectangle {
                     backgroundMode: SceneEnvironment.Color
                 }
                 PerspectiveCamera {
-                    position: Qt.vector3d(0, 250, 800)
-                    eulerRotation.x: -10
-                    clipFar: 5000
+                    objectName: "simulationViewCamera"
+                    position: Qt.vector3d((root.followRobot ? naoSimulation.motion.x : root.cameraAnchorX) + 4.2,
+                                         2.8, (root.followRobot ? naoSimulation.motion.z : root.cameraAnchorZ) + 7.2)
+                    eulerRotation: Qt.vector3d(-9, 30, 0)
+                    clipNear: 0.01
+                    clipFar: 100
                 }
                 DirectionalLight { eulerRotation.x: -45; eulerRotation.y: 45; brightness: 1.5 }
                 DirectionalLight { eulerRotation.x: 30; eulerRotation.y: -60; brightness: 1.2 }
-                PointLight { position: Qt.vector3d(0, 400, 400); brightness: 800 }
-                Nao {
+                Model {
+                    source: "#Cube"
+                    position.y: -0.06
+                    scale: Qt.vector3d(2, 0.001, 2)
+                    materials: PrincipledMaterial { baseColor: "#344a59"; roughness: 1 }
+                }
+                Node {
+                    objectName: "simulationGroundGrid"
+                    // Fixed world reference: one square is one scene unit.
+                    Repeater3D {
+                        model: 41
+                        delegate: Node {
+                            required property int index
+                            Model {
+                                source: "#Cube"
+                                position: Qt.vector3d(0, -0.005, index - 20)
+                                scale: Qt.vector3d(0.4, 0.00003, 0.00008)
+                                materials: PrincipledMaterial {
+                                    baseColor: "#78919e"
+                                    lighting: PrincipledMaterial.NoLighting
+                                }
+                            }
+                            Model {
+                                source: "#Cube"
+                                position: Qt.vector3d(index - 20, -0.005, 0)
+                                scale: Qt.vector3d(0.00008, 0.00003, 0.4)
+                                materials: PrincipledMaterial {
+                                    baseColor: "#78919e"
+                                    lighting: PrincipledMaterial.NoLighting
+                                }
+                            }
+                        }
+                    }
+                }
+                Model {
+                    objectName: "simulationStartMarker"
+                    source: "#Cylinder"
+                    position: Qt.vector3d(0, 0, 0)
+                    scale: Qt.vector3d(0.012, 0.00005, 0.012)
+                    materials: PrincipledMaterial {
+                        baseColor: "#b1cb71"
+                        lighting: PrincipledMaterial.NoLighting
+                    }
+                }
+                RigidNao {
                     id: naoModel
                     objectName: "simulationNaoModel"
-                    scale: Qt.vector3d(100, 100, 100)
-                    position: Qt.vector3d(0, -100, 0)
+                    position: Qt.vector3d(naoSimulation.motion.x, 0, naoSimulation.motion.z)
+                    heading: naoSimulation.motion.heading
+                    sitAmount: naoSimulation.motion.sit_amount
+                    walking: naoSimulation.motion.gait_weight
+                    gaitPhase: naoSimulation.motion.gait_phase
                 }
             }
             Label {
@@ -196,14 +232,94 @@ Rectangle {
                 wrapMode: Text.Wrap
             }
             Label {
-                anchors.bottom: parent.bottom
+                anchors.top: parent.top
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottomMargin: 16
+                anchors.topMargin: 58
                 width: parent.width - 24
-                text: "Posture changes appear in status.\nThis model has no sitting animation yet."
+                text: "Procedural visual motion\nSensors remain constant test fixtures."
                 color: "white"
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
+            }
+            CheckBox {
+                id: followRobotCheck
+                objectName: "simulationFollowCamera"
+                anchors.top: parent.top
+                anchors.topMargin: 96
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Follow robot"
+                checked: false
+                palette.windowText: "white"
+                onCheckedChanged: {
+                    if (!checked) {
+                        root.cameraAnchorX = naoSimulation.motion.x
+                        root.cameraAnchorZ = naoSimulation.motion.z
+                    }
+                }
+            }
+            Label {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                text: "Grid: 1 scene unit\nGreen disc: starting point"
+                color: "white"
+                font.pixelSize: 11
+            }
+            Rectangle {
+                objectName: "naoHardwareConnectionPanel"
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                width: Math.min(205, parent.width - 24)
+                height: hardwareFields.implicitHeight + 24
+                color: "#242c4d"
+                radius: 8
+                border.color: "#3a4a6d"
+                ColumnLayout {
+                    id: hardwareFields
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+                    Label { text: "NAO Connection"; font.bold: true; color: "white" }
+                    GridLayout {
+                        columns: 2
+                        Layout.fillWidth: true
+                        Label { text: "IP:"; color: "white" }
+                        TextField {
+                            objectName: "naoHardwareIp"
+                            text: "192.168.23.53"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            font.pixelSize: 12
+                            selectByMouse: true
+                        }
+                        Label { text: "Port:"; color: "white" }
+                        TextField {
+                            objectName: "naoHardwarePort"
+                            text: "9559"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            font.pixelSize: 12
+                            validator: IntValidator { bottom: 1; top: 65535 }
+                            selectByMouse: true
+                        }
+                    }
+                    Button {
+                        objectName: "naoHardwareConnectButton"
+                        text: "Connect"
+                        Layout.fillWidth: true
+                        enabled: false
+                    }
+                    Label {
+                        text: "Hardware connection planned.\nSimulation uses its own Connect."
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 11
+                        color: "#d6deee"
+                    }
+                }
             }
         }
         Rectangle {
@@ -232,6 +348,39 @@ Rectangle {
                         else naoSimulation.connectSimulation()
                     }
                 }
+                TabBar {
+                    id: informationTabs
+                    objectName: "naoInformationTabs"
+                    Layout.fillWidth: true
+                    TabButton { text: "Camera" }
+                    TabButton { text: "Telemetry" }
+                }
+                StackLayout {
+                    currentIndex: informationTabs.currentIndex
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Item {
+                        NaoCamera.DroneCameraView {
+                            objectName: "naoCameraPanel"
+                            cameraController: null
+                            placeholderText: "No camera connected"
+                            availabilityText: "Live camera integration planned"
+                            onLogToParent: function(message) { root.appendLog(message) }
+                        }
+                    }
+                    ScrollView {
+                        id: telemetryScroll
+                        clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                            width: telemetryScroll.availableWidth
+                            spacing: 12
+                Label {
+                    text: "Position (scene units):\nX: " + Number(naoSimulation.motion.x).toFixed(2) +
+                          "  Z: " + Number(naoSimulation.motion.z).toFixed(2) +
+                          "\nHeading: " + Number(naoSimulation.motion.heading).toFixed(1) + " deg"
+                    color: "white"
+                }
                 Label { text: "Simulated telemetry"; color: "#d0ec8b"; font.bold: true }
                 Label { text: "Battery: " + root.reading("battery", "charge"); color: "white" }
                 Label {
@@ -253,22 +402,11 @@ Rectangle {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
                 }
-                Item { Layout.fillHeight: true }
+                        }
+                    }
+                }
+
             }
         }
-    }
-    PropertyAnimation {
-        id: moveAnim
-        target: naoModel
-        property: "position"
-        duration: 1000
-        onStopped: root.animationInProgress = false
-    }
-    PropertyAnimation {
-        id: rotateAnim
-        target: naoModel
-        property: "eulerRotation"
-        duration: 800
-        onStopped: root.animationInProgress = false
     }
 }

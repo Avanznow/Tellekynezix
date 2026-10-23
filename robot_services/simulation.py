@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from .errors import RobotBusyError, RobotConnectionError, UnsupportedOperationError
 from .interface import RobotService
 from .models import (
-    Measurement, OperatingMode, PostureOutcome, PostureResult, RobotStatus,
+    Measurement, MotionState, OperatingMode, PostureOutcome, PostureResult, RobotStatus,
     SampleQuality, SensorSample, TelemetrySnapshot,
 )
 
@@ -23,8 +23,9 @@ class SimulationRobotService(RobotService):
     """Maintain independent simulated connection sessions.
 
     Status is readable while disconnected. Repeated connect calls preserve the
-    current session; disconnect clears posture and busy state. Busy will reflect
-    posture activity only, never telemetry streaming. Use from one event loop.
+    current session; disconnect clears posture and busy state. Busy reflects
+    posture, travel, turning or settling, never telemetry streaming. Use from
+    one event loop. Visual position is preserved across connection sessions.
     """
 
     def __init__(
@@ -32,6 +33,7 @@ class SimulationRobotService(RobotService):
         right_distance: float = 1.0, battery_percent: float = 100.0,
         charging: bool = False,
         sensor_overrides: dict[str, SensorSample] | None = None,
+        settle_duration: float = 0.35,
     ) -> None:
         """Configure constant fixtures; values do not drain or track scene motion.
 
@@ -46,6 +48,13 @@ class SimulationRobotService(RobotService):
                 or not math.isfinite(posture_duration) or posture_duration <= 0):
             raise ValueError("posture_duration must be positive and finite")
         self._posture_duration = posture_duration
+        if (isinstance(settle_duration, bool) or not isinstance(settle_duration, (int, float))
+                or not math.isfinite(settle_duration) or settle_duration <= 0):
+            raise ValueError("settle_duration must be positive and finite")
+        self._settle_duration = settle_duration
+        self._motion_task: asyncio.Task | None = None
+        self._motion = MotionState()
+        self._transition = None
         self._action: asyncio.Task | None = None
         self._connected = False
         self._busy = False
@@ -100,17 +109,24 @@ class SimulationRobotService(RobotService):
 
     async def disconnect(self) -> None:
         """Clear state and cancel/await active posture work; safe repeatedly."""
+        self._update_pose()
         action = self._action
+        motion_task = self._motion_task
         self._action = None
+        self._motion_task = None
+        self._transition = None
+        self._motion = replace(self._motion, action="idle")
         if self._session_end is not None:
             self._session_end.set()
         self._connected = False
         self._busy = False
         self._posture = None
         self._sequence = 0
-        if action is not None:
-            action.cancel()
-            await asyncio.gather(action, return_exceptions=True)
+        tasks = [task for task in (action, motion_task) if task is not None]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def get_status(self) -> RobotStatus:
         """Return a fresh immutable status snapshot in either connection state."""
@@ -146,6 +162,7 @@ class SimulationRobotService(RobotService):
         if self._posture == name:
             return self._posture_result(name)
         self._busy = True
+        self._begin_transition(duration, 1.0 if name == "Sit" else 0.0, 0.0, "posture")
         action = asyncio.create_task(self._perform_posture(name, duration))
         self._action = action
         try:
@@ -157,6 +174,8 @@ class SimulationRobotService(RobotService):
                     self._posture = None
                 self._action = None
                 self._busy = False
+                self._transition = None
+                self._motion = replace(self._motion, action="idle")
 
     def _posture_result(self, name: str) -> PostureResult:
         return PostureResult(name, PostureOutcome.COMPLETED_VERIFIED, name,
@@ -166,10 +185,13 @@ class SimulationRobotService(RobotService):
         action = asyncio.current_task()
         try:
             await asyncio.sleep(duration)
+            self._motion = replace(self._motion, sit_amount=1.0 if name == "Sit" else 0.0,
+                                   gait_weight=0.0)
             self._posture = name
             return self._posture_result(name)
         except asyncio.CancelledError:
             if self._action is action:
+                self._update_pose()
                 self._posture = None
             raise
         finally:
@@ -180,6 +202,124 @@ class SimulationRobotService(RobotService):
         """Return the last completed simulated posture, or None if unknown."""
         self._require_connection()
         return self._posture
+
+    def _begin_transition(self, duration, sit_target, gait_target, action):
+        self._update_pose()
+        self._transition = (asyncio.get_running_loop().time(), duration,
+                            self._motion.sit_amount, sit_target,
+                            self._motion.gait_weight, gait_target)
+        self._motion = replace(self._motion, action=action)
+
+    def _update_pose(self):
+        if self._transition is None:
+            return
+        start, duration, sit_from, sit_to, gait_from, gait_to = self._transition
+        fraction = min(1.0, max(0.0, (asyncio.get_running_loop().time() - start) / duration))
+        blend = 0.5 - 0.5 * math.cos(math.pi * fraction)
+        self._motion = replace(self._motion,
+                               sit_amount=sit_from + (sit_to - sit_from) * blend,
+                               gait_weight=gait_from + (gait_to - gait_from) * blend)
+
+    async def get_motion_capabilities(self) -> tuple[str, ...]:
+        """Supported visual continuous motions, without hardware claims."""
+        return ("forward", "backward", "turn_left", "turn_right")
+
+    async def get_motion_state(self) -> MotionState:
+        """Return a fresh visual state, also available after disconnect."""
+        self._update_pose()
+        return self._motion
+
+    async def start_motion(self, command: str, speed: float = 0.5) -> MotionState:
+        """Start continuous visual movement from verified simulated Stand.
+
+        Rates at full speed: 0.8 scene units/sec and 60 degrees/sec. This is a
+        procedural visual gait, not a physically balanced trajectory. Competing
+        commands raise RobotBusyError; callers must Stop before changing motion.
+        """
+        self._require_connection()
+        if command not in await self.get_motion_capabilities():
+            raise UnsupportedOperationError(f"Unsupported simulated motion: {command!r}")
+        if (isinstance(speed, bool) or not isinstance(speed, (int, float))
+                or not math.isfinite(speed) or not 0 < speed <= 1):
+            raise ValueError("speed must be finite and greater than 0, at most 1")
+        if self._busy:
+            raise RobotBusyError("Stop the active operation before starting another")
+        if self._posture != "Stand":
+            raise ValueError("Request Stand before walking or turning")
+        self._busy = True
+        self._motion = replace(self._motion, action=command, gait_weight=1.0, sit_amount=0.0)
+        self._motion_task = asyncio.create_task(self._run_motion(command, speed))
+        return self._motion
+
+    async def _run_motion(self, command, speed):
+        loop = asyncio.get_running_loop()
+        previous = loop.time()
+        try:
+            while True:
+                await asyncio.sleep(0.02)
+                now = loop.time()
+                # Avoid jumping after a stalled worker; this is a visual model.
+                dt = min(0.1, max(0, now - previous))
+                previous = now
+                state = self._motion
+                direction = -1 if command == "backward" else 1
+                phase = state.gait_phase + direction * dt * 5 * speed
+                if command.startswith("turn_"):
+                    sign = -1 if command == "turn_left" else 1
+                    self._motion = replace(state, heading=state.heading + sign * dt * 60 * speed,
+                                           gait_phase=phase)
+                else:
+                    angle = math.radians(state.heading)
+                    distance = direction * dt * .8 * speed
+                    self._motion = replace(state, x=state.x + distance * math.sin(angle),
+                                           z=state.z + distance * math.cos(angle), gait_phase=phase)
+        except asyncio.CancelledError:
+            raise
+
+    async def stop_motion(self) -> MotionState:
+        """Halt travel now; settle walking legs to Stand, or freeze posture work.
+
+        Repeated Stop during settling awaits the same operation. Disconnect
+        cancels settling and leaves posture unknown. Idle Stop is a no-op.
+        """
+        self._require_connection()
+        self._update_pose()
+        if self._motion.action == "settling" and self._action is not None:
+            await asyncio.shield(self._action)
+            return await self.get_motion_state()
+        if self._motion_task is not None:
+            task = self._motion_task
+            self._motion_task = None
+            task.cancel()
+            # Claim the settling state before yielding, preventing new commands.
+            self._begin_transition(self._settle_duration, 0.0, 0.0, "settling")
+            action = asyncio.create_task(self._settle(task))
+            self._action = action
+            await asyncio.shield(action)
+        elif self._action is not None:
+            action = self._action
+            action.cancel()
+            await asyncio.gather(action, return_exceptions=True)
+        return await self.get_motion_state()
+
+    async def _settle(self, movement):
+        action = asyncio.current_task()
+        try:
+            await asyncio.gather(movement, return_exceptions=True)
+            await asyncio.sleep(self._settle_duration)
+            self._motion = replace(self._motion, gait_weight=0.0, sit_amount=0.0, action="idle")
+            self._posture = "Stand"
+        except asyncio.CancelledError:
+            if self._action is action:
+                self._update_pose()
+                self._posture = None
+            raise
+        finally:
+            if self._action is action:
+                self._action = None
+                self._transition = None
+                self._busy = False
+                self._motion = replace(self._motion, action="idle")
 
     async def read_telemetry(self) -> TelemetrySnapshot:
         """Return freshly timestamped constant simulated readings; offline raises.
