@@ -9,481 +9,384 @@
 ** ---------------------- automatically updated complete list of authors.
 ** Description: 
 ** This QML file implements the Manual NAO Control tab, providing a user interface
-** for controlling the NAO robot. It includes a 3D viewer of the NAO model  and 
-** a connection panel with configurable IP and Port settings.
-** a connection panel with configurable IP and Port settings.
+** for previewing the NAO model and operating the simulation service.
+** Posture and telemetry controls communicate only with the simulation backend.
 ** MIT License
  -----------------------------------------------------*/
 
-import QtQuick.Dialogs
-import Qt.labs.platform
-import QtQuick 6.5
-import QtQuick.Controls 6.4
-import QtQuick.Layouts 1.15
-import QtQuick.Window 2.15
-import QtQuick3D 6.7
-import "Nao.mesh"
-
-// Manual Nao Control Tab view
-
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick3D
+import "NA06_Manual_Control/rigid_model"
+import "NA06_Manual_Control/camera_view" as NaoCamera
 
 Rectangle {
-    // Proper connection handling
+    id: root
+    objectName: "naoSimulationView"
+    color: "#2f2f2f"
+    property alias followRobot: followRobotCheck.checked
+    property real cameraAnchorX: 0
+    property real cameraAnchorZ: 0
+
     Connections {
-        target: backend  // Now properly defined through context property
-        function onImagesReady(imageData) {
-            imageModel.clear();
-            for (let item of imageData) {
-                imageModel.append(item);
+        target: naoSimulation
+        function onLogMessage(message) { root.appendLog(message) }
+    }
+
+    function appendLog(message) {
+        var lines = consoleLog.text.split("\n")
+        if (lines.length > 150) consoleLog.text = lines.slice(-100).join("\n")
+        consoleLog.append(new Date().toLocaleTimeString() + "  " + message)
+    }
+
+    function reading(group, key) {
+        var sample = naoSimulation.telemetry[group]
+        if (!sample || !sample.values || !sample.values[key]) return "Unavailable"
+        var item = sample.values[key]
+        return item.value === null ? "Unavailable" : Number(item.value).toFixed(2) + " " + item.unit
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        spacing: 0
+        Rectangle {
+            Layout.preferredWidth: parent.width * 0.29
+            Layout.minimumWidth: 245
+            Layout.fillHeight: true
+            color: "#718399"
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 10
+                Label {
+                    text: "NAO Simulation"
+                    color: "white"
+                    font.pixelSize: 20
+                    font.bold: true
+                    Layout.alignment: Qt.AlignHCenter
+                }
+                Label {
+                    text: "Motion controls\nChoose a direction; standing is automatic"
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.fillWidth: true
+                }
+                GridLayout {
+                    columns: 2
+                    Layout.fillWidth: true
+                    Repeater {
+                        model: [
+                            {label: "Walking Backward", action: "backward", icon: "back.png"},
+                            {label: "Walking Forward", action: "forward", icon: "forward.png"},
+                            {label: "Turn Right", action: "turn_right", icon: "right.png"},
+                            {label: "Turn Left", action: "turn_left", icon: "left.png"}
+                        ]
+                        delegate: Button {
+                            objectName: "simulationMotion_" + modelData.action
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.min(110, root.height * 0.17)
+                            enabled: naoSimulation.canSwitchMotion
+                            contentItem: Column {
+                                spacing: 4
+                                Image {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    source: "GUI_Pics/" + modelData.icon
+                                    width: 48; height: 48
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                Label {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: modelData.label
+                                }
+                            }
+                            onClicked: naoSimulation.requestMotion(modelData.action)
+                        }
+                    }
+                }
+                Label { text: "Simulated posture"; color: "white" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        objectName: "simulationStandButton"
+                        text: "Stand Up"
+                        Layout.fillWidth: true
+                        enabled: naoSimulation.connected && !naoSimulation.busy && !naoSimulation.pending
+                        onClicked: naoSimulation.requestPosture("Stand")
+                    }
+                    Button {
+                        objectName: "simulationSitButton"
+                        text: "Sit Down"
+                        Layout.fillWidth: true
+                        enabled: naoSimulation.connected && !naoSimulation.busy && !naoSimulation.pending
+                        onClicked: naoSimulation.requestPosture("Sit")
+                    }
+                }
+                Button {
+                    objectName: "simulationStopButton"
+                    text: naoSimulation.stopping ? "Stopping..." : "Stop"
+                    Layout.fillWidth: true
+                    enabled: naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
+                    onClicked: naoSimulation.stopMotion()
+                }
+                Label { text: "Console"; color: "white" }
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 80
+                    TextArea {
+                        id: consoleLog
+                        objectName: "simulationConsole"
+                        readOnly: true
+                        wrapMode: TextEdit.Wrap
+                        font.pixelSize: 12
+                        color: "white"
+                        background: Rectangle { color: "#101820" }
+                    }
+                }
             }
         }
-    }
-
-    ListModel {
-        id: imageModel
-    }
-
-
-    ColumnLayout {
-        anchors.fill: parent
-        spacing: 10
-        // Stack layout for different views
-        StackLayout {
-            id: stackLayout
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-
-            // Manual Controller Tab (Nao Viewer)
-
+            color: "#2f2f2f"
+            View3D {
+                anchors.fill: parent
+                environment: SceneEnvironment {
+                    clearColor: "#2e2e2e"
+                    backgroundMode: SceneEnvironment.Color
+                }
+                PerspectiveCamera {
+                    objectName: "simulationViewCamera"
+                    position: Qt.vector3d((root.followRobot ? naoSimulation.motion.x : root.cameraAnchorX) + 4.2,
+                                         2.8, (root.followRobot ? naoSimulation.motion.z : root.cameraAnchorZ) + 7.2)
+                    eulerRotation: Qt.vector3d(-9, 30, 0)
+                    clipNear: 0.01
+                    clipFar: 100
+                }
+                DirectionalLight { eulerRotation.x: -45; eulerRotation.y: 45; brightness: 1.5 }
+                DirectionalLight { eulerRotation.x: 30; eulerRotation.y: -60; brightness: 1.2 }
+                Model {
+                    source: "#Cube"
+                    position.y: -0.06
+                    scale: Qt.vector3d(2, 0.001, 2)
+                    materials: PrincipledMaterial { baseColor: "#344a59"; roughness: 1 }
+                }
+                Node {
+                    objectName: "simulationGroundGrid"
+                    // Fixed world reference: one square is one scene unit.
+                    Repeater3D {
+                        model: 41
+                        delegate: Node {
+                            required property int index
+                            Model {
+                                source: "#Cube"
+                                position: Qt.vector3d(0, -0.005, index - 20)
+                                scale: Qt.vector3d(0.4, 0.00003, 0.00008)
+                                materials: PrincipledMaterial {
+                                    baseColor: "#78919e"
+                                    lighting: PrincipledMaterial.NoLighting
+                                }
+                            }
+                            Model {
+                                source: "#Cube"
+                                position: Qt.vector3d(index - 20, -0.005, 0)
+                                scale: Qt.vector3d(0.00008, 0.00003, 0.4)
+                                materials: PrincipledMaterial {
+                                    baseColor: "#78919e"
+                                    lighting: PrincipledMaterial.NoLighting
+                                }
+                            }
+                        }
+                    }
+                }
+                Model {
+                    objectName: "simulationStartMarker"
+                    source: "#Cylinder"
+                    position: Qt.vector3d(0, 0, 0)
+                    scale: Qt.vector3d(0.012, 0.00005, 0.012)
+                    materials: PrincipledMaterial {
+                        baseColor: "#b1cb71"
+                        lighting: PrincipledMaterial.NoLighting
+                    }
+                }
+                RigidNao {
+                    id: naoModel
+                    objectName: "simulationNaoModel"
+                    position: Qt.vector3d(naoSimulation.motion.x, 0, naoSimulation.motion.z)
+                    heading: naoSimulation.motion.heading
+                    sitAmount: naoSimulation.motion.sit_amount
+                    walking: naoSimulation.motion.gait_weight
+                    gaitPhase: naoSimulation.motion.gait_phase
+                }
+            }
+            CheckBox {
+                id: followRobotCheck
+                objectName: "simulationFollowCamera"
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.bottom: departureLabel.top
+                anchors.bottomMargin: 4
+                text: "Follow robot"
+                checked: false
+                palette.windowText: "white"
+                onCheckedChanged: {
+                    if (!checked) {
+                        root.cameraAnchorX = naoSimulation.motion.x
+                        root.cameraAnchorZ = naoSimulation.motion.z
+                    }
+                }
+            }
+            Label {
+                id: departureLabel
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                text: "Initial departure: Green point."
+                color: "white"
+                font.pixelSize: 11
+            }
             Rectangle {
-                id: rootPanel
-                property int rotationStep: 90
-                property real moveDistance: 50
-                property real verticalStep: 50
-                property int verticalState: 0
-                property int maxVerticalState: 3
-                property bool animationInProgress: false
-                property int modelRotationY: 0
-
-                signal logMessage(string message)
-
-                RowLayout {
-                    anchors.fill: parent
-                    // spacing: 10
-                    spacing: 0
-
-                    // ================= LEFT PANEL =================
-                    Rectangle {
-                        id: leftPanel
-                        Layout.preferredWidth: parent.width * 0.30
-                        Layout.fillHeight: true
-                        color: "#718399"
-                        // radius: 6
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 16
-                            spacing: 20
-
-                            Label {
-                                text: "Nao Robot Control Panel"
-                                horizontalAlignment: Text.AlignHCenter
-                                font.pixelSize: 20
-                                font.bold: true
-                                color: "white"
-                                Layout.alignment: Qt.AlignHCenter
-                            }
-
-                            GridLayout {
-                                id: buttonGrid
-                                columns: 2
-                                columnSpacing: 20
-                                rowSpacing: 20
-                                Layout.alignment: Qt.AlignHCenter
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 500 // Updated the Height to fix Overlap issues
-                                Layout.maximumHeight: 500  // Updated the Height to fix Overlap issues
-
-                                Repeater {
-                                    model: [
-                                        {label: "Backward", icon: "GUI_Pics/back.png", fn: "moveBackward"},
-                                        {label: "Forward",  icon: "GUI_Pics/forward.png", fn: "moveForward"},
-                                        {label: "Right",    icon: "GUI_Pics/right.png", fn: "turnRight"},
-                                        {label: "Left",     icon: "GUI_Pics/left.png", fn: "turnLeft"},
-                                        {label: "Takeoff",  icon: "GUI_Pics/takeoff.png", fn: "moveUp"},
-                                        {label: "Land",     icon: "GUI_Pics/land.png", fn: "moveDown"}
-                                    ]
-
-                                    delegate: Rectangle {
-                                        Layout.preferredWidth: 150
-                                        Layout.preferredHeight: 150
-                                        color: "#2c3e50"
-                                        radius: 10
-
-                                        Column {
-                                            anchors.centerIn: parent
-                                            spacing: 8
-
-                                            Image {
-                                                source: modelData.icon
-                                                width: 80; height: 80
-                                                fillMode: Image.PreserveAspectFit
-                                                onStatusChanged: if (status === Image.Error) console.log("❌ Image not found:", source)
-                                            }
-
-                                            Text {
-                                                text: modelData.label
-                                                color: "white"
-                                                font.pixelSize: 16
-                                                horizontalAlignment: Text.AlignHCenter
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            onClicked: {
-                                                rootPanel.appendLog(modelData.label + " Button Clicked!")
-                                                if (typeof rootPanel[modelData.fn] === "function") {
-                                                    rootPanel[modelData.fn]()
-                                                }
-                                                if (modelData.label === "Takeoff") {
-								                    backend.nao_stand_up()
-                                                }  else if (modelData.label === "Land") {
-                                                    backend.nao_sit_down()
-						                        }
-
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "Console Log"
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                label: Text {
-                                    text: qsTr("Console Log"); font.bold: true; color: "white"
-                                }
-
-                                ScrollView {
-                                    anchors.fill: parent
-                                    ScrollBar.vertical.policy: ScrollBar.AlwaysOn
-
-                                    TextArea {
-                                        id: consoleLog1
-                                        readOnly: true
-                                        wrapMode: Text.Wrap
-                                        color: "white"
-                                        font.pixelSize: Math.max(10, leftPanel.height * 0.02)
-                                        background: Rectangle { color: "black" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ================= CENTER PANEL (3D Viewer) =================
-                    Rectangle {
-                        id: centerPanel
+                objectName: "naoHardwareConnectionPanel"
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 12
+                width: Math.min(205, parent.width - 24)
+                height: hardwareFields.implicitHeight + 24
+                color: "#242c4d"
+                radius: 8
+                border.color: "#3a4a6d"
+                ColumnLayout {
+                    id: hardwareFields
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+                    Label { text: "NAO Connection"; font.bold: true; color: "white" }
+                    GridLayout {
+                        columns: 2
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: "#2f2f2f"
-                        radius: 6
-
-                        View3D {
-                            anchors.fill: parent
-
-                            environment: SceneEnvironment {
-                                clearColor: "#2e2e2e"
-                                backgroundMode: SceneEnvironment.Color
-                            }
-
-                            PerspectiveCamera {
-                                id: camera
-                                position: Qt.vector3d(0, 250, 800)
-                                eulerRotation.x: -10
-                                clipFar: 5000
-                            }
-
-                            DirectionalLight {
-                                eulerRotation.x: -45
-                                eulerRotation.y: 45
-                                brightness: 1.5
-                                castsShadow: true
-                            }
-
-                            DirectionalLight {
-                                eulerRotation.x: 30
-                                eulerRotation.y: -60
-                                brightness: 1.2
-                            }
-
-                            PointLight {
-                                position: Qt.vector3d(0, 400, 400)
-                                brightness: 800
-                            }
-
-                            // Load NAO model
-                            Nao {
-                                id: naoModel
-                                scale: Qt.vector3d(100, 100, 100)
-                                position: Qt.vector3d(0, -100, 0)
-                            }
-
-                            // Connection Panel with IP and Port input fields
-                            Rectangle {
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                width: Math.max(parent.width * 0.25, 160)
-                                height: parent.height * 0.25
-                                color: "#242c4d"
-                                radius: 8
-                                border.color: "#3a4a6d"
-                                border.width: 2
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 12
-                                    spacing: 10
-
-                                    Text {
-                                        text: "NAO Connection"
-                                        font.pixelSize: 14
-                                        font.bold: true
-                                        color: "white"
-                                        Layout.alignment: Qt.AlignHCenter
-                                    }
-
-                                    // IP Address Input
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: "IP:"
-                                            color: "white"
-                                            font.pixelSize: 12
-                                            Layout.preferredWidth: 30
-                                        }
-
-                                        TextField {
-                                            id: ipInput
-                                            Layout.fillWidth: true
-                                            placeholderText: "192.168.23.53"
-                                            text: "192.168.23.53"
-                                            font.pixelSize: 11
-                                            background: Rectangle {
-                                                color: "#1a1f3a"
-                                                border.color: "#4a5a7d"
-                                                border.width: 1
-                                                radius: 4
-                                            }
-                                            color: "white"
-                                        }
-                                    }
-
-                                    // Port Input
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: "Port:"
-                                            color: "white"
-                                            font.pixelSize: 12
-                                            Layout.preferredWidth: 30
-                                        }
-
-                                        TextField {
-                                            id: portInput
-                                            Layout.fillWidth: true
-                                            placeholderText: "9559"
-                                            text: "9559"
-                                            font.pixelSize: 11
-                                            background: Rectangle {
-                                                color: "#1a1f3a"
-                                                border.color: "#4a5a7d"
-                                                border.width: 1
-                                                radius: 4
-                                            }
-                                            color: "white"
-                                        }
-                                    }
-
-                                    // Connect Button
-                                    Button {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 36
-                                        text: "Connect"
-                                        font.bold: true
-                                        font.pixelSize: 12
-
-                                        background: Rectangle {
-                                            color: parent.pressed ? "#1a4d2e" : "#2d7a4a"
-                                            radius: 4
-                                            border.color: "#4a9d6f"
-                                            border.width: 1
-                                        }
-
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: "white"
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                            font: parent.font
-                                        }
-
-                                        onClicked: {
-                                            var ip = ipInput.text.trim()
-                                            var port = portInput.text.trim()
-                                            rootPanel.appendLog("Connecting to NAO at " + ip + ":" + port)
-                                            if (typeof backend !== "undefined" && backend.connectNao) {
-                                                backend.connectNao(ip, port)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        Label { text: "IP:"; color: "white" }
+                        TextField {
+                            objectName: "naoHardwareIp"
+                            text: "192.168.23.53"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            font.pixelSize: 12
+                            selectByMouse: true
+                        }
+                        Label { text: "Port:"; color: "white" }
+                        TextField {
+                            objectName: "naoHardwarePort"
+                            text: "9559"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            font.pixelSize: 12
+                            validator: IntValidator { bottom: 1; top: 65535 }
+                            selectByMouse: true
                         }
                     }
-
-                    // RIGHT PANEL (Drone Camera View)
-                    Rectangle {
-                        id: rightPanel
-                        Layout.preferredWidth: parent.width * 0.30
-                        Layout.minimumWidth: 300
-                        Layout.fillHeight: true
-                        color: "#111"
-                        radius: 0
-
-                        Loader {
-                            id: droneCameraLoader
-                            anchors.fill: parent
-                            source: "NA06_Manual_Control/camera_view/DroneCameraView.qml"
-                            asynchronous: true
-
-                            onStatusChanged: console.log("DroneCameraLoader.status::: ", status)
-
-                            onLoaded: {
-                                if (droneCameraLoader.item) {
-                                    if (typeof droneCameraController !== "undefined") {
-                                        droneCameraLoader.item.cameraController = droneCameraController
-                                        console.log("DroneCameraController assigned::: ", droneCameraController)
-                                        droneCameraLoader.item.logToParent.connect(rootPanel.appendLog)
-                                    } else {
-                                        console.log("DroneCameraController not defined")
-                                    }
-                                }
-                            }
+                    Button {
+                        objectName: "naoHardwareConnectButton"
+                        text: "Connect"
+                        Layout.fillWidth: true
+                        enabled: false
+                    }
+                    Label {
+                        text: "Hardware connection planned.\nSimulation uses its own Connect."
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 11
+                        color: "#d6deee"
+                    }
+                }
+            }
+        }
+        Rectangle {
+            Layout.preferredWidth: parent.width * 0.28
+            Layout.minimumWidth: 250
+            Layout.fillHeight: true
+            color: "#233747"
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 12
+                Label { text: "Simulation session"; color: "white"; font.pixelSize: 18 }
+                Label {
+                    objectName: "simulationStatus"
+                    text: "Status: " + naoSimulation.statusText
+                    color: "white"
+                }
+                Label { text: "Posture: " + naoSimulation.posture; color: "white" }
+                Button {
+                    objectName: "simulationConnectButton"
+                    Layout.fillWidth: true
+                    text: naoSimulation.connected ? "Disconnect" : "Connect simulation"
+                    enabled: !naoSimulation.pending
+                    onClicked: {
+                        if (naoSimulation.connected) naoSimulation.disconnectSimulation()
+                        else naoSimulation.connectSimulation()
+                    }
+                }
+                TabBar {
+                    id: informationTabs
+                    objectName: "naoInformationTabs"
+                    Layout.fillWidth: true
+                    TabButton { text: "Camera" }
+                    TabButton { text: "Telemetry" }
+                }
+                StackLayout {
+                    currentIndex: informationTabs.currentIndex
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Item {
+                        NaoCamera.DroneCameraView {
+                            objectName: "naoCameraPanel"
+                            cameraController: null
+                            placeholderText: "No camera connected"
+                            availabilityText: "Live camera integration planned"
+                            onLogToParent: function(message) { root.appendLog(message) }
+                        }
+                    }
+                    ScrollView {
+                        id: telemetryScroll
+                        clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                            width: telemetryScroll.availableWidth
+                            spacing: 12
+                Label {
+                    text: "Position (scene units):\nX: " + Number(naoSimulation.motion.x).toFixed(2) +
+                          "  Z: " + Number(naoSimulation.motion.z).toFixed(2) +
+                          "\nHeading: " + Number(naoSimulation.motion.heading).toFixed(1) + " deg"
+                    color: "white"
+                }
+                Label { text: "Simulated telemetry"; color: "#d0ec8b"; font.bold: true }
+                Label { text: "Battery: " + root.reading("battery", "charge"); color: "white" }
+                Label {
+                    text: !naoSimulation.telemetry.battery ? "Charging: Unavailable" :
+                          "Charging: " + (naoSimulation.telemetry.battery.values.charging.value === 1 ? "Yes" : "No")
+                    color: "white"
+                }
+                Label { text: "Left distance: " + root.reading("ultrasonic", "left"); color: "white" }
+                Label { text: "Right distance: " + root.reading("ultrasonic", "right"); color: "white" }
+                Label { text: "IMU acceleration (m/s²)"; color: "white" }
+                Label {
+                    text: "X: " + root.reading("imu", "acceleration_x") + "\nY: " +
+                          root.reading("imu", "acceleration_y") + "\nZ: " + root.reading("imu", "acceleration_z")
+                    color: "white"
+                }
+                Label {
+                    text: "FSR / joints: Unavailable\nConstant test readings; not robot measurements."
+                    color: "white"
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                }
                         }
                     }
                 }
 
-                // ================= Animations =================
-                PropertyAnimation {
-                    id: moveAnim
-                    target: naoModel
-                    property: "position"
-                    duration: 1000
-                    onStopped: rootPanel.animationInProgress = false
-                }
-
-                PropertyAnimation {
-                    id: rotateAnim
-                    target: naoModel
-                    property: "eulerRotation"
-                    duration: 800
-                    onStopped: rootPanel.animationInProgress = false
-                }
-
-                // ================= Movement functions =================
-				function moveForward() {
-					if (animationInProgress) { appendLog("Cannot move Forward - action already in progress!"); return }
-					var angleRad = modelRotationY * Math.PI / 180.0
-					var start = naoModel.position
-					var end = Qt.vector3d(
-						start.x + moveDistance * Math.sin(angleRad),
-						start.y,
-						start.z + moveDistance * Math.cos(angleRad)
-					)
-					animationInProgress = true
-					moveAnim.from = start
-					moveAnim.to = end
-					moveAnim.start()
-				}
-
-				function moveBackward() {
-					if (animationInProgress) { appendLog("Cannot move Backward - action already in progress!"); return }
-					var angleRad = modelRotationY * Math.PI / 180.0
-					var start = naoModel.position
-					var end = Qt.vector3d(
-						start.x - moveDistance * Math.sin(angleRad),
-						start.y,
-						start.z - moveDistance * Math.cos(angleRad)
-					)
-					animationInProgress = true
-					moveAnim.from = start
-					moveAnim.to = end
-					moveAnim.start()
-				}
-
-
-				function turnLeft() {
-					if (animationInProgress) { appendLog("Cannot turn Left - action already in progress!"); return }
-					modelRotationY = (modelRotationY - rotationStep + 360) % 360  // keep 0–359
-					var start = naoModel.eulerRotation
-					var end = Qt.vector3d(start.x, start.y - rotationStep, start.z)  // subtract to match left turn
-					animationInProgress = true
-					rotateAnim.from = start
-					rotateAnim.to = end
-					rotateAnim.start()
-				}
-
-				function turnRight() {
-					if (animationInProgress) { appendLog("Cannot turn Right - action already in progress!"); return }
-					modelRotationY = (modelRotationY + rotationStep) % 360
-					var start = naoModel.eulerRotation
-					var end = Qt.vector3d(start.x, start.y + rotationStep, start.z)  // add to match right turn
-					animationInProgress = true
-					rotateAnim.from = start
-					rotateAnim.to = end
-					rotateAnim.start()
-				}
-
-
-                function moveUp() {
-                    if (animationInProgress || verticalState >= maxVerticalState) { rootPanel.appendLog("Cannot Takeoff - already at max height!"); return }
-                    var start = naoModel.position
-                    var end = Qt.vector3d(start.x, start.y + verticalStep, start.z)
-                    animationInProgress = true
-                    moveAnim.from = start
-                    moveAnim.to = end
-                    moveAnim.start()
-                    verticalState++
-                }
-
-                function moveDown() {
-                    if (animationInProgress || verticalState <= 0) { rootPanel.appendLog("Cannot Land - already at ground!"); return }
-                    var start = naoModel.position
-                    var end = Qt.vector3d(start.x, start.y - verticalStep, start.z)
-                    animationInProgress = true
-                    moveAnim.from = start
-                    moveAnim.to = end
-                    moveAnim.start()
-                    verticalState--
-                }
-
-                // ================= Console Logger =================
-                function appendLog(msg) {
-                    var timestamp = new Date().toLocaleString()
-                    consoleLog1.append(msg + " at " + timestamp)
-                }
-
-                // Connect the signal to appendLog
-                onLogMessage: {
-                    appendLog(message)
-                }
             }
         }
     }

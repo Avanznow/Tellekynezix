@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 # Load Neurosity credentials from the bundled env file before anything reads os.environ.
 load_dotenv(Path(__file__).resolve().parent / ".env.txt")
 
+import pandas as pd
+import matplotlib.pyplot as plt
+
 from PySide6.QtWidgets import QApplication,QFileDialog, QMessageBox
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Signal, Slot, Property, QProcess, QUrl, QTimer
@@ -15,7 +18,6 @@ from djitellopy import Tello
 import random
 import threading
 import re
-import pandas as pd
 import torch
 import time
 from collections import defaultdict
@@ -25,6 +27,7 @@ from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPr
 from predictions_local.neurosityprocessor import NeurosityDataProcessor
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
+from robot_services.qt_simulation import SimulationController
 import asyncio
 import copy
 import queue
@@ -1108,6 +1111,8 @@ if __name__ == "__main__":
     tab_controller = TabController()
     print("TabController created")
     manual_nao_controller = ManualNaoController()
+    nao_simulation = SimulationController()
+    app.aboutToQuit.connect(nao_simulation.close)
     drone_camera_controller = DroneCameraController()
 
     # Initialize backend before loading QML
@@ -1125,6 +1130,7 @@ if __name__ == "__main__":
     print("Controllers exposed to QML")
     engine.rootContext().setContextProperty("fileShufflerGui", shuffler_api)  # For file shuffler
     engine.rootContext().setContextProperty("manualNaoController", manual_nao_controller)
+    engine.rootContext().setContextProperty("naoSimulation", nao_simulation)
     engine.rootContext().setContextProperty("droneCameraController", drone_camera_controller)
 
     # Load QML
