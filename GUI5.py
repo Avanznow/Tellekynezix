@@ -1,5 +1,10 @@
 import sys
 import os
+
+local_workspace_dir = os.path.dirname(os.path.abspath(__file__))
+if local_workspace_dir not in sys.path:
+    sys.path.insert(0, local_workspace_dir)
+
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
@@ -48,6 +53,7 @@ except ImportError as e:
 
 
 from cloud_api import CloudAPI
+from P2P.solochain_cloud_api import SolochainCloudAPI
 
 from shuffler_api import ShufflerAPI
 
@@ -63,6 +69,7 @@ class BrainwavesBackend(QObject):
     # Define signals to update QML components
     flightLogUpdated = Signal(list)
     predictionsTableUpdated = Signal(list)
+
     imagesReady = Signal(list)
     logMessage = Signal(str)
     naoStarted = Signal()
@@ -125,6 +132,7 @@ class BrainwavesBackend(QObject):
         self.action_log = [] # List used to store the actions performed by the drone
         self.flight_log = []  # List to store flight log entries
         self.predictions_log = []  # List to store prediction records
+        self.solochain_bridge = SolochainCloudAPI()
         self.current_prediction_label = ""
         self.current_data_mode = "synthetic"
         self.current_bci_source = "openbci"
@@ -477,12 +485,31 @@ class BrainwavesBackend(QObject):
 
     @Slot(str)
     def doDroneTAction(self, action):
+        print(f"[MANUAL FRONTEND LOG] Action Intercepted -> {action}")
+        ledger_command = f"MANUAL_{action.upper()}"
+        print("[MANUAL FRONTEND LOG] Broadcasting transaction...")
+        try:
+            success = self.solochain_bridge.send_telemetry_transaction(device_id="drone_01", command=ledger_command)
+            if success:
+                print("[MANUAL FRONTEND LOG] Transaction broadcasted successfully.")
+                self.flight_log.insert(0, f"[BLOCKCHAIN ACTIVE] Registered '{ledger_command}' on the ledger.")
+            else:
+                print("[MANUAL FRONTEND LOG] Substrate node could not verify transaction payload.")
+                self.flight_log.insert(0, f"[LOCAL HARDWARE LOG] Transaction Payload executed without substrate verification.")
+        except Exception as e:
+            print(f"[PIPELINE ERROR] Failed to bridge data to pallet: {e}")
+            self.flight_log.insert(0, f"[BLOCKCHAIN ERROR] Blockchain connection exception: {e}")
+
+        print(f"[LOCAL HARDWARE LOG] Enqueuing action '{action}' for drone execution...")
         if action in ('up', 'down', 'forward', 'backward', 'left', 'right'):
             # Clumped in main thread; clumper will enqueue final chunks.
             self.enqueueMoveRequested.emit(action)
         else:
             # Non-movement actions go straight into the queue.
             self._queue_action(action)
+
+        # force QML flight log pane to refresh automatically
+        self.flightLogUpdated.emit(self.flight_log)
 
 
 
@@ -1113,6 +1140,7 @@ if __name__ == "__main__":
     # Initialize backend before loading QML
     # Queue holds just directions now: e.g. "forward", "left", etc.
     cloud_api = CloudAPI()
+    solochain_cloud_api = SolochainCloudAPI()
     backend = BrainwavesBackend()
     developers = DevelopersAPI()
     shuffler_api = ShufflerAPI()
@@ -1120,6 +1148,7 @@ if __name__ == "__main__":
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("developersBackend", developers)
     engine.rootContext().setContextProperty("cloudAPI", cloud_api)
+    engine.rootContext().setContextProperty("solochainCloudAPI", solochain_cloud_api)
     engine.rootContext().setContextProperty("imageModel", [])  # Initialize empty model
     engine.rootContext().setContextProperty("cameraController", backend.camera_controller)
     print("Controllers exposed to QML")
@@ -1137,6 +1166,8 @@ if __name__ == "__main__":
     if engine.rootObjects():
         cloud_api.set_root_object(engine.rootObjects()[0])
         cloud_api.connect_buttons()
+        solochain_cloud_api.set_root_object(engine.rootObjects()[0])
+        solochain_cloud_api.connect_signals()
     else:
         print("Error: QML not loaded properly.")
 
