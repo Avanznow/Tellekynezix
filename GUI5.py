@@ -1,14 +1,16 @@
 import sys
 import os
+
+local_workspace_dir = os.path.dirname(os.path.abspath(__file__))
+if local_workspace_dir not in sys.path:
+    sys.path.insert(0, local_workspace_dir)
+
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Load Neurosity credentials from the bundled env file before anything reads os.environ.
 load_dotenv(Path(__file__).resolve().parent / ".env.txt")
-
-import pandas as pd
-import matplotlib.pyplot as plt
 
 from PySide6.QtWidgets import QApplication,QFileDialog, QMessageBox
 from PySide6.QtQml import QQmlApplicationEngine
@@ -18,6 +20,7 @@ from djitellopy import Tello
 import random
 import threading
 import re
+import pandas as pd
 import torch
 import time
 from collections import defaultdict
@@ -27,7 +30,6 @@ from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPr
 from predictions_local.neurosityprocessor import NeurosityDataProcessor
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
-from robot_services.qt_simulation import SimulationController
 import asyncio
 import copy
 import queue
@@ -51,6 +53,7 @@ except ImportError as e:
 
 
 from cloud_api import CloudAPI
+from P2P.solochain_cloud_api import SolochainCloudAPI
 
 from shuffler_api import ShufflerAPI
 
@@ -66,16 +69,13 @@ class BrainwavesBackend(QObject):
     # Define signals to update QML components
     flightLogUpdated = Signal(list)
     predictionsTableUpdated = Signal(list)
+
     imagesReady = Signal(list)
     logMessage = Signal(str)
     naoStarted = Signal()
     naoEnded = Signal()
     enqueueMoveRequested = Signal(str)
     neurosityStatusChanged = Signal(str)
-    loginSucceeded = Signal("QVariantList")
-    loginFailed = Signal(str)
-    deviceConnected = Signal()
-    deviceOffline = Signal(str)
 
     @Slot()
     def startNaoManual(self):
@@ -128,6 +128,7 @@ class BrainwavesBackend(QObject):
         self.action_log = [] # List used to store the actions performed by the drone
         self.flight_log = []  # List to store flight log entries
         self.predictions_log = []  # List to store prediction records
+        self.solochain_bridge = SolochainCloudAPI()
         self.current_prediction_label = ""
         self.current_data_mode = "synthetic"
         self.current_bci_source = "openbci"
@@ -480,12 +481,31 @@ class BrainwavesBackend(QObject):
 
     @Slot(str)
     def doDroneTAction(self, action):
+        print(f"[MANUAL FRONTEND LOG] Action Intercepted -> {action}")
+        ledger_command = f"MANUAL_{action.upper()}"
+        print("[MANUAL FRONTEND LOG] Broadcasting transaction...")
+        try:
+            success = self.solochain_bridge.send_telemetry_transaction(device_id="drone_01", command=ledger_command)
+            if success:
+                print("[MANUAL FRONTEND LOG] Transaction broadcasted successfully.")
+                self.flight_log.insert(0, f"[BLOCKCHAIN ACTIVE] Registered '{ledger_command}' on the ledger.")
+            else:
+                print("[MANUAL FRONTEND LOG] Substrate node could not verify transaction payload.")
+                self.flight_log.insert(0, f"[LOCAL HARDWARE LOG] Transaction Payload executed without substrate verification.")
+        except Exception as e:
+            print(f"[PIPELINE ERROR] Failed to bridge data to pallet: {e}")
+            self.flight_log.insert(0, f"[BLOCKCHAIN ERROR] Blockchain connection exception: {e}")
+
+        print(f"[LOCAL HARDWARE LOG] Enqueuing action '{action}' for drone execution...")
         if action in ('up', 'down', 'forward', 'backward', 'left', 'right'):
             # Clumped in main thread; clumper will enqueue final chunks.
             self.enqueueMoveRequested.emit(action)
         else:
             # Non-movement actions go straight into the queue.
             self._queue_action(action)
+
+        # force QML flight log pane to refresh automatically
+        self.flightLogUpdated.emit(self.flight_log)
 
 
 
@@ -983,7 +1003,7 @@ class BrainwavesBackend(QObject):
             self.current_data_mode = "live"
             # print ("setBCISource bug")
             try:
-                self.ensure_neurosity_processor()
+                self.init_neurosity_processor()
                 state = self.neurosity_processor.get_device_state_once()
                 self.emitNeurosityStatus(state)
             except Exception as e:
@@ -1001,31 +1021,26 @@ class BrainwavesBackend(QObject):
         else:
             self.logMessage.emit("Unknown BCI source selected")
 
-    def ensure_neurosity_processor(self):
+    def init_neurosity_processor(self):
         """Initialize the Neurosity processor using environment variables."""
         if self.neurosity_processor is not None and self.neurosity_connected:
             return
 
-        # lines below are only used when the email, password, device id is read from file .env
-        # email = os.getenv("NEUROSITY_EMAIL")
-        # password = os.getenv("NEUROSITY_PASSWORD")
-        # device_id = os.getenv("NEUROSITY_DEVICE_ID")
+        email = os.getenv("NEUROSITY_EMAIL")
+        password = os.getenv("NEUROSITY_PASSWORD")
+        device_id = os.getenv("NEUROSITY_DEVICE_ID")
 
-        # missing = [k for k, v in (
-        #     ("NEUROSITY_EMAIL", email),
-        #     ("NEUROSITY_PASSWORD", password),
-        #     ("NEUROSITY_DEVICE_ID", device_id),
-        # ) if not v]
-        # if missing:
-        #     raise RuntimeError(
-        #         "Missing Neurosity credentials in .env.txt: " + ", ".join(missing)
-        #     )
+        missing = [k for k, v in (
+            ("NEUROSITY_EMAIL", email),
+            ("NEUROSITY_PASSWORD", password),
+            ("NEUROSITY_DEVICE_ID", device_id),
+        ) if not v]
+        if missing:
+            raise RuntimeError(
+                "Missing Neurosity credentials in .env.txt: " + ", ".join(missing)
+            )
 
-        # self.neurosity_processor = NeurosityDataProcessor(email, password, device_id, status_callback=self.emitNeurosityStatus)
-        
-        self.neurosity_processor = NeurosityDataProcessor(
-            status_callback=self.emitNeurosityStatus
-        )
+        self.neurosity_processor = NeurosityDataProcessor(email, password, device_id, status_callback=self.emitNeurosityStatus)
         self.neurosity_connected = True
         self.logMessage.emit("Neurosity connector initialized")
 
@@ -1038,7 +1053,7 @@ class BrainwavesBackend(QObject):
     def get_neurosity_brainwave_data(self):
         """Capture and preprocess EEG data from the Neurosity headset."""
         if not self.neurosity_connected:
-            self.ensure_neurosity_processor()
+            self.init_neurosity_processor()
         if self.neurosity_processor is None:
             raise RuntimeError("Neurosity processor is not configured")
         state = self.neurosity_processor.get_device_state_once()
@@ -1056,50 +1071,6 @@ class BrainwavesBackend(QObject):
         self.logMessage.emit("Neurosity EEG data captured")
         # print(self.brainwave_data)
         return self.brainwave_data
-    
-    @Slot(result=bool)
-    def isNeurosityLoggedIn(self):
-        if self.neurosity_processor is None:
-            return False
-        return self.neurosity_processor.is_logged_in()
-    
-    @Slot(str, str)
-    def neurosityLogin(self, email, password):
-        # print(email)
-        # print(password)
-        self.ensure_neurosity_processor()
-        ok = self.neurosity_processor.login(email, password)
-
-        if ok:
-            devices = self.neurosity_processor.get_devices()
-            if not devices:
-                devices = ["No devices paired"]
-                self.loginSucceeded.emit(devices)
-                self.neurosityStatusChanged.emit("No Device")
-                return
-            else:
-                self.loginSucceeded.emit(devices)
-                self.neurosityStatusChanged.emit("offline")
-        else:
-            self.loginFailed.emit("Invalid email or password.")
-    
-    @Slot()
-    def neurosityLogout(self):
-        self.neurosity_processor.logout()
-        self.neurosityStatusChanged.emit("Signed out")
-    
-    @Slot(str)
-    def selectNeurosityDevice(self, device):
-
-        state = self.neurosity_processor.select_device(device)
-        # print("backend" + state)
-
-        if state == "online":
-            self.deviceConnected.emit()
-        else:
-            self.deviceOffline.emit(
-                "Device is offline. Please connect it in the Neurosity app."
-            )
 
 
 if __name__ == "__main__":
@@ -1111,13 +1082,12 @@ if __name__ == "__main__":
     tab_controller = TabController()
     print("TabController created")
     manual_nao_controller = ManualNaoController()
-    nao_simulation = SimulationController()
-    app.aboutToQuit.connect(nao_simulation.close)
     drone_camera_controller = DroneCameraController()
 
     # Initialize backend before loading QML
     # Queue holds just directions now: e.g. "forward", "left", etc.
     cloud_api = CloudAPI()
+    solochain_cloud_api = SolochainCloudAPI()
     backend = BrainwavesBackend()
     developers = DevelopersAPI()
     shuffler_api = ShufflerAPI()
@@ -1125,12 +1095,12 @@ if __name__ == "__main__":
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("developersBackend", developers)
     engine.rootContext().setContextProperty("cloudAPI", cloud_api)
+    engine.rootContext().setContextProperty("solochainCloudAPI", solochain_cloud_api)
     engine.rootContext().setContextProperty("imageModel", [])  # Initialize empty model
     engine.rootContext().setContextProperty("cameraController", backend.camera_controller)
     print("Controllers exposed to QML")
     engine.rootContext().setContextProperty("fileShufflerGui", shuffler_api)  # For file shuffler
     engine.rootContext().setContextProperty("manualNaoController", manual_nao_controller)
-    engine.rootContext().setContextProperty("naoSimulation", nao_simulation)
     engine.rootContext().setContextProperty("droneCameraController", drone_camera_controller)
 
     # Load QML
@@ -1143,6 +1113,8 @@ if __name__ == "__main__":
     if engine.rootObjects():
         cloud_api.set_root_object(engine.rootObjects()[0])
         cloud_api.connect_buttons()
+        solochain_cloud_api.set_root_object(engine.rootObjects()[0])
+        solochain_cloud_api.connect_signals()
     else:
         print("Error: QML not loaded properly.")
 
