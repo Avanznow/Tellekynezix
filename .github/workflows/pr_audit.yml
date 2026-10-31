@@ -11,7 +11,7 @@ jobs:
     
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
         
@@ -75,13 +75,22 @@ jobs:
             else
               echo "Signature Type: UNKNOWN" >> pr_audit.txt
             fi
+            
+            if git cat-file commit "${{ github.event.pull_request.head.sha }}" | \
+              sed -n '/^gpgsig /,/^$/p' | \
+              grep -qE '^ -----END .*-----$'; then
+              echo "Signature Extraction: COMPLETE" >> pr_audit.txt
+              echo "" >> pr_audit.txt
 
-            echo "" >> pr_audit.txt
-
-            echo "--- Raw Signature ---" >> pr_audit.txt
-            git cat-file commit "${{ github.event.pull_request.head.sha }}" | \
-              sed -n '/^gpgsig /,/^$/p' >> pr_audit.txt
-
+              echo "--- Raw Signature ---" >> pr_audit.txt
+              git cat-file commit "${{ github.event.pull_request.head.sha }}" | \
+                sed -n '/^gpgsig /,/^ -----END .*-----$/p' >> pr_audit.txt
+              echo "" >> pr_audit.txt
+            else
+              echo "Signature Extraction: INCOMPLETE" >> pr_audit.txt
+              echo "" >> pr_audit.txt
+            fi
+            
           else
             echo "Signature Present: NO" >> pr_audit.txt
             echo "Signature Type: NONE" >> pr_audit.txt
@@ -102,7 +111,7 @@ jobs:
           mv pr_audit.txt pr_audit.sha256 ./audit_artifacts/
 
       - name: Upload Provenance Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pr-${{ github.event.pull_request.number }}-provenance
           path: ./audit_artifacts/
