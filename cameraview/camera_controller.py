@@ -3,12 +3,10 @@ Camera Controller for Tello Drone
 Handles camera streaming and video capture functionality
 """
 import cv2
-import threading
-import time
+import base64
+from datetime import datetime
+from pathlib import Path
 from PySide6.QtCore import QObject, Signal, Slot, QTimer
-from PySide6.QtGui import QImage, QPixmap
-from djitellopy import Tello
-import numpy as np
 
 
 class CameraController(QObject):
@@ -25,6 +23,9 @@ class CameraController(QObject):
         self.current_frame = None
         self.frame_timer = QTimer()
         self.frame_timer.timeout.connect(self.process_frame)
+        capture_dir = Path(__file__).resolve().parent.parent / "captures"
+        capture_dir.mkdir(parents=True, exist_ok=True)
+        self.capture_dir = capture_dir
         
     def set_tello_instance(self, tello_instance):
         """Set the Tello drone instance"""
@@ -44,6 +45,7 @@ class CameraController(QObject):
         try:
             # Start Tello video stream
             self.tello.streamon()
+            self.current_frame = None
             self.is_streaming = True
             self.streamStatusChanged.emit(True)
             
@@ -70,6 +72,7 @@ class CameraController(QObject):
                 self.tello.streamoff()
                 
             self.is_streaming = False
+            self.current_frame = None
             self.streamStatusChanged.emit(False)
             self.logMessage.emit("Camera stream stopped")
             
@@ -84,26 +87,13 @@ class CameraController(QObject):
         try:
             # Get frame from Tello
             frame = self.tello.get_frame_read().frame
-            
+
             if frame is not None:
-                # Convert BGR to RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # Convert to QImage
-                height, width, channel = frame_rgb.shape
-                bytes_per_line = 3 * width
-                qt_image = QImage(frame_rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
-                
-                # Convert to base64 for QML
-                pixmap = QPixmap.fromImage(qt_image)
-                byte_array = pixmap.toImage().bits().asstring(pixmap.toImage().sizeInBytes())
-                
-                # For QML, we'll use a simpler approach - save frame as temp file
-                temp_path = "/tmp/drone_frame.jpg"
-                cv2.imwrite(temp_path, frame)
-                
-                # Emit the file path
-                self.frameReady.emit(f"file://{temp_path}")
+                self.current_frame = frame.copy()
+                encoded, buffer = cv2.imencode(".jpg", frame)
+                if encoded:
+                    jpg_as_text = base64.b64encode(buffer).decode("ascii")
+                    self.frameReady.emit(f"data:image/jpeg;base64,{jpg_as_text}")
                 
         except Exception as e:
             self.logMessage.emit(f"Error processing frame: {e}")
@@ -116,12 +106,17 @@ class CameraController(QObject):
             return
             
         try:
-            frame = self.tello.get_frame_read().frame
+            frame = self.current_frame
+            if frame is None:
+                frame = self.tello.get_frame_read().frame
+
             if frame is not None:
-                timestamp = int(time.time())
-                filename = f"drone_photo_{timestamp}.jpg"
-                cv2.imwrite(filename, frame)
-                self.logMessage.emit(f"Photo captured: {filename}")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                filename = self.capture_dir / f"drone_photo_{timestamp}.jpg"
+                if cv2.imwrite(str(filename), frame):
+                    self.logMessage.emit(f"Photo captured: {filename}")
+                else:
+                    self.logMessage.emit(f"Error capturing photo: could not write {filename}")
             else:
                 self.logMessage.emit("No frame available for capture")
                 

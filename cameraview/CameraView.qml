@@ -12,6 +12,22 @@ Rectangle {
     radius: 10
 
     property var cameraController: null
+    property bool streaming: false
+
+    Connections {
+        target: cameraController
+
+        function onFrameReady(frame) {
+            videoFrame.source = frame
+        }
+
+        function onStreamStatusChanged(active) {
+            streaming = active
+            if (!active) {
+                videoFrame.source = ""
+            }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -96,7 +112,7 @@ Rectangle {
                 width: 20
                 height: 20
                 radius: 10
-                color: "#E74C3C"
+                color: streaming ? "#2ECC71" : "#E74C3C"
             }
         }
 
@@ -110,6 +126,7 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 text: "Start Stream"
+                enabled: cameraController !== null && !streaming
 
                 background: Rectangle {
                     color: "#4A5B7B"
@@ -138,6 +155,7 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 text: "Stop Stream"
+                enabled: cameraController !== null && streaming
 
                 background: Rectangle {
                     color: "#4A5B7B"
@@ -166,6 +184,7 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 text: "Capture"
+                enabled: cameraController !== null && streaming
 
                 background: Rectangle {
                     color: "#4A5B7B"
