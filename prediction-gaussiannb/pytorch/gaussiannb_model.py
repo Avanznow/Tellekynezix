@@ -20,7 +20,7 @@ class GaussianNB(nn.Module):
     from the training data.
     """
     
-    def __init__(self, num_features, num_classes):
+    def __init__(self, num_features, num_classes, var_smoothing=1e-9, priors=None):
         """
         Initialize the GaussianNB model.
         
@@ -32,6 +32,8 @@ class GaussianNB(nn.Module):
         
         self.num_features = num_features
         self.num_classes = num_classes
+        self.var_smoothing = float(var_smoothing)
+        self.priors = None if priors is None else torch.tensor(priors, dtype=torch.float32)
         
         # Register buffers (non-trainable parameters)
         # These will store the calculated statistics
@@ -59,7 +61,10 @@ class GaussianNB(nn.Module):
         # Calculate class priors P(y)
         for c in range(self.num_classes):
             class_mask = (y == c)
-            self.class_priors[c] = class_mask.sum().float() / n_samples
+            if self.priors is not None and c < len(self.priors):
+                self.class_priors[c] = self.priors[c]
+            else:
+                self.class_priors[c] = class_mask.sum().float() / n_samples
             
             # Get samples for this class
             X_c = X[class_mask]
@@ -70,7 +75,7 @@ class GaussianNB(nn.Module):
                 
                 # Calculate variance σ² for each feature
                 # Add small epsilon to avoid division by zero
-                self.variances[c] = X_c.var(dim=0) + 1e-9
+                self.variances[c] = X_c.var(dim=0) + self.var_smoothing
         
         self.is_fitted = torch.tensor(True)
         

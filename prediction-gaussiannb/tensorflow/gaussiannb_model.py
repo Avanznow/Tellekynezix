@@ -5,8 +5,9 @@ import pickle
 
 
 class GaussianNBTF:
-    def __init__(self, var_smoothing: float = 1e-9):
+    def __init__(self, var_smoothing: float = 1e-9, priors=None):
         self.var_smoothing = float(var_smoothing)
+        self.priors = None if priors is None else np.asarray(priors, dtype=np.float32)
         self.class_prior_ = None  # (C,)
         self.theta_ = None        # (C,D)
         self.var_ = None          # (C,D)
@@ -30,7 +31,10 @@ class GaussianNBTF:
         vars_ = (sums2 / tf.expand_dims(counts_f, 1)) - tf.square(means)
         vars_ = tf.maximum(vars_, self.var_smoothing)
 
-        priors = tf.cast(counts, tf.float32) / tf.cast(n_samples, tf.float32)
+        if self.priors is None:
+            priors = tf.cast(counts, tf.float32) / tf.cast(n_samples, tf.float32)
+        else:
+            priors = tf.convert_to_tensor(self.priors, dtype=tf.float32)
 
         self.theta_ = means.numpy()
         self.var_ = vars_.numpy()
@@ -91,4 +95,3 @@ def load_model(path: str) -> Tuple[GaussianNBTF, Dict[str, Any]]:
     m.n_classes_ = int(payload['model']['n_classes_'])
     m.n_features_ = int(payload['model']['n_features_'])
     return m, payload.get('meta', {})
-

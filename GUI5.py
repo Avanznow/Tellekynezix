@@ -133,6 +133,8 @@ class BrainwavesBackend(QObject):
         self.current_bci_source = "openbci"
         self.current_model = "Random Forest"  # Default model
         self.current_framework = "PyTorch"  # Default framework
+        self.gaussian_nb_var_smoothing = 1e-9
+        self.gaussian_nb_priors = None
         self.image_paths = []  # Store converted image paths
         self.neurosity_processor = None
         self.neurosity_connected = False
@@ -251,6 +253,40 @@ class BrainwavesBackend(QObject):
         self.current_framework = framework_name
         self.flight_log.insert(0, f"Selected Framework: {framework_name}")
         self.flightLogUpdated.emit(self.flight_log)
+
+    @Slot(str, str)
+    def updateGaussianNBParameters(self, var_smoothing_text, priors_text):
+        try:
+            var_smoothing = float(var_smoothing_text)
+        except (TypeError, ValueError):
+            self.logMessage.emit("Invalid GaussianNB var smoothing value")
+            return
+
+        if not 1e-12 <= var_smoothing <= 0.1:
+            self.logMessage.emit("Var smoothing must be between 1e-12 and 1e-1")
+            return
+
+        priors = None
+        if priors_text.strip():
+            try:
+                priors = [float(value.strip()) for value in priors_text.split(",")]
+            except ValueError:
+                self.logMessage.emit("Priors must be comma-separated numbers")
+                return
+
+            if len(priors) < 1 or any(value < 0 for value in priors) or sum(priors) <= 0:
+                self.logMessage.emit("Priors must contain positive probabilities")
+                return
+
+            total = sum(priors)
+            priors = [value / total for value in priors]
+
+        self.gaussian_nb_var_smoothing = var_smoothing
+        self.gaussian_nb_priors = priors
+        priors_label = "None" if priors is None else ", ".join(f"{value:.6g}" for value in priors)
+        self.logMessage.emit(
+            f"GaussianNB parameters updated: var smoothing={var_smoothing:.12g}, priors={priors_label}"
+        )
 
     @Slot()
     def readMyMind(self):
@@ -398,7 +434,9 @@ class BrainwavesBackend(QObject):
                 checkpoint = torch.load(model_path)
                 model = GaussianNB(
                     num_features=checkpoint['num_features'],
-                    num_classes=checkpoint['num_classes']
+                    num_classes=checkpoint['num_classes'],
+                    var_smoothing=self.gaussian_nb_var_smoothing,
+                    priors=self.gaussian_nb_priors
                 )
                 model.load_state_dict(checkpoint['model_state_dict'])
                 
@@ -422,9 +460,15 @@ class BrainwavesBackend(QObject):
         """ GaussianNB model processing with TensorFlow backend """
         print("Running GaussianNB Model with TensorFlow...")
         try:
-            # Note: GaussianNB with TensorFlow is not implemented yet
-            # For now, fallback to simulation
-            print("TensorFlow backend for GaussianNB not implemented. Using simulation.")
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'prediction-gaussiannb', 'tensorflow'))
+            from gaussiannb_model import GaussianNBTF
+            model = GaussianNBTF(
+                var_smoothing=self.gaussian_nb_var_smoothing,
+                priors=self.gaussian_nb_priors
+            )
+            del model
             time.sleep(1)
             return random.choice(["forward", "backward", "left", "right", "takeoff", "land"])
         except Exception as e:
