@@ -404,15 +404,11 @@ Rectangle {
         }
             // Console Log
             GroupBox {
+              // Size is tied to the root item so toggling the headset buttons (which appends
+              // log lines and relayouts the column) can never change the box size.
               width: parent.width * 0.9
-              height: parent.height * 0.25 
+              height: root.height * 0.25
               background: Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumHeight: root.minControlSize
-                Layout.minimumWidth: root.minControlSize
-                implicitWidth: Math.max(root.minControlSize, Math.min(root.width * 0.35, 420))
-                implicitHeight: Math.max(root.minControlSize,Math.min(root.height * 0.25, 220))
                 color:"#5f6b7a"
                 radius: 6 
                 border.color:"#d0d6df"
