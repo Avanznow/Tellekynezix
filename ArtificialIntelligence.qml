@@ -45,6 +45,10 @@ Rectangle {
     property string rfMaxFeatures: "auto"     // auto|sqrt|log2
     property string rfCriterion: "gini"       // gini|entropy
 
+    // GaussianNB params
+    property string gaussianNBVarSmoothing: "1e-9"
+    property string gaussianNBPriors: ""
+
     // Derived
     property bool paramsEnabled: mode === "Train"
 
@@ -806,6 +810,59 @@ Rectangle {
                                 currentIndex: Math.max(0, model.indexOf(rfCriterion))
                                 onCurrentTextChanged: rfCriterion = currentText
                                 Layout.fillWidth: true
+                            }
+                        }
+                    }
+
+                    // GAUSSIAN NB PARAMS -----------------------------------
+                    ColumnLayout {
+                        visible: currentModel === "GaussianNB"
+                        spacing: 6
+                        Layout.fillWidth: true
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+                            Text {
+                                text: "Var smoothing:"
+                                color: "white"
+                                Layout.preferredWidth: 120
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            TextField {
+                                text: gaussianNBVarSmoothing
+                                Layout.fillWidth: true
+                                onEditingFinished: {
+                                    var parsed = Number(text)
+                                    if (isNaN(parsed) || parsed < 1e-12 || parsed > 0.1) {
+                                        text = gaussianNBVarSmoothing
+                                        logToConsole("Var smoothing must be between 1e-12 and 1e-1")
+                                        return
+                                    }
+                                    gaussianNBVarSmoothing = parsed.toExponential().toLowerCase()
+                                    text = gaussianNBVarSmoothing
+                                    backend.updateGaussianNBParameters(gaussianNBVarSmoothing, gaussianNBPriors)
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+                            Text {
+                                text: "Priors:"
+                                color: "white"
+                                Layout.preferredWidth: 120
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            TextField {
+                                placeholderText: "None (Default)"
+                                text: gaussianNBPriors
+                                Layout.fillWidth: true
+                                onEditingFinished: {
+                                    gaussianNBPriors = text.trim()
+                                    backend.updateGaussianNBParameters(gaussianNBVarSmoothing, gaussianNBPriors)
+                                }
                             }
                         }
                     }
