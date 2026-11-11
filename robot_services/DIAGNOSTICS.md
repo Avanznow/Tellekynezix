@@ -51,6 +51,16 @@ for service/reporting/cleanup failure, 2 for invalid CLI arguments, and 130 for
 Ctrl+C. Connection/status/cleanup calls have the configured timeout. Waiting
 for a stream sample allows the update interval plus that timeout.
 
+## Simulated telemetry for a local consumer
+
+```bash
+python tools/robot_diagnostics.py --mode simulation --jsonl --count 3 > nao-telemetry.jsonl
+```
+
+Each line on standard output is one schema-versioned snapshot. Startup and
+error messages go to standard error. The snapshots include sensor quality and
+raw measurements. The Kafka topic and consumer contract are pending.
+
 ## Reuse and remaining work
 
 `monitor(service, options, emit)` accepts any implementation of `RobotService`;

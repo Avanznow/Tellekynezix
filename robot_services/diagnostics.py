@@ -9,6 +9,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 import math
+import sys
 
 from .errors import RobotConnectionError, TelemetryValidationError
 from .interface import RobotService
@@ -95,6 +96,9 @@ async def monitor(
     service: RobotService,
     options: DiagnosticOptions,
     emit: Callable[[str], None] = print,
+    *,
+    jsonl: bool = False,
+    notice: Callable[[str], None] | None = None,
 ) -> int:
     """Connect, report snapshots, and always close streams and disconnect.
 
@@ -102,13 +106,14 @@ async def monitor(
     warnings remain visible in reports; unavailable sensors do not end the run.
     Cancellation propagates after cleanup. Never calls posture or motion methods.
     """
+    notice = emit if notice is None else notice
     stream = None
     result = 0
     try:
         status = await asyncio.wait_for(service.connect(), options.timeout)
         if not status.connected:
             raise RobotConnectionError("Backend did not establish a connection")
-        emit(f"[{status.mode.value.upper()}] Health monitoring started; press Ctrl+C to stop.")
+        notice(f"[{status.mode.value.upper()}] Health monitoring started; press Ctrl+C to stop.")
         stream = service.stream_telemetry(options.interval)
         reports = 0
         while options.count is None or reports < options.count:
@@ -119,25 +124,30 @@ async def monitor(
             status = await asyncio.wait_for(service.get_status(), options.timeout)
             if not status.connected:
                 raise RobotConnectionError("Backend disconnected during monitoring")
-            emit(format_report(status, snapshot, options))
+            if jsonl:
+                if status.mode != snapshot.mode:
+                    raise TelemetryValidationError("Status and telemetry operating modes disagree")
+                emit(snapshot.to_json())
+            else:
+                emit(format_report(status, snapshot, options))
             reports += 1
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         detail = str(exc) or type(exc).__name__
-        emit(f"ERROR: Monitoring failed: {detail}")
+        notice(f"ERROR: Monitoring failed: {detail}")
         result = 1
     finally:
         if stream is not None:
             try:
                 await asyncio.wait_for(stream.aclose(), options.timeout)
             except Exception as exc:
-                emit(f"ERROR: Stream cleanup failed: {str(exc) or type(exc).__name__}")
+                notice(f"ERROR: Stream cleanup failed: {str(exc) or type(exc).__name__}")
                 result = 1
         try:
             await asyncio.wait_for(service.disconnect(), options.timeout)
         except Exception as exc:
-            emit(f"ERROR: Disconnect failed: {str(exc) or type(exc).__name__}")
+            notice(f"ERROR: Disconnect failed: {str(exc) or type(exc).__name__}")
             result = 1
     return result
 
@@ -158,10 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=5, help="Service timeout in seconds")
     parser.add_argument("--battery-percent", type=float, help="Simulated battery charge (default: 100)")
     parser.add_argument("--charging", action="store_true", help="Simulate a charging battery")
+    parser.add_argument("--jsonl", action="store_true", help="Export simulation snapshots as JSON Lines")
     args = parser.parse_args(argv)
     try:
         options = DiagnosticOptions(args.interval, args.warn_below, args.critical_below, args.count, args.timeout)
         if args.mode == "hardware":
+            if args.jsonl:
+                parser.error("--jsonl requires --mode simulation")
             if args.host is None:
                 parser.error("--host is required in hardware mode")
             if args.battery_percent is not None or args.charging:
@@ -175,10 +188,16 @@ def main(argv: list[str] | None = None) -> int:
             service = SimulationRobotService(battery_percent=charge, charging=args.charging)
     except ValueError as exc:
         parser.error(str(exc))
+    def emit(text: str) -> None:
+        print(text, flush=True)
+
+    def notice(text: str) -> None:
+        print(text, file=sys.stderr if args.jsonl else sys.stdout, flush=True)
+
     try:
-        return asyncio.run(monitor(service, options, lambda text: print(text, flush=True)))
+        return asyncio.run(monitor(service, options, emit, jsonl=args.jsonl, notice=notice))
     except KeyboardInterrupt:
-        print("Monitoring stopped by user; cleanup attempted.", flush=True)
+        notice("Monitoring stopped by user; cleanup attempted.")
         return 130
 
 

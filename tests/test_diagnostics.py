@@ -1,6 +1,7 @@
 """Diagnostic health formatting, CLI and asynchronous resource lifecycle tests."""
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -205,6 +206,21 @@ class DiagnosticCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Battery: 5% [CRITICAL]", result.stdout)
         self.assertIn("Charging: Yes", result.stdout)
+
+    def test_simulation_jsonl_can_be_decoded_by_a_consumer(self):
+        result = self.run_cli("--jsonl", "--count", "2", "--interval", ".01", "--battery-percent", "15")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        records = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual([record["sequence"] for record in records], [0, 1])
+        for record in records:
+            self.assertEqual(record["mode"], "simulation")
+            self.assertEqual(record["schema_version"], 1)
+            self.assertEqual(record["battery"]["values"]["charge"], {"value": 15, "unit": "%"})
+            self.assertIsNone(record["fsr"]["sampled_at"])
+        self.assertIn("Health monitoring started", result.stderr)
+        rejected = self.run_cli("--mode", "hardware", "--host", "robot.test", "--jsonl")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertEqual(rejected.stdout, "")
 
     def test_invalid_arguments_fail_explicitly(self):
         for args in (("--interval", "0"), ("--mode", "hardware"), ("--battery-percent", "101"),
