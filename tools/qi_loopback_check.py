@@ -16,8 +16,19 @@ class TestBattery:
         self.charge = 21
 
     def getBatteryCharge(self):
-        self.charge -= 8
+        self.charge = max(5, self.charge - 8)
         return self.charge
+
+
+class TestMemory:
+    def __init__(self):
+        self.samples = iter(([.25, -.5, 9.8], [None, -.5, 9.8], ["bad", "bad", "bad"]))
+
+    def getListData(self, keys):
+        expected = [f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value" for axis in "XYZ"]
+        if keys != expected:
+            raise ValueError(f"Unexpected accelerometer keys: {keys}")
+        return next(self.samples, [None, None, None])
 
 
 class QiLoopbackTests(unittest.TestCase):
@@ -26,6 +37,7 @@ class QiLoopbackTests(unittest.TestCase):
         self.addCleanup(self.server.close)
         self.server.listenStandalone("tcp://127.0.0.1:0")
         self.server.registerService("ALBattery", TestBattery())
+        self.server.registerService("ALMemory", TestMemory())
         port = str(self.server.endpoints()[0]).rsplit(":", 1)[1]
         script = Path(__file__).with_name("robot_diagnostics.py").resolve()
         self.command = [
@@ -33,13 +45,17 @@ class QiLoopbackTests(unittest.TestCase):
             "--host", "127.0.0.1", "--port", port, "--interval", ".1",
         ]
 
-    def test_cli_reports_successive_battery_values(self):
-        result = subprocess.run(self.command + ["--count", "2"], capture_output=True,
+    def test_cli_reports_successive_battery_values_and_imu_quality(self):
+        result = subprocess.run(self.command + ["--count", "3"], capture_output=True,
                                 text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("[HARDWARE] Connected | Battery: 13% [WARNING]", result.stdout)
         self.assertIn("[HARDWARE] Connected | Battery: 5% [CRITICAL]", result.stdout)
         self.assertIn("Charging: Unknown", result.stdout)
+        self.assertIn("IMU: OK |", result.stdout)
+        self.assertIn("IMU: PARTIAL |", result.stdout)
+        self.assertIn("IMU: INVALID |", result.stdout)
+        self.assertEqual(result.stdout.count("Connected | Battery:"), 3)
 
     def run_until_first_report(self, action):
         with subprocess.Popen(self.command, stdout=subprocess.PIPE,

@@ -1,6 +1,6 @@
 """Read-only libqi service adapter. Importing this module never loads the SDK.
 
-Only connect/isConnected/service/getBatteryCharge/close are used. The native SDK
+Sensor reads use ALBattery and ALMemory. The native SDK
 must support _async=True and qi.Future callbacks. Tests inject sessions instead
 of importing qi or making network connections. Physical compatibility is unverified.
 """
@@ -13,12 +13,20 @@ import ipaddress
 import math
 import re
 
-from .errors import RobotConnectionError, RobotServiceError, UnsupportedOperationError
+from .errors import (
+    RobotConnectionError, RobotServiceError, TelemetryValidationError, UnsupportedOperationError,
+)
 from .interface import RobotService
 from .models import (
     Measurement, OperatingMode, PostureResult, RobotStatus, SampleQuality,
     SensorSample, TelemetrySnapshot,
 )
+
+
+_ACCELEROMETER_KEYS = {
+    f"acceleration_{axis.lower()}": f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value"
+    for axis in "XYZ"
+}
 
 
 class _QiCallError(RobotServiceError):
@@ -63,6 +71,7 @@ class QiRobotService(RobotService):
         self._session = None
         self._session_end = asyncio.Event()
         self._battery = None
+        self._memory = None
         self._connected = False
         self._sequence = 0
         self._connect_lock = asyncio.Lock()
@@ -163,6 +172,7 @@ class QiRobotService(RobotService):
             self._session = session
             self._session_end = asyncio.Event()
             self._battery = None
+            self._memory = None
             self._connected = False
             self._sequence = 0
             try:
@@ -194,6 +204,7 @@ class QiRobotService(RobotService):
         self._session_end.set()
         self._session = None
         self._battery = None
+        self._memory = None
         self._connected = False
         if session is None:
             return
@@ -220,8 +231,50 @@ class QiRobotService(RobotService):
                 self._connected = False
             raise RobotConnectionError(f"SDK status check failed: {exc}") from exc
 
+    async def _read_imu(self, session) -> SensorSample:
+        try:
+            if self._memory is None:
+                memory = await self._call(session, session.service, "ALMemory")
+                self._check_session(session)
+                self._memory = memory
+            raw = await self._call(session, self._memory.getListData, list(_ACCELEROMETER_KEYS.values()))
+        except (_QiCallError, AttributeError) as exc:
+            self._check_session(session)
+            if not (await self.get_status()).connected:
+                raise RobotConnectionError("Robot disconnected during IMU read") from exc
+            self._memory = None
+            return SensorSample(SampleQuality.UNAVAILABLE, error=f"IMU unavailable: {exc}")
+
+        self._check_session(session)
+        sampled_at = datetime.now(timezone.utc)
+        if not isinstance(raw, (list, tuple)) or len(raw) != len(_ACCELEROMETER_KEYS):
+            return SensorSample(SampleQuality.INVALID, sampled_at, error="Expected three accelerometer values")
+
+        values = {}
+        problems = []
+        invalid = False
+        for name, value in zip(_ACCELEROMETER_KEYS, raw):
+            try:
+                values[name] = Measurement(value, "m/s^2")
+            except (TelemetryValidationError, OverflowError):
+                invalid = True
+                problems.append(f"{name} invalid")
+                values[name] = Measurement(None, "m/s^2")
+            else:
+                if value is None:
+                    problems.append(f"{name} missing")
+
+        if not problems:
+            return SensorSample(SampleQuality.VALID, sampled_at, values)
+        reason = ", ".join(problems)
+        if any(item.value is not None for item in values.values()):
+            return SensorSample(SampleQuality.PARTIAL, sampled_at, values, reason)
+        if invalid:
+            return SensorSample(SampleQuality.INVALID, sampled_at, error=reason)
+        return SensorSample(SampleQuality.UNAVAILABLE, error=reason)
+
     async def read_telemetry(self) -> TelemetrySnapshot:
-        """Read ALBattery.getBatteryCharge; mark other readings unavailable.
+        """Read battery charge and torso acceleration through NAOqi.
 
         Charge is validated as finite 0..100 percent. Charging-state ingestion is
         not implemented, so valid charge produces a PARTIAL battery group. Missing
@@ -255,11 +308,14 @@ class QiRobotService(RobotService):
             self._battery = None  # Permit a later read to resolve the service again.
         self._check_session(session)
         self._require_connection()
+        imu = await self._read_imu(session)
+        self._check_session(session)
+        self._require_connection()
         missing = lambda name: SensorSample(SampleQuality.UNAVAILABLE,
                                             error=f"Hardware {name} ingestion is not implemented")
         snapshot = TelemetrySnapshot(
             self._sequence, datetime.now(timezone.utc), OperatingMode.HARDWARE,
-            f"hardware:qi:{self.endpoint}", imu=missing("IMU"), ultrasonic=missing("ultrasonic"),
+            f"hardware:qi:{self.endpoint}", imu=imu, ultrasonic=missing("ultrasonic"),
             fsr=missing("FSR"), joints=missing("joint"), battery=sample,
         )
         self._sequence += 1

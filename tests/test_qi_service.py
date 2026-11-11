@@ -61,6 +61,7 @@ class FakeSession:
         self.close_future = FakeFuture()
         self.status_future = None
         self.service_error = None
+        self.memory = None
 
     def connect(self, endpoint, *, _async):
         assert _async is True
@@ -76,6 +77,8 @@ class FakeSession:
     def service(self, name, *, _async):
         assert _async is True
         self.calls.append(("service", name))
+        if name == "ALMemory":
+            return FakeFuture(self.memory, error="ALMemory missing" if self.memory is None else None)
         return FakeFuture(self.battery, error=self.service_error)
 
     def close(self, *, _async):
@@ -130,6 +133,35 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("connect", "tcp://robot.test:9559"), self.session.calls)
         self.assertEqual(self.session.battery.calls, ["getBatteryCharge"])
         self.assertTrue(all(call[0] in ("connect", "isConnected", "service") for call in self.session.calls))
+
+    async def test_imu_batch_preserves_valid_axes_and_battery(self):
+        keys = [f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value" for axis in "XYZ"]
+        memory = Mock()
+        memory.getListData.side_effect = [
+            FakeFuture([.25, -.5, 9.8]),
+            FakeFuture([None, float("nan"), 9.8]),
+            FakeFuture([True, "bad", None]),
+            FakeFuture([None, None, None]),
+            FakeFuture([1, 2]),
+            FakeFuture(error="read failed"),
+        ]
+        self.session.memory = memory
+        await self.service.connect()
+        results = [await self.service.read_telemetry() for _ in range(6)]
+        self.assertEqual([item.imu.quality for item in results], [
+            SampleQuality.VALID, SampleQuality.PARTIAL, SampleQuality.INVALID,
+            SampleQuality.UNAVAILABLE, SampleQuality.INVALID, SampleQuality.UNAVAILABLE,
+        ])
+        self.assertEqual(results[0].imu.values["acceleration_y"].value, -.5)
+        self.assertEqual(results[0].imu.values["acceleration_y"].unit, "m/s^2")
+        self.assertIsNone(results[1].imu.values["acceleration_x"].value)
+        self.assertIsNone(results[1].imu.values["acceleration_y"].value)
+        self.assertEqual(results[1].imu.values["acceleration_z"].value, 9.8)
+        for result in results:
+            self.assertEqual(result.battery.values["charge"].value, 72)
+            json.loads(result.to_json())
+        memory.getListData.assert_called_with(keys, _async=True)
+        self.assertEqual(self.session.calls.count(("service", "ALMemory")), 1)
 
     async def test_reads_require_connection_and_actuation_is_explicitly_unsupported(self):
         with self.assertRaises(RobotConnectionError):

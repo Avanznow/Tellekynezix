@@ -14,9 +14,13 @@ Constructing/importing the adapter does not connect to a robot.
   `getBatteryCharge(_async=True)`. Expected charge is a finite number in 0..100 %.
 - Battery values outside that contract are INVALID; missing services/read failures
   are UNAVAILABLE only when session connectivity can still be confirmed.
-- Charging-state ingestion is not implemented. A valid charge therefore produces
-  a PARTIAL battery sample, with charging null and a reason. Other sensor groups
-  are explicitly UNAVAILABLE. No simulated values fill hardware measurements.
+- A valid charge produces a PARTIAL battery sample with charging unknown.
+- IMU reads use one `ALMemory.getListData` call for the NAOqi 2.8 torso
+  accelerometer X, Y, and Z keys. Telemetry exposes them as `acceleration_x`,
+  `acceleration_y`, and `acceleration_z` in `m/s^2`, preserving the SDK axes.
+  Valid axes survive missing or malformed readings. A missing service or failed
+  read marks the IMU unavailable if the session is still connected.
+- Ultrasonic, FSR, and joint groups are unavailable in hardware mode.
 - Posture and motion commands are unsupported.
 - `stream_telemetry(interval)` starts with an immediate read, waits at least
   `interval` seconds between reads, and ends when its session is explicitly
@@ -65,6 +69,8 @@ cleanup, battery payloads, missing services, timeout/cancellation, foreign-threa
 callbacks and stale replies. They do not establish real SDK/robot compatibility.
 
 ## Reference points for later verification
+
+- [NAOqi 2.8 sensor keys and units](https://doc.aldebaran.com/2-8/family/nao_technical/lola/actuator_sensor_names.html)
 
 - Official SDK source: https://github.com/aldebaran/libqi-python
 - Session API tests: https://github.com/aldebaran/libqi-python/blob/master/qi/test/test_session.py

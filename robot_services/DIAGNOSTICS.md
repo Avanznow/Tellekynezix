@@ -68,8 +68,9 @@ the robot's hostname or IP address:
 python tools/robot_diagnostics.py --mode hardware --host ROBOT_HOST --count 3
 ```
 
-Omit `--count` to monitor continuously. The adapter reads battery charge.
-Charging state is unknown and other sensor groups show as unavailable.
+Omit `--count` to monitor continuously. The adapter reads battery charge and
+three-axis torso acceleration. The CLI reports IMU sample quality. Charging
+state is unknown, and ultrasonic, FSR, and joint readings are unavailable.
 Physical NAO verification remains pending.
 
 To check the CLI against a local libqi service on Pop!_OS, run:
@@ -79,5 +80,6 @@ source ~/nao-qi-test/bin/activate
 python -B tools/qi_loopback_check.py
 ```
 
-The check starts a loopback-only battery service and exercises changing battery
-values, a dropped session, and SIGINT handling on Linux. Its readings are test values.
+The check starts loopback-only battery and ALMemory services. It exercises
+changing battery values, valid and degraded IMU samples, a dropped session,
+and SIGINT handling on Linux. Its readings are test values.
