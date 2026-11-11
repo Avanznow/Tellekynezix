@@ -20,7 +20,16 @@ Constructing/importing the adapter does not connect to a robot.
   `acceleration_y`, and `acceleration_z` in `m/s^2`, preserving the SDK axes.
   Valid axes survive missing or malformed readings. A missing service or failed
   read marks the IMU unavailable if the session is still connected.
-- Ultrasonic, FSR, and joint groups are unavailable in hardware mode.
+- Ultrasonic reads use one `ALMemory.getListData` call for
+  `Device/SubDeviceList/US/{Left,Right}/Sensor/Value`. The snapshot reports
+  `left` and `right` in metres. Zero and negative values are invalid.
+  Readings at or above the documented 5 m no-echo limit are unavailable.
+  One usable side produces a partial sample when the other side is missing
+  or invalid.
+- The adapter reads existing sonar values from ALMemory. Sonar capture and
+  freshness depend on the robot's configuration and still require physical
+  verification. The documented NAO V6 detection range is 0.20–0.80 m.
+- FSR and joint groups are unavailable in hardware mode.
 - Posture and motion commands are unsupported.
 - `stream_telemetry(interval)` starts with an immediate read, waits at least
   `interval` seconds between reads, and ends when its session is explicitly
@@ -71,6 +80,7 @@ callbacks and stale replies. They do not establish real SDK/robot compatibility.
 ## Reference points for later verification
 
 - [NAOqi 2.8 sensor keys and units](https://doc.aldebaran.com/2-8/family/nao_technical/lola/actuator_sensor_names.html)
+- [NAO V6 sonar specifications](https://doc.aldebaran.com/2-8/family/nao_technical/sonar_naov6.html)
 
 - Official SDK source: https://github.com/aldebaran/libqi-python
 - Session API tests: https://github.com/aldebaran/libqi-python/blob/master/qi/test/test_session.py

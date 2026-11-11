@@ -137,14 +137,17 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_imu_batch_preserves_valid_axes_and_battery(self):
         keys = [f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value" for axis in "XYZ"]
         memory = Mock()
-        memory.getListData.side_effect = [
+        readings = iter([
             FakeFuture([.25, -.5, 9.8]),
             FakeFuture([None, float("nan"), 9.8]),
             FakeFuture([True, "bad", None]),
             FakeFuture([None, None, None]),
             FakeFuture([1, 2]),
             FakeFuture(error="read failed"),
-        ]
+        ])
+        memory.getListData.side_effect = lambda requested, **_: (
+            next(readings) if requested == keys else FakeFuture([.4, .6])
+        )
         self.session.memory = memory
         await self.service.connect()
         results = [await self.service.read_telemetry() for _ in range(6)]
@@ -160,7 +163,40 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
         for result in results:
             self.assertEqual(result.battery.values["charge"].value, 72)
             json.loads(result.to_json())
-        memory.getListData.assert_called_with(keys, _async=True)
+        memory.getListData.assert_any_call(keys, _async=True)
+        self.assertEqual(results[-1].ultrasonic.quality, SampleQuality.VALID)
+
+    async def test_sonar_maps_sides_and_preserves_other_groups(self):
+        keys = [f"Device/SubDeviceList/US/{side}/Sensor/Value" for side in ("Left", "Right")]
+        readings = iter([
+            FakeFuture([.42, .7]),
+            FakeFuture([5.0, .5]),
+            FakeFuture([0, -1]),
+            FakeFuture([None, 5.0]),
+            FakeFuture([.4]),
+            FakeFuture(error="sonar read failed"),
+        ])
+        memory = Mock()
+        memory.getListData.side_effect = lambda requested, **_: (
+            next(readings) if requested == keys else FakeFuture([.25, -.5, 9.8])
+        )
+        self.session.memory = memory
+        await self.service.connect()
+        results = [await self.service.read_telemetry() for _ in range(6)]
+        self.assertEqual([item.ultrasonic.quality for item in results], [
+            SampleQuality.VALID, SampleQuality.PARTIAL, SampleQuality.INVALID,
+            SampleQuality.UNAVAILABLE, SampleQuality.INVALID, SampleQuality.UNAVAILABLE,
+        ])
+        left, right = (results[0].ultrasonic.values[side] for side in ("left", "right"))
+        self.assertEqual((left.value, left.unit, right.value, right.unit), (.42, "m", .7, "m"))
+        self.assertIsNone(results[1].ultrasonic.values["left"].value)
+        self.assertEqual(results[1].ultrasonic.values["right"].value, .5)
+        self.assertIn("no echo", results[1].ultrasonic.error)
+        for result in results:
+            self.assertEqual(result.imu.quality, SampleQuality.VALID)
+            self.assertEqual(result.battery.values["charge"].value, 72)
+            json.loads(result.to_json())
+        memory.getListData.assert_any_call(keys, _async=True)
         self.assertEqual(self.session.calls.count(("service", "ALMemory")), 1)
 
     async def test_reads_require_connection_and_actuation_is_explicitly_unsupported(self):

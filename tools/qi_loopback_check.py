@@ -22,13 +22,16 @@ class TestBattery:
 
 class TestMemory:
     def __init__(self):
-        self.samples = iter(([.25, -.5, 9.8], [None, -.5, 9.8], ["bad", "bad", "bad"]))
+        self.imu = iter(([.25, -.5, 9.8], [None, -.5, 9.8], ["bad", "bad", "bad"]))
+        self.sonar = iter(([.4, .6], [5.0, .5], [0, -1]))
 
     def getListData(self, keys):
         expected = [f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value" for axis in "XYZ"]
-        if keys != expected:
-            raise ValueError(f"Unexpected accelerometer keys: {keys}")
-        return next(self.samples, [None, None, None])
+        if keys == expected:
+            return next(self.imu, [None, None, None])
+        if keys == [f"Device/SubDeviceList/US/{side}/Sensor/Value" for side in ("Left", "Right")]:
+            return next(self.sonar, [None, None])
+        raise ValueError(f"Unexpected ALMemory keys: {keys}")
 
 
 class QiLoopbackTests(unittest.TestCase):
@@ -45,7 +48,7 @@ class QiLoopbackTests(unittest.TestCase):
             "--host", "127.0.0.1", "--port", port, "--interval", ".1",
         ]
 
-    def test_cli_reports_successive_battery_values_and_imu_quality(self):
+    def test_cli_reports_battery_values_and_sensor_quality(self):
         result = subprocess.run(self.command + ["--count", "3"], capture_output=True,
                                 text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -55,6 +58,9 @@ class QiLoopbackTests(unittest.TestCase):
         self.assertIn("IMU: OK |", result.stdout)
         self.assertIn("IMU: PARTIAL |", result.stdout)
         self.assertIn("IMU: INVALID |", result.stdout)
+        self.assertIn("Ultrasonic: OK |", result.stdout)
+        self.assertIn("Ultrasonic: PARTIAL |", result.stdout)
+        self.assertIn("Ultrasonic: INVALID |", result.stdout)
         self.assertEqual(result.stdout.count("Connected | Battery:"), 3)
 
     def run_until_first_report(self, action):
