@@ -1,5 +1,7 @@
 # Standalone health diagnostics
 
+See the [public service API](API.md) for the telemetry schema.
+
 From the repository root, activate the existing Python environment and run:
 
 ```powershell

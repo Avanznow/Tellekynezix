@@ -1,5 +1,7 @@
 # qi hardware adapter
 
+See the [public service API](API.md) for method signatures and telemetry fields.
+
 `QiRobotService` implements the shared `RobotService` interface for connection,
 session status and individual battery snapshots. No qi SDK is imported until
 `connect()` is explicitly called without an injected `session_factory`.
