@@ -8,9 +8,9 @@ python tools/robot_diagnostics.py --mode simulation
 
 The tool runs independently of the GUI. It reports connection, battery charge,
 charging state, and IMU/ultrasonic/FSR/joint sensor quality once per second.
-Every report is timestamped and labeled SIMULATION. No movement or posture
-commands are issued. All readings are simulated fixtures; FSR and joints are
-currently unavailable, with their reasons shown in each report.
+Every report is timestamped and labeled SIMULATION or HARDWARE. The tool reads
+status and telemetry. In simulation mode, readings are fixtures and unavailable
+sensor groups include their reasons.
 
 Press Ctrl+C to stop. The monitor closes its telemetry stream and disconnects,
 including on cancellation or connection failure. The final interrupt message
@@ -38,7 +38,9 @@ not hide low battery alerts. Unknown charge is never substituted with zero.
 Invalid battery units/ranges and partially valid sensor groups are reported.
 Missing/invalid sensor groups do not suppress the remaining sensor reports.
 
-`--mode` accepts only `simulation`; requesting hardware mode fails explicitly.
+`--mode` defaults to `simulation`. Hardware mode requires `--host` and accepts
+an optional `--port` (default 9559). `--battery-percent` and `--charging` are
+available in simulation mode.
 `--charging` enables the simulated charging flag. Intervals/timeouts must be
 positive finite numbers; thresholds require 0 <= critical < warning <= 100.
 `--count` must be a positive integer. The equivalent module entry point is
@@ -54,9 +56,28 @@ for a stream sample allows the update interval plus that timeout.
 `monitor(service, options, emit)` accepts any implementation of `RobotService`;
 `emit` receives formatted strings and can be replaced in tests or another client.
 `DiagnosticOptions` documents configuration, and `format_report` validates the
-snapshot before formatting it. The command-line tool instantiates its own
-simulation service; it does not inspect a running GUI simulation session.
+snapshot before formatting it. The command-line tool creates a separate
+service instance for each run.
 
-Real hardware health verification still requires a Python 3 async/libqi backend,
-verified hardware sensor mappings, and physical robot testing. Stale-reading
-detection and manufacturer-specific health thresholds are not implemented here.
+## Hardware diagnostics on Linux
+
+Activate the Python environment with `qi` installed, then run the following with
+the robot's hostname or IP address:
+
+```bash
+python tools/robot_diagnostics.py --mode hardware --host ROBOT_HOST --count 3
+```
+
+Omit `--count` to monitor continuously. The adapter reads battery charge.
+Charging state is unknown and other sensor groups show as unavailable.
+Physical NAO verification remains pending.
+
+To check the CLI against a local libqi service on Pop!_OS, run:
+
+```bash
+source ~/nao-qi-test/bin/activate
+python -B tools/qi_loopback_check.py
+```
+
+The check starts a loopback-only battery service and exercises changing battery
+values, a dropped session, and SIGINT handling on Linux. Its readings are test values.

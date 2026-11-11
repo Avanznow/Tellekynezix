@@ -206,8 +206,11 @@ class DiagnosticCliTests(unittest.TestCase):
         self.assertIn("Battery: 5% [CRITICAL]", result.stdout)
         self.assertIn("Charging: Yes", result.stdout)
 
-    def test_invalid_interval_and_hardware_mode_fail_explicitly(self):
-        for args in (("--interval", "0"), ("--mode", "hardware"), ("--battery-percent", "101")):
+    def test_invalid_arguments_fail_explicitly(self):
+        for args in (("--interval", "0"), ("--mode", "hardware"), ("--battery-percent", "101"),
+                     ("--host", "robot.test"),
+                     ("--mode", "hardware", "--host", "robot.test", "--port", "0"),
+                     ("--mode", "hardware", "--host", "robot.test", "--battery-percent", "100")):
             with self.subTest(args=args):
                 result = self.run_cli(*args)
                 self.assertEqual(result.returncode, 2)

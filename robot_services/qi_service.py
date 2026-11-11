@@ -61,6 +61,7 @@ class QiRobotService(RobotService):
         self.timeout = timeout
         self._factory = session_factory
         self._session = None
+        self._session_end = asyncio.Event()
         self._battery = None
         self._connected = False
         self._sequence = 0
@@ -160,6 +161,7 @@ class QiRobotService(RobotService):
             except Exception as exc:
                 raise RobotConnectionError(f"Cannot create SDK session: {exc}") from exc
             self._session = session
+            self._session_end = asyncio.Event()
             self._battery = None
             self._connected = False
             self._sequence = 0
@@ -189,6 +191,7 @@ class QiRobotService(RobotService):
         as RobotConnectionError. It cannot guarantee that remote cleanup finished.
         """
         session = self._session
+        self._session_end.set()
         self._session = None
         self._battery = None
         self._connected = False
@@ -272,5 +275,33 @@ class QiRobotService(RobotService):
         raise UnsupportedOperationError("Hardware posture commands are not implemented")
 
     def stream_telemetry(self, interval: float) -> AsyncIterator[TelemetrySnapshot]:
-        """Streaming is intentionally deferred; use individual read_telemetry calls."""
-        raise UnsupportedOperationError("Hardware telemetry streaming is not implemented")
+        """Sample immediately, then wait at least interval seconds between reads."""
+        if (isinstance(interval, bool) or not isinstance(interval, (int, float))
+                or interval <= 0 or not math.isfinite(interval)):
+            raise ValueError("interval must be positive and finite")
+        self._require_connection()
+        session_end = self._session_end
+
+        async def snapshots():
+            loop = asyncio.get_running_loop()
+            while not session_end.is_set():
+                try:
+                    snapshot = await self.read_telemetry()
+                except RobotConnectionError:
+                    if session_end.is_set():
+                        return
+                    raise
+                if session_end.is_set():
+                    return
+                yield snapshot
+                deadline = loop.time() + interval
+                while not session_end.is_set():
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        break
+                    try:
+                        await asyncio.wait_for(session_end.wait(), timeout=remaining)
+                    except TimeoutError:
+                        pass
+
+        return snapshots()

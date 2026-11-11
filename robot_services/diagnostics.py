@@ -13,6 +13,7 @@ import math
 from .errors import RobotConnectionError, TelemetryValidationError
 from .interface import RobotService
 from .models import RobotStatus, SampleQuality, TelemetrySnapshot
+from .qi_service import QiRobotService
 from .simulation import SimulationRobotService
 
 
@@ -144,22 +145,34 @@ async def monitor(
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point; return 0 normally, 1 on failure, 130 for Ctrl+C.
 
-    argparse rejects invalid arguments with exit code 2. Hardware mode is not
-    implemented: the CLI accepts only explicit/default simulation mode.
+    argparse rejects invalid arguments with exit code 2.
     """
-    parser = argparse.ArgumentParser(description="Standalone NAO health diagnostics (simulation)")
-    parser.add_argument("--mode", choices=("simulation",), default="simulation")
+    parser = argparse.ArgumentParser(description="Standalone NAO health diagnostics")
+    parser.add_argument("--mode", choices=("simulation", "hardware"), default="simulation")
+    parser.add_argument("--host", help="Robot hostname or IP address (required in hardware mode)")
+    parser.add_argument("--port", type=int, help="Robot qi port (default: 9559)")
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between readings (default: 1)")
     parser.add_argument("--warn-below", type=float, default=20, help="Battery warning threshold in percent")
     parser.add_argument("--critical-below", type=float, default=10, help="Critical battery threshold in percent")
     parser.add_argument("--count", type=int, help="Stop after this many reports; otherwise run continuously")
     parser.add_argument("--timeout", type=float, default=5, help="Service timeout in seconds")
-    parser.add_argument("--battery-percent", type=float, default=100, help="Simulated battery charge (0..100)")
+    parser.add_argument("--battery-percent", type=float, help="Simulated battery charge (default: 100)")
     parser.add_argument("--charging", action="store_true", help="Simulate a charging battery")
     args = parser.parse_args(argv)
     try:
         options = DiagnosticOptions(args.interval, args.warn_below, args.critical_below, args.count, args.timeout)
-        service = SimulationRobotService(battery_percent=args.battery_percent, charging=args.charging)
+        if args.mode == "hardware":
+            if args.host is None:
+                parser.error("--host is required in hardware mode")
+            if args.battery_percent is not None or args.charging:
+                parser.error("--battery-percent and --charging are simulation options")
+            port = 9559 if args.port is None else args.port
+            service = QiRobotService(args.host, port=port, timeout=args.timeout)
+        else:
+            if args.host is not None or args.port is not None:
+                parser.error("--host and --port require --mode hardware")
+            charge = 100 if args.battery_percent is None else args.battery_percent
+            service = SimulationRobotService(battery_percent=charge, charging=args.charging)
     except ValueError as exc:
         parser.error(str(exc))
     try:

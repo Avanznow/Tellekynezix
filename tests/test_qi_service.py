@@ -143,8 +143,31 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.start_motion("forward")
         with self.assertRaises(UnsupportedOperationError):
             await self.service.stop_motion()
-        with self.assertRaises(UnsupportedOperationError):
+    async def test_stream_wakes_on_disconnect_and_does_not_resume_after_reconnect(self):
+        with self.assertRaises(RobotConnectionError):
             self.service.stream_telemetry(1)
+        await self.service.connect()
+        stream = self.service.stream_telemetry(3600)
+        self.assertEqual((await anext(stream)).sequence, 0)
+        pending = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0)
+        await self.service.disconnect()
+        self.factory.return_value = FakeSession()
+        await self.service.connect()
+        with self.assertRaises(StopAsyncIteration):
+            await asyncio.wait_for(pending, 1)
+        self.assertEqual((await self.service.read_telemetry()).sequence, 0)
+
+    async def test_stream_reports_transport_loss(self):
+        await self.service.connect()
+        stream = self.service.stream_telemetry(.001)
+        try:
+            await anext(stream)
+            self.session.connected = False
+            with self.assertRaises(RobotConnectionError):
+                await anext(stream)
+        finally:
+            await stream.aclose()
 
     async def test_concurrent_and_repeated_connect_share_one_session(self):
         await asyncio.gather(self.service.connect(), self.service.connect())

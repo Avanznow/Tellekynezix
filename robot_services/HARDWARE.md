@@ -17,13 +17,16 @@ Constructing/importing the adapter does not connect to a robot.
 - Charging-state ingestion is not implemented. A valid charge therefore produces
   a PARTIAL battery sample, with charging null and a reason. Other sensor groups
   are explicitly UNAVAILABLE. No simulated values fill hardware measurements.
-- Posture/motion commands and continuous hardware streaming are unsupported.
-- No SDK is installed, and neither the GUI nor the diagnostic CLI is wired to
-  this adapter. Their default remains simulation. No physical robot was available
-  for development or testing; no hardware connection has been attempted.
+- Posture and motion commands are unsupported.
+- `stream_telemetry(interval)` starts with an immediate read, waits at least
+  `interval` seconds between reads, and ends when its session is explicitly
+  disconnected. Transport errors propagate to the consumer.
+- The diagnostic CLI can select this adapter with `--mode hardware --host HOST`.
+  See [diagnostic usage and the loopback check](DIAGNOSTICS.md).
 
-The session factory, SDK methods, payload assumptions and actual robot/SDK version
-compatibility must be verified on a supported runtime before hardware use. The
+The initial connection, battery read, and disconnect passed a local libqi test
+on Pop!_OS 24.04 x86-64 with Python 3.12.3 and qi 3.1.5. Physical NAO firmware
+compatibility and battery readings still require verification. The
 legacy NAOqi 2.8 Windows SDK targets Python 2.7. Modern `qi` Python packages and
 their available platforms are a separate compatibility decision; a package being
 installable does not establish compatibility with a particular robot firmware.
