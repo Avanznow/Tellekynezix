@@ -24,6 +24,7 @@ class TestMemory:
     def __init__(self):
         self.imu = iter(([.25, -.5, 9.8], [None, -.5, 9.8], ["bad", "bad", "bad"]))
         self.sonar = iter(([.4, .6], [5.0, .5], [0, -1]))
+        self.fsr = iter(([0, .1, .2, .3, .4, .5, .6, .7], [None] * 4 + [.4] * 4, [-1] * 8))
 
     def getListData(self, keys):
         expected = [f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value" for axis in "XYZ"]
@@ -31,6 +32,13 @@ class TestMemory:
             return next(self.imu, [None, None, None])
         if keys == [f"Device/SubDeviceList/US/{side}/Sensor/Value" for side in ("Left", "Right")]:
             return next(self.sonar, [None, None])
+        fsr_keys = [
+            f"Device/SubDeviceList/{foot}/FSR/{corner}/Sensor/Value"
+            for foot in ("LFoot", "RFoot")
+            for corner in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")
+        ]
+        if keys == fsr_keys:
+            return next(self.fsr, [None] * 8)
         raise ValueError(f"Unexpected ALMemory keys: {keys}")
 
 
@@ -61,6 +69,9 @@ class QiLoopbackTests(unittest.TestCase):
         self.assertIn("Ultrasonic: OK |", result.stdout)
         self.assertIn("Ultrasonic: PARTIAL |", result.stdout)
         self.assertIn("Ultrasonic: INVALID |", result.stdout)
+        self.assertIn("FSR: OK |", result.stdout)
+        self.assertIn("FSR: PARTIAL |", result.stdout)
+        self.assertIn("FSR: INVALID |", result.stdout)
         self.assertEqual(result.stdout.count("Connected | Battery:"), 3)
 
     def run_until_first_report(self, action):

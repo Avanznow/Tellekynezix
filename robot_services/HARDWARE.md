@@ -29,7 +29,12 @@ Constructing/importing the adapter does not connect to a robot.
 - The adapter reads existing sonar values from ALMemory. Sonar capture and
   freshness depend on the robot's configuration and still require physical
   verification. The documented NAO V6 detection range is 0.20–0.80 m.
-- FSR and joint groups are unavailable in hardware mode.
+- Foot FSR reads use one `ALMemory.getListData` call for the four corner
+  sensors on each foot. The snapshot reports approximate loads in `kg`,
+  with names such as `left_front_left` and `right_rear_right`.
+  Zero is valid, negative and nonfinite loads are invalid, and valid corners
+  are preserved in partial samples.
+- Joint readings are unavailable in hardware mode.
 - Posture and motion commands are unsupported.
 - `stream_telemetry(interval)` starts with an immediate read, waits at least
   `interval` seconds between reads, and ends when its session is explicitly

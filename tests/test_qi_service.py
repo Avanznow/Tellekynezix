@@ -177,9 +177,15 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
             FakeFuture(error="sonar read failed"),
         ])
         memory = Mock()
-        memory.getListData.side_effect = lambda requested, **_: (
-            next(readings) if requested == keys else FakeFuture([.25, -.5, 9.8])
-        )
+        def get_data(requested, *, _async):
+            self.assertTrue(_async)
+            if requested == keys:
+                return next(readings)
+            if len(requested) == 8:
+                return FakeFuture([0] * 8)
+            return FakeFuture([.25, -.5, 9.8])
+
+        memory.getListData.side_effect = get_data
         self.session.memory = memory
         await self.service.connect()
         results = [await self.service.read_telemetry() for _ in range(6)]
@@ -197,7 +203,56 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.battery.values["charge"].value, 72)
             json.loads(result.to_json())
         memory.getListData.assert_any_call(keys, _async=True)
-        self.assertEqual(self.session.calls.count(("service", "ALMemory")), 1)
+        self.assertEqual(results[-1].fsr.quality, SampleQuality.VALID)
+        self.assertEqual(self.session.calls.count(("service", "ALMemory")), 2)
+
+    async def test_fsr_maps_eight_loads_and_preserves_other_groups(self):
+        keys = [
+            f"Device/SubDeviceList/{foot}/FSR/{corner}/Sensor/Value"
+            for foot in ("LFoot", "RFoot")
+            for corner in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")
+        ]
+        loads = [0, .1, .2, .3, .4, .5, .6, .7]
+        readings = iter([
+            FakeFuture(loads),
+            FakeFuture([None, -1, float("inf"), True, .4, .5, .6, .7]),
+            FakeFuture([-1] * 8),
+            FakeFuture([None] * 8),
+            FakeFuture(loads[:-1]),
+            FakeFuture(error="FSR read failed"),
+        ])
+
+        def get_data(requested, *, _async):
+            self.assertTrue(_async)
+            if requested == keys:
+                return next(readings)
+            if len(requested) == 3:
+                return FakeFuture([.25, -.5, 9.8])
+            return FakeFuture([.4, .6])
+
+        self.session.memory = Mock()
+        self.session.memory.getListData.side_effect = get_data
+        await self.service.connect()
+        results = [await self.service.read_telemetry() for _ in range(6)]
+        self.assertEqual([result.fsr.quality for result in results], [
+            SampleQuality.VALID, SampleQuality.PARTIAL, SampleQuality.INVALID,
+            SampleQuality.UNAVAILABLE, SampleQuality.INVALID, SampleQuality.UNAVAILABLE,
+        ])
+        names = (
+            "left_front_left", "left_front_right", "left_rear_left", "left_rear_right",
+            "right_front_left", "right_front_right", "right_rear_left", "right_rear_right",
+        )
+        self.assertEqual(
+            [(results[0].fsr.values[name].value, results[0].fsr.values[name].unit) for name in names],
+            [(value, "kg") for value in loads],
+        )
+        self.assertEqual([results[1].fsr.values[name].value for name in names],
+                         [None, None, None, None, .4, .5, .6, .7])
+        for result in results:
+            self.assertEqual(result.imu.quality, SampleQuality.VALID)
+            self.assertEqual(result.ultrasonic.quality, SampleQuality.VALID)
+            self.assertEqual(result.battery.values["charge"].value, 72)
+            json.loads(result.to_json())
 
     async def test_reads_require_connection_and_actuation_is_explicitly_unsupported(self):
         with self.assertRaises(RobotConnectionError):
