@@ -32,6 +32,16 @@ _SONAR_KEYS = {
     for side in ("Left", "Right")
 }
 _SONAR_NO_ECHO_METRES = 5.0
+_JOINT_NAMES = (
+    "HeadYaw", "HeadPitch",
+    "LShoulderPitch", "LShoulderRoll", "LElbowYaw", "LElbowRoll", "LWristYaw", "LHand",
+    "RShoulderPitch", "RShoulderRoll", "RElbowYaw", "RElbowRoll", "RWristYaw", "RHand",
+    "LHipYawPitch", "LHipRoll", "LHipPitch", "LKneePitch", "LAnklePitch", "LAnkleRoll",
+    "RHipRoll", "RHipPitch", "RKneePitch", "RAnklePitch", "RAnkleRoll",
+)
+_JOINT_KEYS = {name: f"Device/SubDeviceList/{name}/Position/Sensor/Value" for name in _JOINT_NAMES}
+_JOINT_UNITS = {name: "ratio" if name in ("LHand", "RHand") else "rad" for name in _JOINT_NAMES}
+
 _FSR_KEYS = {
     f"{side}_{position}_{corner}": (
         f"Device/SubDeviceList/{foot}/FSR/{position.title()}{corner.title()}/Sensor/Value"
@@ -245,7 +255,7 @@ class QiRobotService(RobotService):
             raise RobotConnectionError(f"SDK status check failed: {exc}") from exc
 
     async def _read_memory_sample(
-        self, session, group: str, keys: dict[str, str], unit: str, *,
+        self, session, group: str, keys: dict[str, str], units: str | dict[str, str], *,
         sonar: bool = False, minimum: float | None = None,
     ) -> SensorSample:
         try:
@@ -270,12 +280,15 @@ class QiRobotService(RobotService):
         problems = []
         invalid = False
         for name, value in zip(keys, raw):
+            unit = units if isinstance(units, str) else units[name]
             try:
                 measurement = Measurement(value, unit)
                 if sonar and value is not None and value <= 0:
                     raise TelemetryValidationError("Sonar distance must be positive")
                 if minimum is not None and value is not None and value < minimum:
                     raise TelemetryValidationError(f"{group} reading below minimum")
+                if unit == "ratio" and value is not None and not 0 <= value <= 1:
+                    raise TelemetryValidationError("Hand aperture must be between 0 and 1")
             except (TelemetryValidationError, OverflowError):
                 invalid = True
                 problems.append(f"{name} invalid")
@@ -298,7 +311,7 @@ class QiRobotService(RobotService):
         return SensorSample(SampleQuality.UNAVAILABLE, error=reason)
 
     async def read_telemetry(self) -> TelemetrySnapshot:
-        """Read battery charge, torso acceleration, sonar distances and foot loads.
+        """Read battery, acceleration, sonar, foot loads and joint positions.
 
         Charge is validated as finite 0..100 percent. Charging-state ingestion is
         not implemented, so valid charge produces a PARTIAL battery group. Missing
@@ -341,11 +354,14 @@ class QiRobotService(RobotService):
         fsr = await self._read_memory_sample(session, "FSR", _FSR_KEYS, "kg", minimum=0)
         self._check_session(session)
         self._require_connection()
+        joints = await self._read_memory_sample(session, "joint", _JOINT_KEYS, _JOINT_UNITS)
+        self._check_session(session)
+        self._require_connection()
         snapshot = TelemetrySnapshot(
             self._sequence, datetime.now(timezone.utc), OperatingMode.HARDWARE,
             f"hardware:qi:{self.endpoint}", imu=imu, ultrasonic=ultrasonic,
             fsr=fsr,
-            joints=SensorSample(SampleQuality.UNAVAILABLE, error="Hardware joint ingestion is not implemented"),
+            joints=joints,
             battery=sample,
         )
         self._sequence += 1

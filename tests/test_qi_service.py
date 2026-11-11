@@ -254,6 +254,51 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.battery.values["charge"].value, 72)
             json.loads(result.to_json())
 
+    async def test_joint_positions_preserve_angles_and_validate_hand_aperture(self):
+        names = (
+            "HeadYaw", "HeadPitch",
+            "LShoulderPitch", "LShoulderRoll", "LElbowYaw", "LElbowRoll", "LWristYaw", "LHand",
+            "RShoulderPitch", "RShoulderRoll", "RElbowYaw", "RElbowRoll", "RWristYaw", "RHand",
+            "LHipYawPitch", "LHipRoll", "LHipPitch", "LKneePitch", "LAnklePitch", "LAnkleRoll",
+            "RHipRoll", "RHipPitch", "RKneePitch", "RAnklePitch", "RAnkleRoll",
+        )
+        keys = [f"Device/SubDeviceList/{name}/Position/Sensor/Value" for name in names]
+        values = [-.25] * 25
+        values[7], values[13] = .25, 1
+        partial = values.copy()
+        partial[0], partial[7], partial[13] = None, 1.1, -.1
+        readings = iter([
+            FakeFuture(values), FakeFuture(partial), FakeFuture([True] * 25),
+            FakeFuture([None] * 25), FakeFuture(error="joint read failed"),
+        ])
+        other_readings = {2: [.4, .6], 3: [0, 0, 9.8], 8: [0] * 8}
+
+        def get_data(requested, *, _async):
+            self.assertTrue(_async)
+            if requested == keys:
+                return next(readings)
+            return FakeFuture(other_readings[len(requested)])
+
+        self.session.memory = Mock()
+        self.session.memory.getListData.side_effect = get_data
+        await self.service.connect()
+        results = [await self.service.read_telemetry() for _ in range(5)]
+        self.assertEqual([result.joints.quality for result in results], [
+            SampleQuality.VALID, SampleQuality.PARTIAL, SampleQuality.INVALID,
+            SampleQuality.UNAVAILABLE, SampleQuality.UNAVAILABLE,
+        ])
+        self.assertEqual(
+            [(results[0].joints.values[name].value, results[0].joints.values[name].unit) for name in names],
+            [(value, "ratio" if name in ("LHand", "RHand") else "rad") for name, value in zip(names, values)],
+        )
+        for name in ("HeadYaw", "LHand", "RHand"):
+            self.assertIsNone(results[1].joints.values[name].value)
+        self.assertEqual(results[1].joints.values["LHipYawPitch"].value, -.25)
+        for result in results:
+            self.assertEqual(result.fsr.quality, SampleQuality.VALID)
+            self.assertEqual(result.battery.values["charge"].value, 72)
+            json.loads(result.to_json())
+
     async def test_reads_require_connection_and_actuation_is_explicitly_unsupported(self):
         with self.assertRaises(RobotConnectionError):
             await self.service.read_telemetry()

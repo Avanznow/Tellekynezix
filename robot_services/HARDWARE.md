@@ -34,7 +34,11 @@ Constructing/importing the adapter does not connect to a robot.
   with names such as `left_front_left` and `right_rear_right`.
   Zero is valid, negative and nonfinite loads are invalid, and valid corners
   are preserved in partial samples.
-- Joint readings are unavailable in hardware mode.
+- Joint position reads use one `ALMemory.getListData` call for the 25
+  `Device/SubDeviceList/<joint>/Position/Sensor/Value` keys. Readings are
+  named by their NAOqi joint names. Angles are in radians. `LHand` and
+  `RHand` use unit `ratio`, from 0 (closed) to 1 (open).
+  `LHipYawPitch` represents the shared hip actuator.
 - Posture and motion commands are unsupported.
 - `stream_telemetry(interval)` starts with an immediate read, waits at least
   `interval` seconds between reads, and ends when its session is explicitly

@@ -25,6 +25,7 @@ class TestMemory:
         self.imu = iter(([.25, -.5, 9.8], [None, -.5, 9.8], ["bad", "bad", "bad"]))
         self.sonar = iter(([.4, .6], [5.0, .5], [0, -1]))
         self.fsr = iter(([0, .1, .2, .3, .4, .5, .6, .7], [None] * 4 + [.4] * 4, [-1] * 8))
+        self.joints = iter(([.25] * 25, [None] + [.25] * 24, ["bad"] * 25))
 
     def getListData(self, keys):
         expected = [f"Device/SubDeviceList/InertialSensor/Accelerometer{axis}/Sensor/Value" for axis in "XYZ"]
@@ -39,6 +40,8 @@ class TestMemory:
         ]
         if keys == fsr_keys:
             return next(self.fsr, [None] * 8)
+        if len(set(keys)) == 25 and all(key.endswith("/Position/Sensor/Value") for key in keys):
+            return next(self.joints, [None] * 25)
         raise ValueError(f"Unexpected ALMemory keys: {keys}")
 
 
@@ -56,7 +59,7 @@ class QiLoopbackTests(unittest.TestCase):
             "--host", "127.0.0.1", "--port", port, "--interval", ".1",
         ]
 
-    def test_cli_reports_battery_values_and_sensor_quality(self):
+    def test_cli_reports_battery_and_joint_position_quality(self):
         result = subprocess.run(self.command + ["--count", "3"], capture_output=True,
                                 text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -72,6 +75,9 @@ class QiLoopbackTests(unittest.TestCase):
         self.assertIn("FSR: OK |", result.stdout)
         self.assertIn("FSR: PARTIAL |", result.stdout)
         self.assertIn("FSR: INVALID |", result.stdout)
+        self.assertRegex(result.stdout, r"Joints: OK\r?$|Joints: OK\n")
+        self.assertIn("Joints: PARTIAL", result.stdout)
+        self.assertIn("Joints: INVALID", result.stdout)
         self.assertEqual(result.stdout.count("Connected | Battery:"), 3)
 
     def run_until_first_report(self, action):
