@@ -1,5 +1,6 @@
 """Opt-in libqi integration check. Run with qi installed in the active environment."""
 
+import asyncio
 from pathlib import Path
 from queue import Queue
 import signal
@@ -9,6 +10,25 @@ from threading import Thread
 import unittest
 
 import qi
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from robot_services.models import PostureOutcome
+from robot_services.qi_service import QiRobotService
+
+
+class TestPosture:
+    def __init__(self):
+        self.current = "Unknown"
+
+    def goToPosture(self, name, speed):
+        if speed != .5:
+            return False
+        if name == "Stand":
+            self.current = "Stand"
+        return True
+
+    def getPosture(self):
+        return self.current
 
 
 class TestBattery:
@@ -52,12 +72,33 @@ class QiLoopbackTests(unittest.TestCase):
         self.server.listenStandalone("tcp://127.0.0.1:0")
         self.server.registerService("ALBattery", TestBattery())
         self.server.registerService("ALMemory", TestMemory())
-        port = str(self.server.endpoints()[0]).rsplit(":", 1)[1]
+        self.port = int(str(self.server.endpoints()[0]).rsplit(":", 1)[1])
         script = Path(__file__).with_name("robot_diagnostics.py").resolve()
         self.command = [
             sys.executable, "-B", str(script), "--mode", "hardware",
-            "--host", "127.0.0.1", "--port", port, "--interval", ".1",
+            "--host", "127.0.0.1", "--port", str(self.port), "--interval", ".1",
         ]
+
+    def test_posture_completion_requires_matching_sdk_observation(self):
+        self.server.registerService("ALRobotPosture", TestPosture())
+
+        async def check():
+            service = QiRobotService("127.0.0.1", port=self.port, enable_posture=True)
+            await service.connect()
+            try:
+                self.assertIsNone(await service.get_posture())
+                stand = await service.set_posture("Stand", .5)
+                self.assertIs(stand.outcome, PostureOutcome.COMPLETED_VERIFIED)
+                self.assertEqual(stand.observed_posture, "Stand")
+                sit = await service.set_posture("Sit", .5)
+                self.assertIs(sit.outcome, PostureOutcome.UNVERIFIED)
+                self.assertEqual(sit.observed_posture, "Stand")
+                rejected = await service.set_posture("Sit", .25)
+                self.assertIs(rejected.outcome, PostureOutcome.FAILED)
+            finally:
+                await service.disconnect()
+
+        asyncio.run(check())
 
     def test_cli_reports_battery_and_joint_position_quality(self):
         result = subprocess.run(self.command + ["--count", "3"], capture_output=True,

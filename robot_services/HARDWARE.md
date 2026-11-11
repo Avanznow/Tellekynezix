@@ -1,4 +1,4 @@
-# Read-only qi hardware adapter: first increment
+# qi hardware adapter
 
 `QiRobotService` implements the shared `RobotService` interface for connection,
 session status and individual battery snapshots. No qi SDK is imported until
@@ -39,7 +39,8 @@ Constructing/importing the adapter does not connect to a robot.
   named by their NAOqi joint names. Angles are in radians. `LHand` and
   `RHand` use unit `ratio`, from 0 (closed) to 1 (open).
   `LHipYawPitch` represents the shared hip actuator.
-- Posture and motion commands are unsupported.
+- The diagnostics CLI uses read-only mode. The posture API is opt-in with
+  `enable_posture=True`. Walking and turning are outside this adapter's scope.
 - `stream_telemetry(interval)` starts with an immediate read, waits at least
   `interval` seconds between reads, and ends when its session is explicitly
   disconnected. Transport errors propagate to the consumer.
@@ -86,7 +87,25 @@ These tests inject SDK-shaped sessions and futures. They cover connection and
 cleanup, battery payloads, missing services, timeout/cancellation, foreign-thread
 callbacks and stale replies. They do not establish real SDK/robot compatibility.
 
+## Posture requests
+
+`set_posture(name, speed)` accepts `Stand` and `Sit` at a relative speed
+greater than 0 and at most 1. It sends one asynchronous `goToPosture` call.
+An SDK success followed by an exact `getPosture` match yields
+`COMPLETED_VERIFIED`. An SDK false result yields `FAILED`. A missing or
+different observation after SDK success yields `UNVERIFIED`.
+
+`get_posture()` returns the observed predefined posture name or `None`
+when unknown. While a request is active, status reports busy and competing
+requests raise `RobotBusyError`. A timeout or cancellation during the command
+leaves its completion unknown and blocks further posture commands on that
+session. Local cancellation and disconnect do not confirm that remote motion
+has stopped. Physical validation is pending. The Pop!_OS loopback check
+exercises these posture results using a local service.
+
 ## Reference points for later verification
+
+- [NAOqi 2.8 posture API](https://doc.aldebaran.com/2-8/naoqi/motion/alrobotposture-api.html)
 
 - [NAOqi 2.8 sensor keys and units](https://doc.aldebaran.com/2-8/family/nao_technical/lola/actuator_sensor_names.html)
 - [NAO V6 sonar specifications](https://doc.aldebaran.com/2-8/family/nao_technical/sonar_naov6.html)

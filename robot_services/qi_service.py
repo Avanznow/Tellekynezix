@@ -1,4 +1,4 @@
-"""Read-only libqi service adapter. Importing this module never loads the SDK.
+"""Libqi service adapter. Importing this module never loads the SDK.
 
 Sensor reads use ALBattery and ALMemory. The native SDK
 must support _async=True and qi.Future callbacks. Tests inject sessions instead
@@ -14,11 +14,12 @@ import math
 import re
 
 from .errors import (
-    RobotConnectionError, RobotServiceError, TelemetryValidationError, UnsupportedOperationError,
+    RobotBusyError, RobotConnectionError, RobotServiceError, TelemetryValidationError,
+    UnsupportedOperationError,
 )
 from .interface import RobotService
 from .models import (
-    Measurement, OperatingMode, PostureResult, RobotStatus, SampleQuality,
+    Measurement, OperatingMode, PostureOutcome, PostureResult, RobotStatus, SampleQuality,
     SensorSample, TelemetrySnapshot,
 )
 
@@ -68,7 +69,8 @@ class QiRobotService(RobotService):
     """
 
     def __init__(self, host: str, port: int = 9559, timeout: float = 5.0,
-                 *, session_factory: Callable[[], object] | None = None):
+                 *, session_factory: Callable[[], object] | None = None,
+                 enable_posture: bool = False):
         if not isinstance(host, str) or not host:
             raise ValueError("host must be a hostname or IP address")
         if ":" in host:
@@ -91,6 +93,10 @@ class QiRobotService(RobotService):
         self.endpoint = f"tcp://{endpoint_host}:{port}"
         self.timeout = timeout
         self._factory = session_factory
+        if not isinstance(enable_posture, bool):
+            raise ValueError("enable_posture must be a boolean")
+        self._enable_posture = enable_posture
+        self._posture_request = None
         self._session = None
         self._session_end = asyncio.Event()
         self._battery = None
@@ -226,6 +232,7 @@ class QiRobotService(RobotService):
         session = self._session
         self._session_end.set()
         self._session = None
+        self._posture_request = None
         self._battery = None
         self._memory = None
         self._connected = False
@@ -248,7 +255,8 @@ class QiRobotService(RobotService):
             if not isinstance(connected, bool):
                 raise _QiCallError("SDK returned an invalid connection status")
             self._connected = connected
-            return RobotStatus(OperatingMode.HARDWARE, connected, False)
+            return RobotStatus(OperatingMode.HARDWARE, connected,
+                               connected and self._posture_request is not None)
         except _QiCallError as exc:
             if self._session is session:
                 self._connected = False
@@ -368,13 +376,70 @@ class QiRobotService(RobotService):
         return snapshot
 
     async def get_posture(self) -> str | None:
-        """Return Unknown (None); posture observation is not implemented yet."""
+        """Read the current predefined posture when posture RPCs are enabled."""
+        session = self._require_connection()
+        if not self._enable_posture:
+            return None
+        try:
+            proxy = await self._call(session, session.service, "ALRobotPosture")
+            self._check_session(session)
+            return await self._observe_posture(session, proxy)
+        except (_QiCallError, AttributeError) as exc:
+            self._check_session(session)
+            if not (await self.get_status()).connected:
+                raise RobotConnectionError("Robot disconnected during posture observation") from exc
+            return None
+
+    async def _observe_posture(self, session, proxy) -> str | None:
+        observed = await self._call(session, proxy.getPosture)
+        self._check_session(session)
         self._require_connection()
+        if isinstance(observed, str) and observed.strip() and observed != "Unknown":
+            return observed
         return None
 
     async def set_posture(self, name: str, speed: float) -> PostureResult:
-        """Explicitly reject actuation in this read-only increment."""
-        raise UnsupportedOperationError("Hardware posture commands are not implemented")
+        """Request Stand or Sit once and verify with a separate observation."""
+        if not self._enable_posture or name not in ("Stand", "Sit"):
+            raise UnsupportedOperationError(f"Hardware posture request unavailable: {name!r}")
+        if (isinstance(speed, bool) or not isinstance(speed, (int, float))
+                or not 0 < speed <= 1):
+            raise ValueError("speed must be finite and greater than 0, at most 1")
+        session = self._require_connection()
+        if self._posture_request is not None:
+            raise RobotBusyError("A posture request is active or its completion is unknown")
+
+        request = object()
+        self._posture_request = request
+        command_started = False
+        command_pending = False
+        try:
+            proxy = await self._call(session, session.service, "ALRobotPosture")
+            self._check_session(session)
+            self._require_connection()
+            command = proxy.goToPosture
+            command_started = True
+            command_pending = True
+            reached = await self._call(session, command, name, speed)
+            command_pending = reached is not True and reached is not False
+            self._check_session(session)
+            self._require_connection()
+            if reached is False:
+                return PostureResult(name, PostureOutcome.FAILED, message="NAOqi did not reach the posture")
+            if reached is not True:
+                return PostureResult(name, PostureOutcome.UNVERIFIED, message="Unexpected NAOqi completion result")
+            observed = await self._observe_posture(session, proxy)
+            outcome = (PostureOutcome.COMPLETED_VERIFIED if observed == name else PostureOutcome.UNVERIFIED)
+            return PostureResult(name, outcome, observed)
+        except (_QiCallError, AttributeError) as exc:
+            self._check_session(session)
+            if not (await self.get_status()).connected:
+                raise RobotConnectionError("Robot disconnected during posture request") from exc
+            outcome = PostureOutcome.UNVERIFIED if command_started else PostureOutcome.FAILED
+            return PostureResult(name, outcome, message=str(exc))
+        finally:
+            if not command_pending and self._posture_request is request:
+                self._posture_request = None
 
     def stream_telemetry(self, interval: float) -> AsyncIterator[TelemetrySnapshot]:
         """Sample immediately, then wait at least interval seconds between reads."""

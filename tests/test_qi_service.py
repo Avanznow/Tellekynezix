@@ -6,8 +6,8 @@ import threading
 import unittest
 from unittest.mock import Mock, patch
 
-from robot_services.errors import RobotConnectionError, UnsupportedOperationError
-from robot_services.models import OperatingMode, SampleQuality
+from robot_services.errors import RobotBusyError, RobotConnectionError, UnsupportedOperationError
+from robot_services.models import OperatingMode, PostureOutcome, SampleQuality
 from robot_services.qi_service import QiRobotService
 
 
@@ -62,6 +62,7 @@ class FakeSession:
         self.status_future = None
         self.service_error = None
         self.memory = None
+        self.posture = None
 
     def connect(self, endpoint, *, _async):
         assert _async is True
@@ -79,6 +80,8 @@ class FakeSession:
         self.calls.append(("service", name))
         if name == "ALMemory":
             return FakeFuture(self.memory, error="ALMemory missing" if self.memory is None else None)
+        if name == "ALRobotPosture":
+            return FakeFuture(self.posture, error="Posture service missing" if self.posture is None else None)
         return FakeFuture(self.battery, error=self.service_error)
 
     def close(self, *, _async):
@@ -298,6 +301,47 @@ class QiServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.fsr.quality, SampleQuality.VALID)
             self.assertEqual(result.battery.values["charge"].value, 72)
             json.loads(result.to_json())
+
+    async def test_posture_requires_success_and_matching_observation(self):
+        service = QiRobotService("robot.test", session_factory=self.factory, enable_posture=True)
+        self.addAsyncCleanup(service.disconnect)
+        self.session.posture = proxy = Mock()
+        proxy.goToPosture.side_effect = [FakeFuture(True), FakeFuture(True), FakeFuture(False), FakeFuture(True)]
+        proxy.getPosture.side_effect = [FakeFuture("Stand"), FakeFuture("Stand"), FakeFuture(error="read failed")]
+        await service.connect()
+        with self.assertRaises(ValueError):
+            await service.set_posture("Stand", float("nan"))
+        with self.assertRaises(UnsupportedOperationError):
+            await service.set_posture("StandZero", .5)
+        results = [
+            await service.set_posture(name, .5) for name in ("Stand", "Sit", "Sit", "Sit")
+        ]
+        self.assertEqual([result.outcome for result in results], [
+            PostureOutcome.COMPLETED_VERIFIED, PostureOutcome.UNVERIFIED,
+            PostureOutcome.FAILED, PostureOutcome.UNVERIFIED,
+        ])
+        self.assertEqual([result.observed_posture for result in results], ["Stand", "Stand", None, None])
+        self.assertEqual(proxy.goToPosture.call_count, 4)
+        proxy.goToPosture.assert_called_with("Sit", .5, _async=True)
+        self.assertFalse((await service.get_status()).busy)
+
+    async def test_posture_timeout_blocks_another_request_in_same_session(self):
+        service = QiRobotService("robot.test", timeout=.05, session_factory=self.factory, enable_posture=True)
+        self.addAsyncCleanup(service.disconnect)
+        self.session.posture = proxy = Mock()
+        pending = FakeFuture(pending=True)
+        proxy.goToPosture.return_value = pending
+        await service.connect()
+        request = asyncio.create_task(service.set_posture("Stand", .5))
+        await self.wait_registered(pending)
+        self.assertTrue((await service.get_status()).busy)
+        with self.assertRaises(RobotBusyError):
+            await service.set_posture("Sit", .5)
+        self.assertIs((await request).outcome, PostureOutcome.UNVERIFIED)
+        with self.assertRaises(RobotBusyError):
+            await service.set_posture("Sit", .5)
+        proxy.goToPosture.assert_called_once_with("Stand", .5, _async=True)
+        proxy.getPosture.assert_not_called()
 
     async def test_reads_require_connection_and_actuation_is_explicitly_unsupported(self):
         with self.assertRaises(RobotConnectionError):
