@@ -75,9 +75,9 @@ class QiLoopbackTests(unittest.TestCase):
         self.assertIn("FSR: OK |", result.stdout)
         self.assertIn("FSR: PARTIAL |", result.stdout)
         self.assertIn("FSR: INVALID |", result.stdout)
-        self.assertRegex(result.stdout, r"Joints: OK\r?$|Joints: OK\n")
-        self.assertIn("Joints: PARTIAL", result.stdout)
-        self.assertIn("Joints: INVALID", result.stdout)
+        self.assertIn(" | Joints: OK | ", result.stdout)
+        self.assertIn(" | Joints: PARTIAL | ", result.stdout)
+        self.assertIn(" | Joints: INVALID | ", result.stdout)
         self.assertEqual(result.stdout.count("Connected | Battery:"), 3)
 
     def run_until_first_report(self, action):
