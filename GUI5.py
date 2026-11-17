@@ -54,6 +54,30 @@ from cloud_api import CloudAPI
 
 from shuffler_api import ShufflerAPI
 
+class SimulatedTello:
+    """Stand-in used when no real Tello is connected. Prints each command
+    and waits a moment, so the whole app (log, 30 s hold, auto-return) works."""
+    def _cmd(self, name, *args):
+        print(f"[SIM] {name} {' '.join(str(a) for a in args)}".strip())
+        time.sleep(0.5)
+
+    def move_up(self, d): self._cmd("move_up", d)
+    def move_down(self, d): self._cmd("move_down", d)
+    def move_forward(self, d): self._cmd("move_forward", d)
+    def move_back(self, d): self._cmd("move_back", d)
+    def move_left(self, d): self._cmd("move_left", d)
+    def move_right(self, d): self._cmd("move_right", d)
+    def rotate_clockwise(self, deg): self._cmd("rotate_clockwise", deg)
+    def rotate_counter_clockwise(self, deg): self._cmd("rotate_counter_clockwise", deg)
+    def flip_forward(self): self._cmd("flip_forward")
+    def flip_back(self): self._cmd("flip_back")
+    def flip_left(self): self._cmd("flip_left")
+    def flip_right(self): self._cmd("flip_right")
+    def takeoff(self): self._cmd("takeoff")
+    def land(self): self._cmd("land")
+    def send_rc_control(self, *a): pass
+
+
 class TabController(QObject):
     def __init__(self):
         super().__init__()
@@ -76,6 +100,13 @@ class BrainwavesBackend(QObject):
     loginFailed = Signal(str)
     deviceConnected = Signal()
     deviceOffline = Signal(str)
+    moveCompleted = Signal()        # emitted by worker thread after a user move finishes
+    flyingStateChanged = Signal(bool)  # emitted by worker thread on takeoff/land
+
+    # 3D drone view in ManualDroneControl.qml
+    drone3DPreview = Signal(str)   # every button / BCI command -> instant animation
+    drone3DAction = Signal(str)    # backend-initiated actions (auto-return home)
+    drone3DUpdated = Signal(float, float, float, float)  # x, y, z, rotation (pose sync)
 
     @Slot()
     def startNaoManual(self):
@@ -147,6 +178,19 @@ class BrainwavesBackend(QObject):
 
         self.is_flying = False
 
+        # Auto-return-home: after a directional move, hold position for 30 s.
+        # If no other button is pressed in that time, fly back home and hover.
+        self.auto_return_ms = 30000
+        self.auto_return_timer = QTimer()
+        self.auto_return_timer.setSingleShot(True)
+        self.auto_return_timer.timeout.connect(self._auto_return_home)
+        self.moveCompleted.connect(self._arm_auto_return)
+        self.flyingStateChanged.connect(self._on_flying_state_changed)
+
+        self.sim_tello = SimulatedTello()  # used when no real drone is connected
+        self._busy = False             # True while the worker is running a command
+        self._current_is_return = False  # True while running a return-home step
+
 
         #Movement clumping
         self.step_cm = 30                     # each "move" command = 30 cm
@@ -193,12 +237,13 @@ class BrainwavesBackend(QObject):
             self.bcicon = None
 
     # Command queue helpers
-    def _queue_action(self, action: str, dist: int | None = None):
+    def _queue_action(self, action: str, dist: int | None = None, is_return: bool = False):
         """
         Put a command into the Tello queue.
         dist is an optional distance override (cm) for movement commands.
+        is_return marks steps of a return-home path (not recorded in action_log).
         """
-        self.cmd_queue.put((action, dist))
+        self.cmd_queue.put((action, dist, is_return))
 
     def _drone_loop(self):
         """
@@ -206,7 +251,9 @@ class BrainwavesBackend(QObject):
         It pulls commands from the queue and executes them in FIFO order.
         """
         while True:
-            action, dist = self.cmd_queue.get()
+            action, dist, is_return = self.cmd_queue.get()
+            self._busy = True
+            self._current_is_return = is_return
             try:
                 # Set distance override if provided
                 old = self._movement_distance_override
@@ -222,19 +269,55 @@ class BrainwavesBackend(QObject):
                 print(error_msg)
                 self.logMessage.emit(error_msg)
             finally:
+                self._current_is_return = False
+                self._busy = False
                 self.cmd_queue.task_done()
+
+    def _drone(self):
+        """Real Tello when connected, otherwise the simulator."""
+        if self.connected and hasattr(self, 'tello'):
+            return self.tello
+        return self.sim_tello
 
     @Slot()
     def takeoff(self):
-        self.tello.takeoff()
-        self.connected = True
-        self.is_flying = True
-        self.hover_timer.start(200) #every 200 ms, the hover callback will be invoked
+        self._queue_action('takeoff')
         self.logMessage.emit("Hovering")
 
     def hover_callback(self):
-        if self.is_flying:
-            self.tello.send_rc_control(0, 0, 0, 0)
+        # Keeps the Tello hovering (and stops its 15 s no-command auto-land)
+        # while it holds position. Skipped while a command is running.
+        if self.is_flying and not self._busy and self.connected:
+            try:
+                self.tello.send_rc_control(0, 0, 0, 0)
+            except Exception as e:
+                print(f"Hover keepalive failed: {e}")
+
+    @Slot(bool)
+    def _on_flying_state_changed(self, flying):
+        self.is_flying = flying
+        if flying:
+            self.hover_timer.start(200)
+        else:
+            self.hover_timer.stop()
+            self.auto_return_timer.stop()
+
+    @Slot()
+    def _arm_auto_return(self):
+        """(Re)start the 30 s hold timer after a directional move finishes."""
+        self.auto_return_timer.start(self.auto_return_ms)
+        self.logMessage.emit("Holding position for 30 s...")
+
+    @Slot()
+    def _auto_return_home(self):
+        """30 s passed with no new button press: go home and hover."""
+        if not self.is_flying or not self.action_log:
+            return
+        self.logMessage.emit("No input for 30 s - returning home")
+        self.flight_log.insert(0, "Auto-return: no input for 30 s")
+        self.flightLogUpdated.emit(self.flight_log)
+        self.drone3DAction.emit("go_home")   # bring the 3D drone home too
+        self.go_home(land=False)
 
     @Slot(str)
     def selectModel(self, model_name):
@@ -459,9 +542,7 @@ class BrainwavesBackend(QObject):
     @Slot()
     def connectDrone(self):
         self.doDroneTAction('connect')
-        self.flight_log.insert(0, "Drone connected.")
-        self.flightLogUpdated.emit(self.flight_log)
-        self.logMessage.emit("Drone connected.")
+        self.logMessage.emit("Connecting to drone...")
 
     @Slot(str)
     def keepDroneAlive(self,text):
@@ -480,6 +561,14 @@ class BrainwavesBackend(QObject):
 
     @Slot(str)
     def doDroneTAction(self, action):
+        # Any new button press cancels a pending auto-return.
+        # Directional moves re-arm it once they finish (see moveCompleted).
+        self.auto_return_timer.stop()
+
+        # Animate the 3D drone right away (QML buttons and BCI predictions
+        # both come through here, so one signal covers both).
+        self.drone3DPreview.emit(action)
+
         if action in ('up', 'down', 'forward', 'backward', 'left', 'right'):
             # Clumped in main thread; clumper will enqueue final chunks.
             self.enqueueMoveRequested.emit(action)
@@ -552,133 +641,148 @@ class BrainwavesBackend(QObject):
         with self.drone_lock:
             try:
                 if action == 'connect':
-                    self.tello.connect(wait_for_state=False)
-                    battery = self.tello.get_battery()
-                    self.connected = True
-                    self.logMessage.emit(f"Connected to Tello Drone (Battery: {battery}%)")
-                    self.flight_log.insert(0, f"Drone connected (Battery: {battery}%)")
-                    self.flightLogUpdated.emit(self.flight_log)
-                    return
-                elif not self.connected:
-                    self.logMessage.emit("Drone not connected. Please connect first.")
-                    self.flight_log.insert(0, "Command failed: Drone not connected")
+                    try:
+                        self.tello.connect(wait_for_state=False)
+                        battery = self.tello.get_battery()
+                        self.connected = True
+                        self.logMessage.emit(f"Connected to Tello Drone (Battery: {battery}%)")
+                        self.flight_log.insert(0, f"Drone connected (Battery: {battery}%)")
+                    except Exception as e:
+                        self.connected = False
+                        self.logMessage.emit(f"No drone found - using simulation mode ({e})")
+                        self.flight_log.insert(0, "No drone found - simulation mode")
                     self.flightLogUpdated.emit(self.flight_log)
                     return
 
+                # Connection is optional: without a drone, commands run on the simulator
+                drone = self._drone()
+                sim = "" if self.connected else "[SIM] "
+
+                is_return = self._current_is_return
+
                 def record_action(name, value=None):
-                    self.action_log.append((name, value))
+                    # Return-home steps are not recorded, so home stays fixed
+                    if not is_return:
+                        self.action_log.append((name, value))
 
                 # movement actions: distance is normally 30cm,
                 # but can be overridden by the clumper
                 if action == 'up':
                     dist = self._movement_distance_override or 30
-                    self.tello.move_up(dist)
+                    drone.move_up(dist)
                     record_action('up', dist)
                     self.logMessage.emit("Moving up")
-                    self.flight_log.insert(0, f"Moving up {dist}cm")
+                    self.flight_log.insert(0, sim + f"Moving up {dist}cm")
 
                 elif action == 'down':
                     dist = self._movement_distance_override or 30
-                    self.tello.move_down(dist)
+                    drone.move_down(dist)
                     record_action('down', dist)
                     self.logMessage.emit("Moving down")
-                    self.flight_log.insert(0, f"Moving down {dist}cm")
+                    self.flight_log.insert(0, sim + f"Moving down {dist}cm")
 
                 elif action == 'forward':
                     dist = self._movement_distance_override or 30
-                    self.tello.move_forward(dist)
+                    drone.move_forward(dist)
                     record_action('forward', dist)
                     self.logMessage.emit("Moving forward")
-                    self.flight_log.insert(0, f"Moving forward {dist}cm")
+                    self.flight_log.insert(0, sim + f"Moving forward {dist}cm")
 
                 elif action == 'backward':
                     dist = self._movement_distance_override or 30
-                    self.tello.move_back(dist)
+                    drone.move_back(dist)
                     record_action('backward', dist)
                     self.logMessage.emit("Moving backward")
-                    self.flight_log.insert(0, f"Moving backward {dist}cm")
+                    self.flight_log.insert(0, sim + f"Moving backward {dist}cm")
 
                 elif action == 'left':
                     dist = self._movement_distance_override or 30
-                    self.tello.move_left(dist)
+                    drone.move_left(dist)
                     record_action('left', dist)
                     self.logMessage.emit("Moving left")
-                    self.flight_log.insert(0, f"Moving left {dist}cm")
+                    self.flight_log.insert(0, sim + f"Moving left {dist}cm")
 
                 elif action == 'right':
                     dist = self._movement_distance_override or 30
-                    self.tello.move_right(dist)
+                    drone.move_right(dist)
                     record_action('right', dist)
                     self.logMessage.emit("Moving right")
-                    self.flight_log.insert(0, f"Moving right {dist}cm")
+                    self.flight_log.insert(0, sim + f"Moving right {dist}cm")
 
-					
+                if action in ('up', 'down', 'forward', 'backward', 'left', 'right') and not is_return:
+                    # Start the 30 s hold timer (on the main thread)
+                    self.moveCompleted.emit()
+
+                if action in ('up', 'down', 'forward', 'backward', 'left', 'right'):
+                    pass
                 elif action == 'turn_left':
-                    self.tello.rotate_counter_clockwise(45)
+                    drone.rotate_counter_clockwise(45)
                     record_action('turn_left', 45)
                     self.logMessage.emit("Rotating left")
-                    self.flight_log.insert(0, "Rotating left 45°")
+                    self.flight_log.insert(0, sim + f"Rotating left 45°")
 					
                 elif action == 'turn_right':
-                    self.tello.rotate_clockwise(45)
+                    drone.rotate_clockwise(45)
                     record_action('turn_right', 45)
                     self.logMessage.emit("Rotating right")
-                    self.flight_log.insert(0, "Rotating right 45°")
+                    self.flight_log.insert(0, sim + f"Rotating right 45°")
 					
                 elif action == 'flip_forward':
-                    self.tello.flip_forward()
+                    drone.flip_forward()
                     record_action('flip_forward')
                     self.logMessage.emit("Flipping forward")
-                    self.flight_log.insert(0, "Flipping forward")
+                    self.flight_log.insert(0, sim + f"Flipping forward")
 					
                 elif action == 'flip_back':
-                    self.tello.flip_back()
+                    drone.flip_back()
                     record_action('flip_back')
                     self.logMessage.emit("Flipping backward")
-                    self.flight_log.insert(0, "Flipping backward")
+                    self.flight_log.insert(0, sim + f"Flipping backward")
 					
                 elif action == 'flip_left':
-                    self.tello.flip_left()
+                    drone.flip_left()
                     record_action('flip_left')
                     self.logMessage.emit("Flipping left")
-                    self.flight_log.insert(0, "Flipping left")
+                    self.flight_log.insert(0, sim + f"Flipping left")
 					
                 elif action == 'flip_right':
-                    self.tello.flip_right()
+                    drone.flip_right()
                     record_action('flip_right')
                     self.logMessage.emit("Flipping right")
-                    self.flight_log.insert(0, "Flipping right")
+                    self.flight_log.insert(0, sim + f"Flipping right")
 
                 elif action == 'takeoff':
-                    self.tello.takeoff()
+                    drone.takeoff()
+                    self.flyingStateChanged.emit(True)
                     self.logMessage.emit("Taking off")
-                    self.flight_log.insert(0, "Taking off")
+                    self.flight_log.insert(0, sim + f"Taking off")
                     self.action_log.clear()
 				
                 elif action == 'land':
-                    self.tello.land()
+                    drone.land()
+                    self.flyingStateChanged.emit(False)
                     self.logMessage.emit("Landing")
-                    self.flight_log.insert(0, "Landing")
+                    self.flight_log.insert(0, sim + f"Landing")
                     self.action_log.clear()
 					
                 elif action == 'go_home':
-                    self.go_home()
+                    self.go_home(land=False)
                     self.logMessage.emit("Going home")
-                    self.flight_log.insert(0, "Going home")
+                    self.flight_log.insert(0, sim + f"Going home")
 					
                 elif action == 'stream':
                     if hasattr(self, 'camera_controller'):
                         self.camera_controller.start_camera_stream()
                         self.logMessage.emit("Starting camera stream")
-                        self.flight_log.insert(0, "Starting camera stream")
+                        self.flight_log.insert(0, sim + f"Starting camera stream")
 						
                     else:
                         self.logMessage.emit("Camera controller not available")
-                        self.flight_log.insert(0, "Camera controller not available")
+                        self.flight_log.insert(0, sim + f"Camera controller not available")
 						
                 else:
                     self.logMessage.emit("Unknown action")
-                    self.flight_log.insert(0, "Unknown action")
+                    self.flight_log.insert(0, sim + f"Unknown action")
 
                 self.flightLogUpdated.emit(self.flight_log)
 
@@ -691,7 +795,8 @@ class BrainwavesBackend(QObject):
                 if "Tello" in str(e) or "timeout" in str(e).lower():
                     self.connected = False
 
-    def go_home(self):
+    def go_home(self, land=True):
+        """Reverse all recorded moves back to home. Lands if land=True, else hovers."""
         try:
             self.logMessage.emit("Returning to home by reversing actions...")
             self.flight_log.insert(0, "Returning to home by reversing actions")
@@ -709,7 +814,7 @@ class BrainwavesBackend(QObject):
                 # Use the same 500cm safety limit
                 for dist in self._split_distance(current_total, max_step=500):
                     # Queue a single clumped command (direction + distance)
-                    self._queue_action(current_dir, dist)
+                    self._queue_action(current_dir, dist, is_return=True)
                 current_dir = None
                 current_total = 0
 
@@ -746,26 +851,29 @@ class BrainwavesBackend(QObject):
                     # For non-movement actions, flush the current segment and enqueue them individually
                     flush_segment()
                     if action == "turn_left":
-                        self._queue_action("turn_right")
+                        self._queue_action("turn_right", is_return=True)
                     elif action == "turn_right":
-                        self._queue_action("turn_left")
+                        self._queue_action("turn_left", is_return=True)
                     elif action == "flip_forward":
-                        self._queue_action("flip_back")
+                        self._queue_action("flip_back", is_return=True)
                     elif action == "flip_back":
-                        self._queue_action("flip_forward")
+                        self._queue_action("flip_forward", is_return=True)
                     elif action == "flip_left":
-                        self._queue_action("flip_right")
+                        self._queue_action("flip_right", is_return=True)
                     elif action == "flip_right":
-                        self._queue_action("flip_left")
+                        self._queue_action("flip_left", is_return=True)
                     # ignore 'takeoff', 'land', 'go_home' themselves, etc.
 
             # Flush any remaining movement in the last segment
             flush_segment()
 
-            # Finally, land when we get "home"
-            self._queue_action("land")
-
-            self.flight_log.insert(0, "Go-home path queued")
+            if land:
+                # Land when we get "home"
+                self._queue_action("land")
+                self.flight_log.insert(0, "Go-home path queued (will land)")
+            else:
+                # Stay in the air; hover keepalive holds the drone in place
+                self.flight_log.insert(0, "Go-home path queued (will hover)")
             self.logMessage.emit("Go-home path queued.")
             self.flightLogUpdated.emit(self.flight_log)
 
@@ -1158,4 +1266,10 @@ if __name__ == "__main__":
     # Ensure image model updates correctly
     backend.imagesReady.connect(lambda images: engine.rootContext().setContextProperty("imageModel", images))
 
-    sys.exit(app.exec())
+    exit_code = app.exec()
+
+    engine.clearComponentCache()
+    for root in engine.rootObjects():
+        root.deleteLater()
+    del engine
+    sys.exit(exit_code)
