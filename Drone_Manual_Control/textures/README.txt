@@ -1,0 +1,1 @@
+To change the drone colors edit the Uv map png and fill in where you want the colors to be on a seperate layer (magic select and color fill) then disable the uv map layer and save as "color.png"
