@@ -12,8 +12,7 @@ from pathlib import Path
 import sys
 
 # Import the model class from gaussiannb_jax module
-from gaussiannb_jax import GaussianNBJAX, load_model
-
+from algorithm_gnb_jax import GaussianNBJAX, load_model
 
 def standardize(X: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
     """Apply pre-computed standardization to test data."""
