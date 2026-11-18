@@ -2,17 +2,17 @@
 
 ## Design
 
-The Windows application will act as a TCP client and the Pop!_OS connector as
-the server. This first increment supplies a command-line probe for that client
-role. The GUI integration will use the same protocol in a later checkpoint.
+The Windows application acts as a TCP client and the Pop!_OS connector as
+the server. Both a command-line probe and a GUI client use this protocol.
 The server creates a SimulationRobotService for each TCP connection.
 
 Protocol version 1 uses UTF-8 JSON Lines. The client sends one request and awaits
-its response before sending the next. Each request contains a unique string
-id, a version, a method, and a params object. The reply echoes the id and
+its response before sending the next. Each request contains a string id
+representing a positive decimal integer that increases with every request,
+a version, a method, and a params object. The reply echoes the id and
 version and contains either ok=true with a result or ok=false with an error
-code and message. Lines are limited to 65536 bytes and sessions to 1024 requests.
-Duplicate ids return an error. Clients must not automatically retry commands.
+code and message. Lines are limited to 65536 bytes.
+Duplicate or out-of-order ids return an error. Clients must not automatically retry commands.
 
 ```json
 {"version":1,"id":"2","method":"set_posture","params":{"name":"Stand","speed":1.0}}
@@ -23,6 +23,7 @@ Duplicate ids return an error. Clients must not automatically retry commands.
 | --- | --- | --- |
 | connect | Empty object | RobotStatus |
 | get_status | Empty object | RobotStatus |
+| get_motion_state | Empty object | Simulation MotionState for the viewer |
 | set_posture | name (Stand or Sit), speed (greater than 0, at most 1) | PostureResult after simulated completion |
 | read_telemetry | Empty object | Schema version 1 TelemetrySnapshot |
 | disconnect | Empty object | Disconnected RobotStatus |
@@ -37,7 +38,24 @@ client tasks and disconnects their services.
 The server currently provides simulation only. It has no authentication or
 encryption and is intended for local development through a loopback-bound
 VirtualBox forwarding rule. Hardware control requires a separate design.
-Future GUI work will add network-backed controller state and motion handling.
+Remote walking, turning, and Stop commands are pending a later protocol increment.
+
+## GUI use
+
+Update the repository on both machines and restart the Pop!_OS server so it
+includes `get_motion_state`. Start `GUI5.py` in the Windows environment.
+In Manual NAO Control, select Remote simulation, enter the forwarded endpoint
+(normally 127.0.0.1 and 8765), and click Connect simulation.
+
+Stand Up and Sit Down now send requests to the Pop!_OS service. The GUI shows
+the returned posture, telemetry, and visual pose. Remote preview refreshes
+state every half second and shows completed posture poses. Local simulation
+provides the existing smooth animations and motion controls.
+
+Disconnect clears the session readings. If the server stops or a network request
+fails, the remote client closes TCP and the GUI returns to Disconnected.
+After the server is available again, click Connect simulation to create a fresh
+session. Backend and endpoint selection are available while disconnected.
 
 ## Local round trip
 

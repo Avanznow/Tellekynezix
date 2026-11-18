@@ -4,6 +4,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path
+import asyncio
 import time
 import unittest
 
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 
 from robot_services.qt_simulation import SimulationController
 from robot_services.simulation import SimulationRobotService
+from robot_services.simulation_rpc import simulation_server
 
 
 class QtSimulationTests(unittest.TestCase):
@@ -51,6 +53,46 @@ class QtSimulationTests(unittest.TestCase):
         self.assertEqual(self.controller.telemetry, {})
         self.controller.connectSimulation()
         self.wait_for(lambda: self.controller.connected and bool(self.controller.telemetry))
+
+    def test_remote_qml_buttons_posture_telemetry_and_connection_loss(self):
+        context = simulation_server(port=0, timeout=3)
+        server = asyncio.run_coroutine_threadsafe(context.__aenter__(), self.controller._loop).result(3)
+        server_open = True
+
+        def stop_server():
+            nonlocal server_open
+            if server_open:
+                asyncio.run_coroutine_threadsafe(context.__aexit__(None, None, None),
+                                                self.controller._loop).result(5)
+                server_open = False
+
+        self.addCleanup(stop_server)
+        view = QQuickView()
+        self.addCleanup(view.close)
+        view.rootContext().setContextProperty("naoSimulation", self.controller)
+        view.setSource(QUrl.fromLocalFile(str(Path(__file__).resolve().parents[1] / "ManualNaoControl.qml")))
+        self.assertEqual(view.status(), QQuickView.Ready, str(view.errors()))
+        root = view.rootObject()
+        root.findChild(QObject, "simulationBackendSelector").setProperty("currentIndex", 1)
+        root.findChild(QObject, "simulationRemotePort").setProperty("text", str(server.sockets[0].getsockname()[1]))
+        connect = root.findChild(QObject, "simulationConnectButton")
+        QMetaObject.invokeMethod(connect, "clicked")
+        self.wait_for(lambda: self.controller.connected and bool(self.controller.telemetry))
+        self.assertTrue(self.controller.remoteSimulation)
+        self.assertFalse(self.controller.canSwitchMotion)
+        stand = root.findChild(QObject, "simulationStandButton")
+        QMetaObject.invokeMethod(stand, "clicked")
+        self.wait_for(lambda: not self.controller.busy and self.controller.posture == "Stand", timeout=5)
+        QMetaObject.invokeMethod(root.findChild(QObject, "simulationSitButton"), "clicked")
+        self.wait_for(lambda: not self.controller.busy and self.controller.posture == "Sit", timeout=5)
+        self.assertEqual(self.controller.motion["sit_amount"], 1)
+        stop_server()
+        self.wait_for(lambda: not self.controller.connected and not self.controller.telemetry)
+        self.assertFalse(self.controller.busy)
+        self.assertTrue(self.controller.configureSimulation(False, "", 0))
+        self.controller.connectSimulation()
+        self.wait_for(lambda: self.controller.connected and bool(self.controller.telemetry))
+        self.assertTrue(self.controller.motionSupported)
 
     def test_posture_completion_error_and_busy_recovery(self):
         self.controller.connectSimulation()

@@ -9,7 +9,8 @@ from concurrent.futures import CancelledError
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from .simulation import SimulationRobotService
-from .models import MotionState
+from .remote_simulation import RemoteSimulationService
+from .models import MotionState, OperatingMode, PostureOutcome, RobotStatus
 
 
 class SimulationController(QObject):
@@ -31,6 +32,7 @@ class SimulationController(QObject):
                 or not math.isfinite(telemetry_interval) or telemetry_interval <= 0):
             raise ValueError("telemetry_interval must be positive and finite")
         self._service = service if service is not None else SimulationRobotService()
+        self._remote = isinstance(self._service, RemoteSimulationService)
         self._interval = telemetry_interval
         self._connected = False
         self._busy = False
@@ -69,6 +71,30 @@ class SimulationController(QObject):
             self._loop.close()
 
     @Property(bool, notify=changed)
+    def remoteSimulation(self):
+        return self._remote
+
+    @Property(bool, notify=changed)
+    def motionSupported(self):
+        return not self._remote
+
+    @Slot(bool, str, int, result=bool)
+    def configureSimulation(self, remote, host, port):
+        if self._connected or self._pending or self._closed:
+            return False
+        try:
+            if remote:
+                self._service = RemoteSimulationService(host, port)
+            elif self._remote:
+                self._service = SimulationRobotService()
+            self._remote = remote
+            self.changed.emit()
+            return True
+        except ValueError as exc:
+            self.logMessage.emit(str(exc))
+            return False
+
+    @Property(bool, notify=changed)
     def connected(self):
         return self._connected
 
@@ -83,7 +109,7 @@ class SimulationController(QObject):
     @Property(bool, notify=changed)
     def canSwitchMotion(self):
         """Allow motion selection when idle or during an automatic motion switch."""
-        return (self._connected and not self._closed and not self._pending
+        return (self.motionSupported and self._connected and not self._closed and not self._pending
                 and not self._stopping
                 and (not self.busy or self._motion_switching or self._motion["action"] in
                      ("forward", "backward", "turn_left", "turn_right")))
@@ -149,6 +175,8 @@ class SimulationController(QObject):
             except CancelledError:
                 pass
             except Exception as exc:
+                if self._remote:
+                    asyncio.run_coroutine_threadsafe(self._remote_failure(generation, exc), self._loop)
                 self._event.emit(generation, {"pending": False, "commandDone": True,
                                              "log": f"Simulation error: {exc}"})
         future.add_done_callback(done)
@@ -171,22 +199,46 @@ class SimulationController(QObject):
         self._state_monitor = asyncio.create_task(self._watch_state(generation))
 
     async def _watch_state(self, generation):
-        while True:
-            self._event.emit(generation, {
-                "motion": asdict(await self._service.get_motion_state()),
-                "status": await self._service.get_status(),
-            })
-            await asyncio.sleep(1 / 30)
+        try:
+            while generation == self._generation:
+                motion = await self._service.get_motion_state()
+                status = await self._service.get_status()
+                self._event.emit(generation, {"motion": asdict(motion), "status": status})
+                if not status.connected:
+                    return
+                await asyncio.sleep(.5 if self._remote else 1 / 30)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if self._remote:
+                await self._remote_failure(generation, exc)
+            else:
+                raise
+
+    async def _remote_failure(self, generation, exc):
+        if generation != self._generation:
+            return
+        await self._service.disconnect()
+        self._event.emit(generation, {
+            "status": RobotStatus(OperatingMode.SIMULATION, False, False),
+            "motion": asdict(MotionState()), "telemetry": {}, "pending": False,
+            "commandDone": True, "stopping": False,
+            "log": f"Remote simulation disconnected: {exc}",
+        })
 
     async def _watch(self, generation):
         stream = None
         try:
             stream = self._service.stream_telemetry(self._interval)
             async for snapshot in stream:
+                if generation != self._generation:
+                    break
                 self._event.emit(generation, {"telemetry": snapshot.to_dict()})
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if self._remote:
+                await self._remote_failure(generation, exc)
             self._event.emit(generation, {"telemetry": {}, "log": f"Telemetry stopped: {exc}"})
         finally:
             if stream is not None:
@@ -235,7 +287,10 @@ class SimulationController(QObject):
     async def _posture_request(self, name, generation):
         try:
             result = await self._service.set_posture(name, 0.5)
-            self._event.emit(generation, {"log": f"Simulation: {result.observed_posture} completed and verified (simulated state only)."})
+            message = (f"{result.observed_posture} completed and verified (simulated state only)."
+                       if result.outcome is PostureOutcome.COMPLETED_VERIFIED else
+                       f"{name}: {result.outcome.value}. {result.message or ''}")
+            self._event.emit(generation, {"log": "Simulation: " + message})
         except asyncio.CancelledError:
             self._event.emit(generation, {"log": "Simulated posture request cancelled."})
             raise
@@ -299,7 +354,7 @@ class SimulationController(QObject):
 
     @Slot()
     def stopMotion(self):
-        if self._closed or self._pending or not self._connected or self._stopping:
+        if not self.motionSupported or self._closed or self._pending or not self._connected or self._stopping:
             return
         self._motion_request_id += 1
         self._motion_switching = False

@@ -5,6 +5,7 @@ import json
 import unittest
 
 from robot_services.simulation_rpc import simulation_server, probe
+from robot_services.remote_simulation import RemoteSimulationService
 
 
 class SimulationRpcTests(unittest.IsolatedAsyncioTestCase):
@@ -37,6 +38,32 @@ class SimulationRpcTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["observed_posture"], "Stand")
         self.assertEqual(result["outcome"], "completed_verified")
         self.assertIn("simulated", result["message"])
+
+    async def test_remote_client_status_telemetry_posture_and_reconnect(self):
+        service = RemoteSimulationService("127.0.0.1", self.port, timeout=3)
+        self.addAsyncCleanup(service.disconnect)
+        self.assertTrue((await service.connect()).connected)
+        await asyncio.gather(service.read_telemetry(), service.get_status())
+        result = await service.set_posture("Sit", 1)
+        self.assertEqual(result.observed_posture, "Sit")
+        self.assertEqual((await service.get_motion_state()).sit_amount, 1)
+        self.assertEqual((await service.read_telemetry()).mode.value, "simulation")
+        await service.disconnect()
+        self.assertFalse((await service.get_status()).connected)
+        await service.connect()
+        self.assertIsNone((await service.get_status()).posture)
+
+    async def test_remote_client_disconnect_interrupts_command_and_can_reconnect(self):
+        service = RemoteSimulationService("127.0.0.1", self.port, timeout=3)
+        self.addAsyncCleanup(service.disconnect)
+        await service.connect()
+        task = asyncio.create_task(service.set_posture("Stand", .5))
+        await asyncio.sleep(.01)
+        await service.disconnect()
+        with self.assertRaises(Exception):
+            await asyncio.wait_for(task, 1)
+        await service.connect()
+        self.assertTrue((await service.get_status()).connected)
 
     async def test_sessions_are_isolated_and_telemetry_is_versioned(self):
         first, second = await self.open_client(), await self.open_client()

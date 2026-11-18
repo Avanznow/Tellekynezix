@@ -126,7 +126,7 @@ Rectangle {
                     objectName: "simulationStopButton"
                     text: naoSimulation.stopping ? "Stopping..." : "Stop"
                     Layout.fillWidth: true
-                    enabled: naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
+                    enabled: naoSimulation.motionSupported && naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
                     onClicked: naoSimulation.stopMotion()
                 }
                 Label { text: "Console"; color: "white" }
@@ -313,6 +313,41 @@ Rectangle {
                 anchors.margins: 14
                 spacing: 12
                 Label { text: "Simulation session"; color: "white"; font.pixelSize: 18 }
+                ComboBox {
+                    id: simulationBackend
+                    objectName: "simulationBackendSelector"
+                    Layout.fillWidth: true
+                    model: ["Local simulation", "Remote simulation"]
+                    enabled: !naoSimulation.connected && !naoSimulation.pending
+                }
+                RowLayout {
+                    visible: simulationBackend.currentIndex === 1
+                    Layout.fillWidth: true
+                    TextField {
+                        id: simulationHost
+                        objectName: "simulationRemoteHost"
+                        Layout.fillWidth: true
+                        text: "127.0.0.1"
+                        placeholderText: "Simulation host"
+                        enabled: simulationBackend.enabled
+                    }
+                    TextField {
+                        id: simulationPort
+                        objectName: "simulationRemotePort"
+                        Layout.preferredWidth: 75
+                        text: "8765"
+                        placeholderText: "Port"
+                        validator: IntValidator { bottom: 1; top: 65535 }
+                        enabled: simulationBackend.enabled
+                    }
+                }
+                Label {
+                    visible: simulationBackend.currentIndex === 1
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: "white"
+                    text: "Remote preview supports Stand, Sit and telemetry."
+                }
                 Label {
                     objectName: "simulationStatus"
                     text: "Status: " + naoSimulation.statusText
@@ -326,7 +361,12 @@ Rectangle {
                     enabled: !naoSimulation.pending
                     onClicked: {
                         if (naoSimulation.connected) naoSimulation.disconnectSimulation()
-                        else naoSimulation.connectSimulation()
+                        else if (simulationBackend.currentIndex === 0 ||
+                                 (simulationHost.text.trim().length > 0 && simulationPort.acceptableInput)) {
+                            if (naoSimulation.configureSimulation(simulationBackend.currentIndex === 1,
+                                                                  simulationHost.text, Number(simulationPort.text)))
+                                naoSimulation.connectSimulation()
+                        }
                     }
                 }
                 TabBar {

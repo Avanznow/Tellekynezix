@@ -51,6 +51,8 @@ async def _dispatch(service, request):
             result = asdict(await service.connect())
         elif method == "get_status":
             result = asdict(await service.get_status())
+        elif method == "get_motion_state":
+            result = asdict(await service.get_motion_state())
         elif method == "read_telemetry":
             result = (await service.read_telemetry()).to_dict()
         elif method == "disconnect":
@@ -72,7 +74,7 @@ async def simulation_server(host="127.0.0.1", port=8765, timeout=10.0):
         task = asyncio.current_task()
         clients.add(task)
         service = SimulationRobotService()
-        used_ids = set()
+        last_id = 0
         try:
             while True:
                 data = await asyncio.wait_for(reader.readline(), timeout)
@@ -82,11 +84,12 @@ async def simulation_server(host="127.0.0.1", port=8765, timeout=10.0):
                 try:
                     request = _decode(data)
                     request_id = request["id"]
-                    if request_id in used_ids:
-                        raise ValueError("Duplicate request id")
-                    if len(used_ids) >= 1024:
-                        raise ValueError("Session request limit reached")
-                    used_ids.add(request_id)
+                    if not request_id.isascii() or not request_id.isdecimal():
+                        raise ValueError("Request ids must be positive decimal integers")
+                    numeric_id = int(request_id)
+                    if numeric_id <= last_id:
+                        raise ValueError("Duplicate or out-of-order request id")
+                    last_id = numeric_id
                     result = await asyncio.wait_for(_dispatch(service, request), timeout)
                     reply = {"version": VERSION, "id": request_id, "ok": True, "result": result}
                 except (ValueError, RobotServiceError, TimeoutError) as exc:
@@ -94,7 +97,7 @@ async def simulation_server(host="127.0.0.1", port=8765, timeout=10.0):
                              "error": {"code": type(exc).__name__, "message": str(exc) or "Operation timed out"}}
                 writer.write(_encode(reply))
                 await asyncio.wait_for(writer.drain(), timeout)
-                if request_id is None or len(used_ids) >= 1024:
+                if request_id is None:
                     break
         except (OSError, TimeoutError, ValueError):
             pass
@@ -114,11 +117,11 @@ async def simulation_server(host="127.0.0.1", port=8765, timeout=10.0):
         yield server
     finally:
         server.close()
-        await server.wait_closed()
         for task in list(clients):
             task.cancel()
         if clients:
             await asyncio.gather(*list(clients), return_exceptions=True)
+        await server.wait_closed()
 
 
 async def probe(host, port=8765, timeout=10.0):
