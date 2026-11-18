@@ -76,7 +76,7 @@ class SimulationController(QObject):
 
     @Property(bool, notify=changed)
     def motionSupported(self):
-        return not self._remote
+        return True
 
     @Slot(bool, str, int, result=bool)
     def configureSimulation(self, remote, host, port):
@@ -206,7 +206,7 @@ class SimulationController(QObject):
                 self._event.emit(generation, {"motion": asdict(motion), "status": status})
                 if not status.connected:
                     return
-                await asyncio.sleep(.5 if self._remote else 1 / 30)
+                await asyncio.sleep(.05 if self._remote else 1 / 30)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

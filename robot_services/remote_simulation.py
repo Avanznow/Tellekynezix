@@ -45,7 +45,12 @@ class RemoteSimulationService(RobotService):
             try:
                 writer.write(_encode({"version": 1, "id": request_id, "method": method, "params": params or {}}))
                 await asyncio.wait_for(writer.drain(), self.timeout)
-                reply = _decode(await asyncio.wait_for(reader.readline(), self.timeout))
+                data = await asyncio.wait_for(reader.readline(), self.timeout)
+                if not data:
+                    if self._writer is writer:
+                        self._drop()
+                    raise RobotConnectionError("Simulation server closed the connection")
+                reply = _decode(data)
                 if self._writer is not writer or reply["id"] != request_id:
                     raise ValueError("Simulation session or response id changed")
                 if type(reply.get("ok")) is not bool:
@@ -129,6 +134,9 @@ class RemoteSimulationService(RobotService):
         if self._writer is None:
             return MotionState()
         result = await self._request("get_motion_state")
+        return self._motion_state(result)
+
+    def _motion_state(self, result):
         try:
             state = MotionState(**result)
             if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
@@ -138,6 +146,21 @@ class RemoteSimulationService(RobotService):
         except (TypeError, ValueError) as exc:
             self._drop()
             raise RobotConnectionError("Invalid remote visual state") from exc
+
+    async def get_motion_capabilities(self):
+        result = await self._request("get_motion_capabilities")
+        commands = result.get("commands")
+        allowed = ("forward", "backward", "turn_left", "turn_right")
+        if not isinstance(commands, list) or any(command not in allowed for command in commands):
+            self._drop()
+            raise RobotConnectionError("Invalid remote motion capabilities")
+        return tuple(commands)
+
+    async def start_motion(self, command, speed=.5):
+        return self._motion_state(await self._request("start_motion", {"command": command, "speed": speed}))
+
+    async def stop_motion(self):
+        return self._motion_state(await self._request("stop_motion"))
 
     async def read_telemetry(self):
         result = await self._request("read_telemetry")

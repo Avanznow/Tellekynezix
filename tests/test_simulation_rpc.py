@@ -3,6 +3,7 @@
 import asyncio
 import json
 import unittest
+from robot_services.errors import RobotConnectionError
 
 from robot_services.simulation_rpc import simulation_server, probe
 from robot_services.remote_simulation import RemoteSimulationService
@@ -64,6 +65,45 @@ class SimulationRpcTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(task, 1)
         await service.connect()
         self.assertTrue((await service.get_status()).connected)
+
+    async def test_remote_motion_travels_turns_and_stop_settles_without_drift(self):
+        service = RemoteSimulationService("127.0.0.1", self.port, timeout=3)
+        self.addAsyncCleanup(service.disconnect)
+        await service.connect()
+        self.assertEqual(await service.get_motion_capabilities(),
+                         ("forward", "backward", "turn_left", "turn_right"))
+        await service.set_posture("Stand", 1)
+        previous = await service.get_motion_state()
+        for command in ("forward", "backward", "turn_left", "turn_right"):
+            await service.start_motion(command)
+            await asyncio.sleep(.12)
+            moving = await service.get_motion_state()
+            self.assertEqual(moving.action, command)
+            if command == "forward":
+                self.assertGreater(moving.z, previous.z)
+            elif command == "backward":
+                self.assertLess(moving.z, previous.z)
+            elif command == "turn_left":
+                self.assertLess(moving.heading, previous.heading)
+            else:
+                self.assertGreater(moving.heading, previous.heading)
+            stopped = await service.stop_motion()
+            self.assertEqual((stopped.action, stopped.gait_weight), ("idle", 0))
+            self.assertEqual((await service.get_status()).posture, "Stand")
+            await asyncio.sleep(.05)
+            after = await service.get_motion_state()
+            self.assertEqual((stopped.x, stopped.z, stopped.heading),
+                             (after.x, after.z, after.heading))
+            previous = after
+
+    async def test_server_shutdown_gives_plain_connection_message(self):
+        async with simulation_server(port=0) as server:
+            service = RemoteSimulationService("127.0.0.1", server.sockets[0].getsockname()[1])
+            self.addAsyncCleanup(service.disconnect)
+            await service.connect()
+        with self.assertRaisesRegex(RobotConnectionError, "Simulation server closed the connection"):
+            await service.get_status()
+        self.assertFalse((await service.get_status()).connected)
 
     async def test_sessions_are_isolated_and_telemetry_is_versioned(self):
         first, second = await self.open_client(), await self.open_client()

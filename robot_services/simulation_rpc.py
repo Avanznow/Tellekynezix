@@ -44,6 +44,10 @@ async def _dispatch(service, request):
         if set(params) != {"name", "speed"}:
             raise ValueError("set_posture requires name and speed")
         result = asdict(await service.set_posture(params["name"], params["speed"]))
+    elif method == "start_motion":
+        if set(params) != {"command", "speed"}:
+            raise ValueError("start_motion requires command and speed")
+        result = asdict(await service.start_motion(params["command"], params["speed"]))
     else:
         if params:
             raise ValueError("This method takes no parameters")
@@ -53,6 +57,10 @@ async def _dispatch(service, request):
             result = asdict(await service.get_status())
         elif method == "get_motion_state":
             result = asdict(await service.get_motion_state())
+        elif method == "get_motion_capabilities":
+            result = {"commands": list(await service.get_motion_capabilities())}
+        elif method == "stop_motion":
+            result = asdict(await service.stop_motion())
         elif method == "read_telemetry":
             result = (await service.read_telemetry()).to_dict()
         elif method == "disconnect":

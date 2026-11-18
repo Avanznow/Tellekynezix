@@ -346,7 +346,7 @@ Rectangle {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     color: "white"
-                    text: "Remote preview supports Stand, Sit and telemetry."
+                    text: "Motion, posture and telemetry from the remote simulation."
                 }
                 Label {
                     objectName: "simulationStatus"

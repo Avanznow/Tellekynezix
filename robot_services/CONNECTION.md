@@ -24,6 +24,9 @@ Duplicate or out-of-order ids return an error. Clients must not automatically re
 | connect | Empty object | RobotStatus |
 | get_status | Empty object | RobotStatus |
 | get_motion_state | Empty object | Simulation MotionState for the viewer |
+| get_motion_capabilities | Empty object | commands array of supported motion names |
+| start_motion | command (forward, backward, turn_left, turn_right), speed (greater than 0, at most 1) | MotionState after acceptance |
+| stop_motion | Empty object | MotionState after motion halts and settles into Stand |
 | set_posture | name (Stand or Sit), speed (greater than 0, at most 1) | PostureResult after simulated completion |
 | read_telemetry | Empty object | Schema version 1 TelemetrySnapshot |
 | disconnect | Empty object | Disconnected RobotStatus |
@@ -38,7 +41,9 @@ client tasks and disconnects their services.
 The server currently provides simulation only. It has no authentication or
 encryption and is intended for local development through a loopback-bound
 VirtualBox forwarding rule. Hardware control requires a separate design.
-Remote walking, turning, and Stop commands are pending a later protocol increment.
+The server continues simulation movement until Stop, disconnect, or session
+timeout. Direction switching uses Stop and settling before the next direction.
+The GUI prepares Stand automatically when needed.
 
 ## GUI use
 
@@ -47,13 +52,16 @@ includes `get_motion_state`. Start `GUI5.py` in the Windows environment.
 In Manual NAO Control, select Remote simulation, enter the forwarded endpoint
 (normally 127.0.0.1 and 8765), and click Connect simulation.
 
-Stand Up and Sit Down now send requests to the Pop!_OS service. The GUI shows
-the returned posture, telemetry, and visual pose. Remote preview refreshes
-state every half second and shows completed posture poses. Local simulation
-provides the existing smooth animations and motion controls.
+Stand Up, Sit Down, walking, turning, and Stop send requests to the Pop!_OS
+service. The GUI shows the returned posture, telemetry, and visual pose.
+Remote preview requests visual state approximately every 50 milliseconds,
+plus network and command processing time. Posture commands and Stop settling
+await completion on the shared request channel, so preview updates pause
+during those operations.
 
 Disconnect clears the session readings. If the server stops or a network request
 fails, the remote client closes TCP and the GUI returns to Disconnected.
+An orderly server shutdown reports "Simulation server closed the connection".
 After the server is available again, click Connect simulation to create a fresh
 session. Backend and endpoint selection are available while disconnected.
 
