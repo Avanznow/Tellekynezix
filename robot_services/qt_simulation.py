@@ -11,6 +11,8 @@ from PySide6.QtCore import QObject, Property, Signal, Slot
 from .simulation import SimulationRobotService
 from .remote_simulation import RemoteSimulationService
 from .models import MotionState, OperatingMode, PostureOutcome, RobotStatus
+from .qt_voice import VoiceController
+from .voice_commands import resolve_command
 
 
 class SimulationController(QObject):
@@ -54,6 +56,33 @@ class SimulationController(QObject):
         self._thread.start()
         if not self._ready.wait(5):
             raise RuntimeError("Simulation worker failed to start")
+        self._voice = VoiceController(self, self)
+
+    @Property(QObject, constant=True)
+    def voice(self):
+        return self._voice
+
+    @Slot(str, result=bool)
+    def executeVoiceCommand(self, phrase):
+        command = resolve_command(phrase)
+        if command is None or self._closed or self._pending or not self._connected:
+            self.logMessage.emit(f"Voice command rejected: {phrase!r}.")
+            return False
+        kind, value = command
+        if kind == "motion" and self.canSwitchMotion:
+            self.logMessage.emit(f"Voice recognized: {phrase}.")
+            self.requestMotion(value)
+            return True
+        if kind == "posture" and not self.busy:
+            self.logMessage.emit(f"Voice recognized: {phrase}.")
+            self.requestPosture(value)
+            return True
+        if kind == "stop" and self.motionSupported and self.busy and not self._stopping:
+            self.logMessage.emit(f"Voice recognized: {phrase}.")
+            self.stopMotion()
+            return True
+        self.logMessage.emit(f"Voice command unavailable in current state: {phrase!r}.")
+        return False
 
     def _run(self):
         self._loop = asyncio.new_event_loop()
@@ -276,6 +305,7 @@ class SimulationController(QObject):
 
     @Slot(str)
     def requestPosture(self, name):
+        self._voice.cancel()
         if self._closed or self._pending or not self._connected or self.busy:
             return
         self._busy = True
@@ -301,6 +331,7 @@ class SimulationController(QObject):
 
     @Slot(str)
     def requestMotion(self, command):
+        self._voice.cancel()
         if not self.canSwitchMotion:
             return
         self._motion_request_id += 1
@@ -354,6 +385,7 @@ class SimulationController(QObject):
 
     @Slot()
     def stopMotion(self):
+        self._voice.cancel()
         if not self.motionSupported or self._closed or self._pending or not self._connected or self._stopping:
             return
         self._motion_request_id += 1
@@ -382,6 +414,7 @@ class SimulationController(QObject):
         """Cancel active work and stop/join the loop; repeated calls are safe."""
         if self._closed:
             return
+        self._voice.cancel()
         self._closed = True
         self._motion_request_id += 1
         try:

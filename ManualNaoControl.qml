@@ -28,6 +28,9 @@ Rectangle {
     property alias followRobot: followRobotCheck.checked
     property real cameraAnchorX: 0
     property real cameraAnchorZ: 0
+    onVisibleChanged: {
+        if (!visible) naoSimulation.voice.cancel()
+    }
 
     Connections {
         target: naoSimulation
@@ -128,6 +131,33 @@ Rectangle {
                     Layout.fillWidth: true
                     enabled: naoSimulation.motionSupported && naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
                     onClicked: naoSimulation.stopMotion()
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        objectName: "simulationVoiceSpeak"
+                        text: "Speak command"
+                        Layout.fillWidth: true
+                        enabled: naoSimulation.connected && !naoSimulation.pending && !naoSimulation.voice.listening
+                        onClicked: naoSimulation.voice.start()
+                    }
+                    Button {
+                        objectName: "simulationVoiceCancel"
+                        text: "Cancel listening"
+                        enabled: naoSimulation.voice.listening
+                        onClicked: naoSimulation.voice.cancel()
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: "white"
+                    text: naoSimulation.voice.status +
+                          (naoSimulation.voice.heard ? "\nHeard: " + naoSimulation.voice.heard +
+                           " (confidence " + naoSimulation.voice.confidence + ")" : "")
+                    ToolTip.visible: voiceHelp.containsMouse
+                    ToolTip.text: "walk forward, walk backward, turn left, turn right, stand up, sit down, stop"
+                    MouseArea { id: voiceHelp; anchors.fill: parent; hoverEnabled: true }
                 }
                 Label { text: "Console"; color: "white" }
                 ScrollView {
