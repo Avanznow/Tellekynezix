@@ -13,6 +13,7 @@ from .remote_simulation import RemoteSimulationService
 from .models import MotionState, OperatingMode, PostureOutcome, RobotStatus
 from .qt_voice import VoiceController
 from .voice_commands import resolve_command
+from .qt_camera_preview import CameraPreviewController
 
 
 class SimulationController(QObject):
@@ -57,6 +58,14 @@ class SimulationController(QObject):
         if not self._ready.wait(5):
             raise RuntimeError("Simulation worker failed to start")
         self._voice = VoiceController(self, self)
+        self._camera_preview = None
+
+    @Property(QObject, constant=True)
+    def cameraPreview(self):
+        if self._camera_preview is None:
+            self._camera_preview = CameraPreviewController(self)
+            self._camera_preview.logMessage.connect(self.logMessage)
+        return self._camera_preview
 
     @Property(QObject, constant=True)
     def voice(self):
@@ -415,6 +424,8 @@ class SimulationController(QObject):
         if self._closed:
             return
         self._voice.cancel()
+        if self._camera_preview is not None:
+            self._camera_preview.stop()
         self._closed = True
         self._motion_request_id += 1
         try:

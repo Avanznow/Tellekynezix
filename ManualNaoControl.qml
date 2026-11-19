@@ -411,12 +411,9 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Item {
-                        NaoCamera.DroneCameraView {
+                        NaoCamera.CameraPreview {
                             objectName: "naoCameraPanel"
-                            cameraController: null
-                            placeholderText: "No camera connected"
-                            availabilityText: "Live camera integration planned"
-                            onLogToParent: function(message) { root.appendLog(message) }
+                            cameraController: naoSimulation.cameraPreview
                         }
                     }
                     ScrollView {

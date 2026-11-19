@@ -159,8 +159,10 @@ class QtSimulationTests(unittest.TestCase):
         self.assertEqual(root.findChild(QObject, "naoHardwarePort").property("text"), "9559")
         camera = root.findChild(QObject, "naoCameraPanel")
         self.assertIsNotNone(camera)
-        self.assertIsNone(camera.property("cameraController"))
-        for name in ("naoCameraStartButton", "naoCameraStopButton", "naoCameraCaptureButton"):
+        self.assertEqual(camera.property("cameraController"), self.controller.cameraPreview)
+        self.assertFalse(self.controller.cameraPreview.active)
+        self.assertTrue(camera.findChild(QObject, "naoCameraStartButton").property("enabled"))
+        for name in ("naoCameraStopButton", "naoCameraCaptureButton"):
             self.assertFalse(camera.findChild(QObject, name).property("enabled"))
         tabs = root.findChild(QObject, "naoInformationTabs")
         self.assertEqual(tabs.property("currentIndex"), 0)
@@ -199,7 +201,7 @@ class QtSimulationTests(unittest.TestCase):
         QMetaObject.invokeMethod(connect, "clicked")
         self.wait_for(lambda: stand.property("enabled") and bool(self.controller.telemetry))
         self.assertFalse(hardware.property("enabled"))
-        self.assertFalse(camera.findChild(QObject, "naoCameraStartButton").property("enabled"))
+        self.assertTrue(camera.findChild(QObject, "naoCameraStartButton").property("enabled"))
         initial_position = model.property("position")
         self.wait_for(lambda: forward.property("enabled"))
         QMetaObject.invokeMethod(forward, "clicked")
