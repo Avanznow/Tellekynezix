@@ -3,17 +3,17 @@
 What it fixes compared with the per-notebook loaders:
 
 1. Channels and sampling rate. Only named OpenBCI GUI recordings are read, through
-   signal_quality.acquisition.read_openbci, which selects the EEG channels by header name and
+   eeg_quality.read_openbci (moved from signal_quality), which selects the EEG channels by header name and
    reports the real sampling rate. The old loaders took 16 columns after the sample index, so
    8-channel recordings (G01/person01-07, 250 Hz) contributed accelerometer and digital-pin
    columns as "EEG", and were analysed as if sampled at 125 Hz. Headerless BrainFlow exports
    (whose channels 9-16 are all zero and whose rate is not recorded) are skipped. One board
    configuration is used per run (LoadConfig.board).
-2. Labels. Action folders are normalised with signal_quality.salvage.folder_label, so folders
+2. Labels. Action folders are normalised with eeg_quality.folder_label, so folders
    such as "TakOff", "Take off", "OpenBCISession_take_off_2", "Foreward" and "backard" are
    labelled instead of dropped.
 3. Signal quality. Each recording is assessed in non-overlapping 2 s blocks with the deployed
-   signal_quality policy, on the channels kept. The start-up block and every failing block are
+   quality policy (eeg_quality.py, quality_policy.json), on the channels kept. The start-up block and every failing block are
    dropped; consecutive passing blocks with continuous packet counters form a segment.
 4. Filtering. Each segment is band-passed (zero-phase Butterworth) and notched at the mains
    frequency. Filtering per segment keeps artifacts in rejected blocks from ringing into kept data.
@@ -41,10 +41,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from signal_quality.acquisition import read_openbci  # noqa: E402
-from signal_quality.assessment import QualityAssessor  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
-from signal_quality.salvage import folder_label  # noqa: E402
+GNB_DIR = Path(__file__).resolve().parent
+if str(GNB_DIR) not in sys.path:
+    sys.path.insert(0, str(GNB_DIR))
+from eeg_quality import QualityAssessor, folder_label, load_default_config, read_openbci  # noqa: E402
 
 BOARDS = {"16ch_125hz": (16, 125.0), "8ch_250hz": (8, 250.0),
           "synthetic_16ch_250hz": (16, 250.0)}  # BrainFlow synthetic board: dry-run sessions only
@@ -54,6 +54,7 @@ SESSION_BOARDS = {"cyton_daisy": "16ch_125hz", "cyton": "8ch_250hz", "synthetic"
 
 @dataclass(frozen=True)
 class LoadConfig:
+    """Board, channel set and filter settings for one run; pass the same instance to every loader call."""
     # One board configuration per run. G01/person01-07 used the 8-channel board, everyone else the
     # 16-channel board; mixing them would mix montages and sampling rates.
     board: str = "16ch_125hz"
@@ -71,18 +72,22 @@ class LoadConfig:
 
     @property
     def sfreq(self):
+        """Sampling rate of the selected board in Hz."""
         return BOARDS[self.board][1]
 
     @property
     def channels(self):
+        """OpenBCI header names of the EEG channels kept, in board order, with exclude_channels removed."""
         n = BOARDS[self.board][0]
         return [f"EXG Channel {i}" for i in range(n) if f"EXG Channel {i}" not in self.exclude_channels]
 
     def as_dict(self):
+        """Plain dict with sfreq and the channel list added; the notebooks save it alongside their results."""
         return asdict(self) | {"sfreq": self.sfreq, "channels": self.channels}
 
 
 def _participant(path):
+    """Participant key such as "G01/person03" from the group and person folders on the path."""
     parts = Path(path).parts
     group = next((p for p in parts if p.upper().startswith("G") and p[1:].isdigit()), "G??")
     person = next((p for p in parts if p.lower().startswith("person")), "person??")
@@ -90,12 +95,14 @@ def _participant(path):
 
 
 def _design_filters(config):
+    """Band-pass (Butterworth, second-order sections) and Q=30 notch for config.sfreq; None where disabled."""
     fs = config.sfreq
     sos = None
     if config.bandpass_hz is not None:
         lo, hi = config.bandpass_hz
         sos = butter(config.filter_order, [lo, hi], btype="bandpass", fs=fs, output="sos")
     notch = None
+    # a notch at or above Nyquist cannot be designed; 60 Hz is just under the 62.5 Hz Nyquist of the 125 Hz board
     if config.notch_hz is not None and config.notch_hz < fs / 2:
         notch = iirnotch(config.notch_hz, Q=30.0, fs=fs)
     return sos, notch
@@ -105,6 +112,7 @@ def _filter(x, config):
     """Zero-phase band-pass and notch along the time axis of x (samples, channels)."""
     sos, notch = _design_filters(config)
     y = x.astype(np.float64)
+    # raw OpenBCI uV carry a large electrode offset; remove it first so filtfilt does not ring at the segment edges
     y = y - y.mean(axis=0, keepdims=True)
     if sos is not None:
         y = sosfiltfilt(sos, y, axis=0)
@@ -115,6 +123,7 @@ def _filter(x, config):
 
 def load_recording(path, config=LoadConfig()):
     """One recording -> dict with kept, filtered segments (samples, channels); raises if unsupported."""
+    # np.loadtxt warns about a file that has a header but no samples; read_openbci raises for that case anyway
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         cap = read_openbci(path)
@@ -123,6 +132,7 @@ def load_recording(path, config=LoadConfig()):
         raise ValueError(f"recording is {len(cap['channels'])} ch at {cap['sfreq']} Hz, not {config.board}")
     keep = [cap["channels"].index(c) for c in config.channels]
     raw = cap["raw"][keep]                                   # (channels, samples), raw uV
+    # 2 s blocks (250 samples at 125 Hz, 500 at 250 Hz); the trailing partial block is never assessed
     block = int(round(2.0 * fs))
     n_blocks = raw.shape[1] // block
     assessor = QualityAssessor(load_default_config())
@@ -149,8 +159,10 @@ def load_recording(path, config=LoadConfig()):
     for b in range(n_blocks):
         if usable[b] and run:
             a = b * block
+            # the packet counter is one byte and wraps at 256; it advances by 2 per row on Cyton+Daisy, 1 on Cyton
             step = (cap["counters"][a] - cap["counters"][a - 1]) % 256
             gap = cap["timestamps"][a] - cap["timestamps"][a - 1]
+            # a negative gap means the arrival clock went backwards, which is as suspect as a long stall
             if step != cap["counter_step"] or not 0 <= gap <= max_gap:
                 segments.append(run)
                 run = []
@@ -161,6 +173,7 @@ def load_recording(path, config=LoadConfig()):
             run = []
     if run:
         segments.append(run)
+    # each run is filtered as one contiguous stretch; .T gives _filter the (samples, channels) layout it expects
     data = [_filter(raw[:, r[0] * block:(r[-1] + 1) * block].T, config) for r in segments]
     return dict(path=str(path), participant=_participant(path), label=folder_label(Path(path).parent.name),
                 sfreq=fs, channels=list(config.channels), segments=data,
@@ -171,6 +184,7 @@ def _infer_counter_step(counters):
     """BrainFlow package-counter step (1 or 2) from the recording itself."""
     steps, counts = np.unique(np.mod(np.diff(counters), 256), return_counts=True)
     step = int(steps[np.argmax(counts)])
+    # the modal step survives occasional dropped packets; below 90% regular the counter row is not trustworthy
     if step not in (1, 2) or counts.max() < 0.9 * counts.sum():
         raise ValueError("Package counter does not advance regularly; continuity cannot be checked")
     return step
@@ -185,6 +199,7 @@ def load_session(directory, config=LoadConfig()):
     """
     directory = Path(directory)
     session = json.loads((directory / "session.json").read_text())
+    # record_session.py lists markers it could not find in the board stream under "problems"; refuse the whole session
     if session.get("problems"):
         raise ValueError(f"marker check failed during recording: {session['problems']}")
     board = SESSION_BOARDS.get(session.get("board"))
@@ -194,6 +209,7 @@ def load_session(directory, config=LoadConfig()):
     with (directory / "events.csv").open() as stream:
         events = list(csv.DictReader(stream))
     fs = float(session["sampling_rate"])
+    # brainflow_raw.npy holds every board row; session.json says which rows are EEG, packet counter and timestamp
     channels = [f"EXG Channel {i}" for i in range(len(session["eeg_rows"]))]
     keep = [channels.index(c) for c in config.channels]
     raw = data[session["eeg_rows"]][keep]
@@ -203,6 +219,7 @@ def load_session(directory, config=LoadConfig()):
     block = int(round(2.0 * fs))
 
     def usable(a):
+        # a is a start sample; the context block before an early cue can begin before the recording does
         if a < 0 or a + block > raw.shape[1]:
             return False, ["outside_recording"]
         if not config.quality_filter:
@@ -217,18 +234,22 @@ def load_session(directory, config=LoadConfig()):
         trials.setdefault(e["trial_id"], {})[e["kind"]] = dict(e, sample=int(e["sample"]))
     items = []
     for trial_id, ev in trials.items():
+        # an aborted or malformed trial lacks a marker or has them out of order; skip it rather than guess
         if set(ev) != {"baseline", "cue", "end"} or not ev["baseline"]["sample"] < ev["cue"]["sample"] < ev["end"]["sample"]:
             continue
         cue, end, label = ev["cue"]["sample"], ev["end"]["sample"], ev["cue"]["label"]
+        # one context block before the cue, then whole blocks up to the end marker; the remainder is dropped
         n_task = (end - cue) // block
         starts = [cue - block] + [cue + k * block for k in range(n_task)]
         flags = [usable(a) for a in starts]
         # runs of passing blocks; keep the part of each run from the cue onwards
         segments, run = [], []
+        # the trailing (None, False) pair flushes the last run without a second copy of the loop body
         for a, (ok, _) in zip(starts + [None], flags + [(False, [])]):
             if ok:
                 run.append(a)
                 continue
+            # a run that ends before the cue is context only; otherwise filter it whole and trim the pre-cue samples
             if run and run[-1] >= cue:
                 x = _filter(raw[:, run[0]:run[-1] + block].T, config)
                 segments.append(x[max(0, cue - run[0]):])
@@ -236,6 +257,7 @@ def load_session(directory, config=LoadConfig()):
         items.append(dict(path=f"{directory}#{trial_id}", participant=session["participant_id"],
                           label=label if label in LABELS else None,
                           sfreq=fs, channels=list(config.channels), segments=segments,
+                          # flags[1:] skips the pre-cue context block, so these counts cover the task period only
                           n_blocks=int(n_task), n_blocks_kept=int(sum(ok for ok, _ in flags[1:])),
                           block_reasons=[r for _, r in flags[1:]], session=str(directory), trial_id=trial_id))
     return items
@@ -244,6 +266,7 @@ def load_session(directory, config=LoadConfig()):
 def load_item(path, config=LoadConfig()):
     """A recording file, or one session trial given as "<session folder>#<trial id>"."""
     path = str(path)
+    # "#" can occur in an ordinary filename, so it only marks a trial when a session folder precedes it
     if "#" in path and (Path(path.split("#", 1)[0]) / "session.json").exists():
         directory, trial_id = path.split("#", 1)
         match = [i for i in load_session(directory, config) if i["trial_id"] == trial_id]
@@ -254,6 +277,7 @@ def load_item(path, config=LoadConfig()):
 
 
 def _try_load(path, config):
+    """load_recording, but a failure comes back as {path, error} so one bad file cannot abort the parallel load."""
     try:
         return load_recording(path, config)
     except (ValueError, OSError, StopIteration) as error:
@@ -261,22 +285,36 @@ def _try_load(path, config):
 
 
 def _is_named_openbci(path):
+    """True for files that start with the OpenBCI GUI header line; headerless BrainFlow exports do not."""
     with open(path, errors="ignore") as stream:
+        # 21 characters is the length of the header literal; reading only those keeps the rglob scan cheap
         return stream.read(21) == "%OpenBCI Raw EXG Data"
+
+
+def _path_order(path):
+    """Sort key giving the same recording order on every platform: the path's parts compared case-sensitively.
+
+    sorted(Path objects) is case-insensitive on Windows, and Data_clean mixes folder names such as "Right" and
+    "right". The order of the recordings is the row order of every feature cache and of the split CSVs that index
+    into them, so it must not depend on the operating system.
+    """
+    return Path(path).as_posix().split("/")
 
 
 def load_recordings(root, config=LoadConfig(), n_jobs=-1, verbose=True):
     """Load every supported recording under root. Returns (recordings, skipped)."""
-    paths = sorted(p for p in Path(root).rglob("*.txt") if _is_named_openbci(p))
+    paths = sorted((p for p in Path(root).rglob("*.txt") if _is_named_openbci(p)), key=_path_order)
     results = Parallel(n_jobs=n_jobs)(delayed(_try_load)(p, config) for p in paths)
     # Cued sessions recorded with prediction_eegnet/record_session.py: one item per trial
-    session_dirs = sorted(p.parent for p in Path(root).rglob("session.json")
-                          if (p.parent / "brainflow_raw.npy").exists() and (p.parent / "events.csv").exists())
+    session_dirs = sorted((p.parent for p in Path(root).rglob("session.json")
+                           if (p.parent / "brainflow_raw.npy").exists() and (p.parent / "events.csv").exists()),
+                          key=_path_order)
     for d in session_dirs:
         try:
             results.extend(load_session(d, config))
         except (ValueError, OSError, KeyError) as error:
             results.append(dict(path=str(d), error=str(error)))
+    # a readable recording whose folder is not one of LABELS still counts as skipped
     recordings = [r for r in results if "error" not in r and r["label"] is not None]
     skipped = [r for r in results if "error" in r or r.get("label") is None]
     if verbose:
@@ -317,6 +355,7 @@ def recordings_to_frame(recordings):
     if not frames:
         raise ValueError("No usable EEG after loading and quality filtering.")
     out = pd.concat(frames, ignore_index=True)
+    # one row per sample makes the metadata columns long; category and int32 keep them small
     for col in ("src_filename", "participant_id", "label_txt"):
         out[col] = out[col].astype("category")
     out["segment_id"] = out["segment_id"].astype(np.int32)

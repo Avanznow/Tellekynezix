@@ -7,10 +7,10 @@ n_qubits: 6
 n_layers: 4
 seed: 0
 split_csv: split_seed0.csv
-output_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results
+output_dir: C:\Starred Paper\avatar\Tellekynezix - windows\prediction-quantum\results
 features:
-  cache_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/.claude/worktrees/nifty-wilson-984a1f/prediction-quantum/results/cache
-  data_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/Data_clean
+  cache_dir: C:\Starred Paper\avatar\Tellekynezix - windows\prediction-quantum\results\cache
+  data_dir: C:\Starred Paper\avatar\Tellekynezix - windows\prediction-quantum\..\Data_clean
   cache_key: 4df6a3d7e7044283
   spec:
     board: 16ch_125hz
@@ -52,7 +52,7 @@ features:
     - takeoff
 torch_threads: 2
 versions:
-  python: 3.12.3
+  python: 3.12.10
   torch: 2.14.1+cpu
   pennylane: 0.45.1
   numpy: 2.5.4

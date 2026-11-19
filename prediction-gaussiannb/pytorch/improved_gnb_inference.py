@@ -19,7 +19,7 @@ ParticipantScaler.add_participant. The statistics are stored under CALIBRATION_D
 AVATAR_GNB_CALIBRATION_DIR overrides the location) and registered again when the chain is loaded. The training
 artifacts stay untouched. A participant without statistics is standardised with the global training statistics.
 
-Nothing here imports BrainFlow or Qt: the GUI passes the capture dict that signal_quality.acquisition produces and
+Nothing here imports BrainFlow or Qt: the GUI passes the capture dict that eeg_quality.brainflow_capture produces and
 the quality gate it already uses, and this module only transforms the accepted samples.
 """
 import argparse
@@ -45,9 +45,7 @@ for _p in (MODEL_DIR, GNB_DIR, REPO_ROOT):
 from eeg_data import LoadConfig, _filter  # noqa: E402  (the loader's filtering, applied unchanged)
 from gaussiannb_model import GaussianNB as TorchGaussianNB  # noqa: E402
 from improved_gnb_features import FEATURE_VERSION, ParticipantScaler, extract_features, feature_names  # noqa: E402
-from signal_quality import QualityAssessor, QualityGatedPredictor  # noqa: E402
-from signal_quality.acquisition import read_openbci  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
+from eeg_quality import QualityAssessor, QualityGatedPredictor, load_default_config, read_openbci  # noqa: E402
 
 WINDOW_SIZE = 128          # samples per window (1.024 s at 125 Hz), as in the notebook
 WINDOW_STRIDE = 64         # max(16, WINDOW_SIZE // 2) in the notebook
@@ -85,6 +83,7 @@ def window_starts(n_rows, size=WINDOW_SIZE, stride=WINDOW_STRIDE, tail=True):
     rule (starts 0, stride, 2*stride, ... only; nothing when the segment is shorter than one window)."""
     if not tail:
         return np.arange(0, max(0, n_rows - size + 1), stride)
+    # max(1, ...) keeps the single start 0 for a segment shorter than one window; cut_windows then uses all of it
     starts = list(range(0, max(1, n_rows - size + 1), stride))
     if not starts or starts[-1] != max(0, n_rows - size):
         starts.append(max(0, n_rows - size))
@@ -100,6 +99,8 @@ def cut_windows(segment, size=WINDOW_SIZE, stride=WINDOW_STRIDE, tail=True):
     if not np.isfinite(segment).all():
         raise ValueError("non-finite samples in the filtered segment")
     win_len = min(size, n_rows)
+    # a short segment (tail rule) becomes one window of its own length; sliding_window_view puts the window axis
+    # last, so indexing the starts gives (n, channels, win_len), the layout extract_features expects
     return sliding_window_view(segment, win_len, axis=0)[window_starts(n_rows, size, stride, tail)]
 
 
@@ -108,23 +109,27 @@ def context_log_posteriors(logp, k=CONTEXT_WINDOWS):
     logp = np.asarray(logp, np.float64)
     cs = np.cumsum(logp, axis=0)
     ctx = cs.copy()
+    # rows 0..k-1 keep the running sum (at most k windows so far); from row k on, subtract the part that left
     ctx[k:] = cs[k:] - cs[:-k]
     return ctx
 
 
 def predict_with_thresholds(probabilities, thresholds):
     """The notebook's decision rule: argmax of probability / per-class threshold (row-wise)."""
+    # clipping at 1e-6 keeps the division finite should a class threshold ever come out as 0
     safe = np.clip(np.asarray(thresholds, np.float64), 1e-6, None)
     return np.argmax(np.asarray(probabilities, np.float64) / safe[np.newaxis, :], axis=1)
 
 
 def _log_softmax(x):
+    """Log-softmax over the last axis; the row maximum is subtracted first so large log-posteriors cannot overflow."""
     x = np.asarray(x, np.float64)
     m = x.max(axis=-1, keepdims=True)
     return x - m - np.log(np.exp(x - m).sum(axis=-1, keepdims=True))
 
 
 def _safe_name(participant):
+    """Participant id as a file name: anything outside [A-Za-z0-9._-] becomes '_' (ids look like group/person)."""
     return re.sub(r"[^A-Za-z0-9._-]+", "_", str(participant)).strip("_") or "participant"
 
 
@@ -135,6 +140,7 @@ class _LinearProjection:
         self.matrix = np.ascontiguousarray(matrix, dtype=np.float64)
 
     def transform(self, Z):
+        """Standardised features (n, features) -> projected scores (n, k)."""
         return np.asarray(Z, np.float64) @ self.matrix
 
 
@@ -151,6 +157,8 @@ class ImprovedGaussianNBChain:
     """
 
     def __init__(self, model_dir=None, calibration_dir=None, device="cpu", backend="torch"):
+        """model_dir and calibration_dir default to the backend's own folders (the module constants above); device is
+        only used by the PyTorch model, the TensorFlow and JAX models ignore it."""
         if backend not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}")
         self.backend = backend
@@ -159,6 +167,7 @@ class ImprovedGaussianNBChain:
         default_calibration = DEFAULT_CALIBRATION_DIR if pickled is None else pickled[2]
         self.calibration_dir = Path(calibration_dir) if calibration_dir is not None else default_calibration
         self.device = torch.device(device)
+        # the PyTorch notebook's geometry; _init_pickled replaces it with what the TensorFlow / JAX pickle stores
         self.window_size, self.window_stride, self.window_tail = WINDOW_SIZE, WINDOW_STRIDE, True
         if pickled is not None:
             self._init_pickled()
@@ -178,6 +187,7 @@ class ImprovedGaussianNBChain:
         if chain.get("kind") != "global" or payload.get("feature_version") != FEATURE_VERSION:
             raise ValueError(f"{file_name} is not the improved global chain of feature version {FEATURE_VERSION}")
         cfg = dict(payload["load_config"])
+        # only the fields LoadConfig takes (as_dict also stored sfreq and channels); list values become the tuples LoadConfig declares
         self.config = LoadConfig(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg.items()
                                     if k in ("board", "exclude_channels", "quality_filter", "bandpass_hz", "notch_hz", "filter_order")})
         self.channels = list(self.config.channels)
@@ -189,6 +199,7 @@ class ImprovedGaussianNBChain:
         self.feature_names = feature_names(self.channels)
         self.projection = f"LDA ({int(np.asarray(chain['projection']).shape[1])} dims, {label} notebook)"
         self.checkpoint_info = {}
+        # no tail window: these notebooks cut starts 0, stride, 2*stride, ... and drop whatever is left at the end
         self.window_size, self.window_stride, self.window_tail = int(payload["window_size"]), int(payload["window_stride"]), False
         self.training_scaler = chain["scaler"]
         if not isinstance(self.training_scaler, ParticipantScaler) or self.training_scaler.n_features_in_ != len(self.feature_names):
@@ -202,6 +213,8 @@ class ImprovedGaussianNBChain:
             raise ValueError(f"{type(self.model).__name__} shape does not match the projection / classes")
 
     def _copy_scaler(self):
+        """Working copy of the training scaler. Calibrations are registered on the copy, so the loaded artifact keeps
+        its training statistics and forget_calibration can restore a training participant from it."""
         self.scaler = ParticipantScaler(min_windows=self.training_scaler.min_windows, eps=self.training_scaler.eps)
         self.scaler.global_mean_ = self.training_scaler.global_mean_.copy()
         self.scaler.global_std_ = self.training_scaler.global_std_.copy()
@@ -209,6 +222,9 @@ class ImprovedGaussianNBChain:
         self.scaler.n_features_in_ = self.training_scaler.n_features_in_
 
     def _init_torch(self):
+        """The PyTorch notebook's checkpoint (LoadConfig, classes, thresholds, feature names, GaussianNB weights) plus
+        the preprocessing Pipeline and ParticipantScaler joblib files; each piece is checked against the others."""
+        # weights_only=False: besides tensors the checkpoint holds the LoadConfig dict, class names and thresholds
         ck = torch.load(self.model_dir / MODEL_FILE, map_location="cpu", weights_only=False)
         cfg = dict(ck["load_config"])
         self.config = LoadConfig(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg.items()
@@ -234,6 +250,7 @@ class ImprovedGaussianNBChain:
         if not isinstance(self.training_scaler, ParticipantScaler) or self.training_scaler.n_features_in_ != len(self.feature_names):
             raise ValueError("participant scaler does not match the feature set")
         self._copy_scaler()
+        # the Pipeline does not state its output size; project one zero row and read it off
         n_proj = int(self.prep.transform(np.zeros((1, len(self.feature_names)))).shape[1])
         if n_proj != int(ck["num_features"]):
             raise ValueError(f"projection gives {n_proj} dims, checkpoint expects {ck['num_features']}")
@@ -245,10 +262,12 @@ class ImprovedGaussianNBChain:
     @property
     def capture_samples(self):
         """Samples needed for a full CONTEXT_WINDOWS-window context in one capture."""
+        # 128 + 4 * 64 = 384 samples (3.07 s) for the PyTorch geometry, 373 for TensorFlow, 325 for JAX
         return self.window_size + (CONTEXT_WINDOWS - 1) * self.window_stride
 
     @property
     def capture_seconds(self):
+        """capture_samples at the model's sampling rate, in seconds (2.6-3.1 s depending on the backend)."""
         return self.capture_samples / self.sfreq
 
     # ----------------------------------------------------------------------------------------------- raw -> features
@@ -269,6 +288,7 @@ class ImprovedGaussianNBChain:
             rows = [int(_BRAINFLOW_NAME.match(c)[1]) for c in channels]
             if rows != sorted(rows):
                 raise ValueError("BrainFlow EEG rows must be in board order")
+            # "EXG Channel i" is the i-th EEG row of the board, so the trailing number indexes the capture directly
             return raw[[int(c.split()[-1]) for c in self.channels]]
         raise ValueError(f"cannot map capture channels {channels} to the trained channels {self.channels}")
 
@@ -291,9 +311,12 @@ class ImprovedGaussianNBChain:
 
     # ----------------------------------------------------------------------------------------------- features -> posteriors
     def _projected(self, X, participant):
+        """Features (n, 570) -> LDA scores (n, k) float32: standardised with the participant's statistics (the scaler
+        falls back to the global ones for an unknown id), then the saved train-only projection."""
         X = np.asarray(X, np.float64)
         if X.ndim != 2 or X.shape[1] != len(self.feature_names):
             raise ValueError(f"expected (n, {len(self.feature_names)}) features")
+        # the scaler takes one id per row (its training interface); a capture belongs to a single user
         Z = self.scaler.transform(X, np.array([str(participant)] * len(X)))
         return np.ascontiguousarray(self.prep.transform(Z).astype(np.float32))
 
@@ -327,10 +350,12 @@ class ImprovedGaussianNBChain:
         logp = np.asarray(logp, np.float64)
         if logp.ndim != 2 or len(logp) == 0:
             raise ValueError("need at least one window")
+        # the last row is the context ending at the newest window, the only one a live capture acts on
         ctx = context_log_posteriors(logp)[-1]
         probs = np.exp(_log_softmax(ctx))
         thresholds = self.thresholds if use_thresholds else None      # the TensorFlow and JAX chains have none: argmax
         index = int(predict_with_thresholds(probs[None, :], thresholds)[0]) if thresholds is not None else int(np.argmax(ctx))
+        # per-window votes are only reported (window_labels of the decision / replay output); the command itself comes from the context
         window_votes = predict_with_thresholds(np.exp(logp), thresholds) if thresholds is not None else logp.argmax(axis=1)
         return dict(label=self.classes[index], index=index, confidence=float(probs[index]),
                     probabilities={c: float(p) for c, p in zip(self.classes, probs)},
@@ -354,7 +379,7 @@ class ImprovedGaussianNBChain:
         return self.predict_windows(X, participant, use_thresholds)
 
     def predict_capture(self, capture, participant, gate=None):
-        """Quality-gated live prediction on a signal_quality capture dict (what the GUI passes).
+        """Quality-gated live prediction on an eeg_quality capture dict (what the GUI passes).
 
         The gate assesses the raw samples first; the chain only runs on an accepted capture, and the result is the
         gate's decision dict (prediction_label, confidence, quality, expiry). The gate maps 'landing' to 'land'.
@@ -363,6 +388,7 @@ class ImprovedGaussianNBChain:
         self.last_decision = None
 
         def callback(samples):
+            # the gate's contract: it hands over the accepted raw rows and reads prediction_label / confidence back
             d = self.predict_raw(samples, capture["channels"], capture["sfreq"], participant)
             return dict(prediction_label=d["label"], confidence=d["confidence"])
 
@@ -370,6 +396,8 @@ class ImprovedGaussianNBChain:
 
     # ----------------------------------------------------------------------------------------------- calibration
     def participant_status(self, participant):
+        """'calibrated' (a stored .npz), 'training participant' (statistics learnt from the training set) or
+        'global fallback' (standardised with the global training statistics)."""
         key = str(participant)
         if key in self.calibrations:
             return "calibrated"
@@ -386,6 +414,7 @@ class ImprovedGaussianNBChain:
         raw = self.select_channels(capture["raw"], capture["channels"])
         counters, timestamps = capture.get("counters"), capture.get("timestamps")
         fs = self.sfreq
+        # the loader screens 2 s blocks (250 samples at 125 Hz); a trailing partial block is dropped
         block = int(round(2.0 * fs))
         n_blocks = raw.shape[1] // block
         usable = np.zeros(n_blocks, dtype=bool)
@@ -393,6 +422,7 @@ class ImprovedGaussianNBChain:
         for b in range(n_blocks):
             a, e = b * block, (b + 1) * block
             if b == 0:
+                # block 0 is always dropped, as in the loader (start-up transient of the stream)
                 reasons.append(["startup_block"])
                 continue
             if not self.config.quality_filter:
@@ -409,8 +439,11 @@ class ImprovedGaussianNBChain:
         segments, run = [], []
         max_gap = assessor.config.max_arrival_gap_seconds
         for b in range(n_blocks):
+            # a kept block continues the run only when the samples across the block boundary are consecutive;
+            # otherwise packets were lost or arrival stalled there and the run is cut, like the loader does
             if usable[b] and run and counters is not None and timestamps is not None:
                 a = b * block
+                # the OpenBCI sample counter is 8-bit and wraps, hence modulo 256
                 step = (counters[a] - counters[a - 1]) % 256
                 gap = timestamps[a] - timestamps[a - 1]
                 if step != capture.get("counter_step") or not 0 <= gap <= max_gap:
@@ -423,6 +456,7 @@ class ImprovedGaussianNBChain:
                 run = []
         if run:
             segments.append(run)
+        # each run is filtered on its own, as in the loader, so the band-pass never bridges a dropped stretch
         data = [self.filter_segment(raw[:, r[0] * block:(r[-1] + 1) * block]) for r in segments]
         return data, dict(n_blocks=int(n_blocks), n_blocks_kept=int(usable.sum()), block_reasons=reasons)
 
@@ -446,10 +480,13 @@ class ImprovedGaussianNBChain:
                      created=time.strftime("%Y-%m-%dT%H:%M:%S"))
         self.calibrations[key] = entry
         self.calibration_dir.mkdir(parents=True, exist_ok=True)
+        # meta is stored as a JSON string so load_calibrations can read the file with allow_pickle=False
         np.savez(self.calibration_dir / f"{_safe_name(key)}.npz", mean=mean, std=std, meta=json.dumps(entry))
         return entry
 
     def calibrate_from_capture(self, participant, capture, assessor=None):
+        """Calibration from a live capture dict: quality-screened 2 s blocks -> windows -> features -> calibrate.
+        Refuses when fewer than the scaler's min_windows windows survive, so a noisy recording is never registered."""
         X, report = self.calibration_features(capture, assessor)
         if len(X) < self.scaler.min_windows:
             raise ValueError(f"only {len(X)} usable calibration windows ({report['n_blocks_kept']}/{report['n_blocks']} "
@@ -475,6 +512,7 @@ class ImprovedGaussianNBChain:
             try:
                 z = np.load(f, allow_pickle=False)
                 entry = json.loads(str(z["meta"]))
+                # a calibration from another feature version or channel set is skipped, not deleted
                 if entry.get("feature_version") != FEATURE_VERSION or z["mean"].shape != (len(self.feature_names),):
                     continue
                 self.scaler.stats_[entry["participant"]] = (z["mean"].astype(np.float64), z["std"].astype(np.float64))
@@ -484,6 +522,8 @@ class ImprovedGaussianNBChain:
         return self.calibrations
 
     def forget_calibration(self, participant):
+        """Drop a stored calibration (file and registration). A training participant gets their training-set
+        statistics back; anyone else returns to the global fallback."""
         key = str(participant)
         self.calibrations.pop(key, None)
         f = self.calibration_dir / f"{_safe_name(key)}.npz"
@@ -515,6 +555,8 @@ class ImprovedGaussianNBChain:
 
 
 def main(argv=None):
+    """Command line: optionally calibrate --participant from --calibrate-from first, then replay --file through the
+    live path; both reports are printed as JSON."""
     p = argparse.ArgumentParser(description="Replay an OpenBCI recording through the improved GaussianNB live path.")
     p.add_argument("--file", required=True, help="named OpenBCI GUI recording (.txt), 16 channels at 125 Hz")
     p.add_argument("--participant", default=None, help="participant id (default: <group>/<person> from the path)")

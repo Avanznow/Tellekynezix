@@ -15,6 +15,10 @@ plt.rcParams.update({"font.family": "sans-serif", "font.size": 9.5, "axes.titles
 
 
 def style(ax, title, subtitle, xlabel, ylabel):
+    """Shared axes look: surface fill, light grid behind the data, no top/right spines, bold left-aligned title.
+
+    The subtitle is drawn just above the axes (y = 1.02 in axes coordinates), which is why the title gets pad=18.
+    """
     ax.set_facecolor(SURFACE)
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
@@ -33,6 +37,7 @@ def spread_labels(ys, min_gap):
     """Nudge label positions apart (sorted order kept) so neighbours are at least min_gap apart."""
     order = np.argsort(ys)
     out = np.array(ys, float)
+    # walk neighbours from lowest to highest and only ever push the upper one up, so one nudge cascades upwards
     for a, b in zip(order[:-1], order[1:]):
         if out[b] - out[a] < min_gap:
             out[b] = out[a] + min_gap
@@ -40,6 +45,7 @@ def spread_labels(ys, min_gap):
 
 
 def short_vqc(n, L):
+    """Compact circuit label for legends and point labels, e.g. "6q x 2" for 6 qubits and 2 entangling layers."""
     return f"{int(n)}q x {int(L)}"
 
 
@@ -52,13 +58,16 @@ def end_labels(ax, ends, x_pad_frac=0.01, gap_frac=0.055):
     x0, x1 = ax.get_xlim()
     for (x, _, name, color), y in zip(ends, ys):
         ax.text(x + x_pad_frac * (x1 - x0), y, name, color=color, fontsize=8, va="center")
+    # widen the y-range so labels pushed past the old top are still inside the axes (half a gap of headroom)
     lo, hi = min(ys.min(), y0), max(ys.max() + gap_frac * (y1 - y0) / 2, y1)
     ax.set_ylim(lo, hi)
 
 
 def annotate_without_overlap(fig, ax, points, texts, color=INK2, fontsize=7.5):
     """Annotate (x, y) points, trying a few offsets per label so that label boxes do not overlap."""
+    # (dx, dy) offsets in points; the signs also pick the text anchor so the label always grows away from the point
     candidates = [(6, 4), (6, -11), (-6, 4), (-6, -11), (6, 14), (-6, 14), (6, -22), (0, 18)]
+    # a draw is needed first: window extents of text are only known once the figure has been rendered
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     placed = []
@@ -72,15 +81,22 @@ def annotate_without_overlap(fig, ax, points, texts, color=INK2, fontsize=7.5):
                 break
             t.remove()
         else:
+            # every offset collided: fall back to the first one and accept the overlap rather than drop the label
             t = ax.annotate(text, (x, y), xytext=candidates[0], textcoords="offset points", fontsize=fontsize, color=color)
             placed.append(t.get_window_extent(renderer))
 
 
 def fig_convergence(conv, cfg, chance, path):
+    """Loss and accuracy per epoch for every VQC depth at the reference qubit count, with the PCA MLP as a foil.
+
+    conv is the long convergence table (one row per run and epoch); each curve is the mean over seeds.
+    chance is the majority-class share, drawn as a dotted line on the accuracy panel. The PNG goes to path.
+    """
     n_ref, depths = cfg["report"]["reference_qubits"], list(cfg["vqc"]["n_layers"])
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
     curves, handles = [], []
     for i, L in enumerate(depths):
+        # one curve per depth at report.reference_qubits; colour index = depth index, as in fig_noise
         d = conv[(conv.model == "vqc") & (conv.n_qubits == n_ref) & (conv.n_layers == L)]
         if len(d):
             curves.append((d, SERIES[i % len(SERIES)], "-", f"VQC {short_vqc(n_ref, L)} layer{'s' if L != 1 else ''}"))
@@ -104,6 +120,7 @@ def fig_convergence(conv, cfg, chance, path):
           "epoch", "cross-entropy")
     style(axes[1], "Accuracy per epoch", f"same runs; the dotted chance line is the majority-class share ({chance:.3f})", "epoch", "accuracy")
     last = max(e[0] for e in ends) if ends else 1
+    # extend the x-axis ~30% past the last epoch for the end labels; ticks that would land in that gap are dropped
     axes[1].set_xlim(0, last * 1.32)
     axes[1].set_xticks([t for t in axes[1].get_xticks() if 0 <= t <= last])
     end_labels(axes[1], ends)
@@ -114,6 +131,10 @@ def fig_convergence(conv, cfg, chance, path):
 
 
 def fig_accuracy_latency(summary, cfg, chance, path):
+    """Mean test accuracy against single-window latency (log x; mean over seeds of each seed's median) for every row of benchmark_summary.csv.
+
+    Error bars are the sd over seeds; each point is labelled by family and input (circuit size, PCA-k or 570).
+    """
     fig, ax = plt.subplots(figsize=(11.5, 6.2))
     n_seeds = int(summary.n_seeds.max())
     points, texts = [], []
@@ -124,6 +145,7 @@ def fig_accuracy_latency(summary, cfg, chance, path):
         ax.errorbar(d.latency_ms_mean, d.accuracy_mean, xerr=d.latency_ms_sd.fillna(0), yerr=d.accuracy_sd.fillna(0), fmt=marker,
                     color=color, ms=8, mec=SURFACE, mew=1.2, ecolor=color, elinewidth=1, capsize=2, alpha=0.95, label=fam, ls="none")
         for _, r in d.sort_values("accuracy_mean", ascending=False).iterrows():
+            # input is "570 standardised features" for the full-feature baselines and "PCA-k angles" for the rest
             if fam == "VQC":
                 text = short_vqc(r.n_qubits, r.n_layers)
             elif r.input.startswith("570"):
@@ -140,15 +162,21 @@ def fig_accuracy_latency(summary, cfg, chance, path):
     ax.text(ax.get_xlim()[0], chance + 0.004, " chance", color=MUTED, fontsize=8, va="bottom")
     ax.legend(loc="center right")
     fig.tight_layout()
+    # labels go on after tight_layout: the overlap test works in pixels, which only settle once the layout is final
     annotate_without_overlap(fig, ax, points, texts)
     fig.savefig(path, dpi=160)
     plt.close(fig)
 
 
 def fig_noise(noise, cfg, chance, path):
+    """Test accuracy of the trained circuits as the depolarising probability grows, one line per (qubits, layers).
+
+    Colour follows depth and line style/marker follow qubit count, so the legend can list the two factors apart.
+    """
     fig, ax = plt.subplots(figsize=(8, 5))
     depths = list(cfg["vqc"]["n_layers"])
     qubits = sorted(noise.n_qubits.unique())
+    # colour encodes depth (same SERIES index as fig_convergence); line style and marker encode the qubit count
     ls_by_q = {q: ls for q, ls in zip(qubits, ["--", "-", "-."])}
     mk_by_q = {q: m for q, m in zip(qubits, ["s", "o", "^"])}
     ends = []
@@ -162,6 +190,7 @@ def fig_noise(noise, cfg, chance, path):
     handles = [Line2D([], [], color=SERIES[i], lw=2, label=f"{L} layer{'s' if L != 1 else ''}") for i, L in enumerate(depths)]
     handles += [Line2D([], [], color=INK2, ls=ls_by_q[q], marker=mk_by_q[q], ms=6, lw=1.5, label=f"{q} qubits") for q in qubits]
     ax.set_xticks(sorted(noise.noise_p.unique()))
+    # a slightly negative left limit keeps the p = 0 marker off the y-axis; the right margin is room for end labels
     ax.set_xlim(left=-0.004, right=max(noise.noise_p) * 1.18)
     n_seeds = noise.seed.nunique()
     style(ax, "Trained circuits under depolarising noise", f"inference on default.mixed; depolarising channel on every qubit after the embedding and after each layer; "
@@ -174,6 +203,10 @@ def fig_noise(noise, cfg, chance, path):
 
 
 def make_all(out_dir, cfg, chance):
+    """Read the CSVs the benchmark wrote to out_dir and save the three PNGs next to them.
+
+    noise_sweep.csv is missing when the noise phase did not run (--report-only) or no circuit fit under noise.max_qubits; the noise figure is skipped then.
+    """
     out_dir = out_dir
     conv = pd.read_csv(out_dir / "convergence.csv")
     summary = pd.read_csv(out_dir / "benchmark_summary.csv")

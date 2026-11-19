@@ -14,11 +14,15 @@ import torch.nn.functional as F
 
 
 def to_tensor(X, dtype=torch.float32):
+    """Array-like (numpy, list, pandas, tensor) -> torch tensor of `dtype`; np.asarray first so they all take the
+    same path. Features keep the float32 default, labels are passed with torch.long for cross_entropy."""
     return torch.as_tensor(np.asarray(X), dtype=dtype)
 
 
 @torch.no_grad()
 def logits_of(model, X, batch_size=512):
+    """Raw logits for every row of X, shape (n, n_classes), in eval mode with no gradients. Batched so the circuit
+    is never asked to simulate a whole split at once; the batch size only changes memory use, not the result."""
     model.eval()
     X = to_tensor(X)
     return torch.cat([model(X[i:i + batch_size]) for i in range(0, len(X), batch_size)])
@@ -35,11 +39,14 @@ def evaluate(model, X, y, batch_size=512):
 
 
 def predict(model, X, batch_size=512):
+    """Class index per row of X as a numpy int array: argmax of the raw logits, so no softmax is needed."""
     return logits_of(model, X, batch_size).argmax(1).numpy()
 
 
 def train_classifier(model, Xtr, ytr, Xva, yva, epochs, lr, batch_size, seed, weight_decay=0.0, log=None):
     """Adam + cross-entropy for `epochs` epochs; returns (history DataFrame, best dict, timing dict)."""
+    # own generator for the minibatch order: the models seed their initial weights themselves at construction, so
+    # this is the only randomness left in the loop and it stays reproducible without touching the global RNG
     gen = torch.Generator().manual_seed(int(seed))
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     Xtr_t, ytr_t = to_tensor(Xtr), to_tensor(ytr, torch.long)
@@ -57,18 +64,24 @@ def train_classifier(model, Xtr, ytr, Xva, yva, epochs, lr, batch_size, seed, we
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
+            # cross_entropy returns a batch mean; weight it by the batch length so the short last batch of an epoch
+            # counts once per window when loss_sum is divided by n below
             loss_sum += loss.item() * len(idx)
             correct += int((logits.argmax(1) == ytr_t[idx]).sum())
+        # clock stops here, before the validation pass, so train_seconds is forward + backward + optimiser only
         epoch_seconds = time.perf_counter() - t_epoch
         train_seconds += epoch_seconds
         val_loss, val_acc, _ = evaluate(model, Xva, yva)
         rows.append(dict(epoch=epoch, train_loss=loss_sum / n, train_acc=correct / n, val_loss=val_loss, val_acc=val_acc,
                          epoch_seconds=epoch_seconds, cumulative_train_seconds=train_seconds))
+        # strict > keeps the earliest epoch on a tie; deepcopy because state_dict() tensors alias the live weights
         if val_acc > best["val_acc"]:
             best = dict(val_acc=val_acc, epoch=epoch, state_dict=copy.deepcopy(model.state_dict()))
         if log:
             log(f"epoch {epoch:3d}/{epochs}: train loss {loss_sum / n:.4f} acc {correct / n:.4f} | "
                 f"val loss {val_loss:.4f} acc {val_acc:.4f} | {epoch_seconds:.1f} s")
+    # steps counts optimiser updates (the last batch of an epoch may be short); windows_forwarded is the number of
+    # training-window forward passes, which runs.py turns into circuit-evaluation counts for the VQC
     timing = dict(train_seconds=train_seconds, wall_seconds=time.perf_counter() - t_wall, epochs=int(epochs),
                   steps=int(epochs) * int(np.ceil(n / batch_size)), windows_forwarded=int(epochs) * n)
     return pd.DataFrame(rows), best, timing

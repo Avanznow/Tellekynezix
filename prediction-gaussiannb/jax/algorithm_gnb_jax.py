@@ -68,6 +68,7 @@ class GaussianNBJAX:
 
         num_classes = int(jnp.max(y_j) + 1)
         counts = jnp.bincount(y_j, length=num_classes)
+        # Floor the counts at 1 so a label that never appears in y does not divide by zero below.
         counts_f = jnp.maximum(counts.astype(jnp.float32), 1.0)
 
         # Per-class sums via one-hot matmul: (C,N) @ (N,D) -> (C,D), without
@@ -78,11 +79,16 @@ class GaussianNBJAX:
         sums2 = jnp.matmul(one_hot, X_j * X_j, precision=hp)
 
         means = sums / counts_f[:, None]
+        # Population variance (divide by N, as sklearn does) via E[x^2] - E[x]^2 in one pass. The subtraction
+        # cancels badly when a feature's mean is large next to its spread, hence the HIGHEST-precision sums above.
         vars_ = (sums2 / counts_f[:, None]) - jnp.square(means)
+        # A floor, not sklearn's additive epsilon (var_smoothing * max feature variance): a constant feature gets
+        # var_smoothing instead of 0, which would divide by zero at predict time. Same convention as the TF sibling.
         vars_ = jnp.maximum(vars_, self.var_smoothing)
 
         priors = counts.astype(jnp.float32) / float(n_samples)
 
+        # Host-side numpy copies under sklearn's attribute names; save_model pickles these as they are.
         self.theta_ = np.asarray(means, dtype=np.float32)
         self.var_ = np.asarray(vars_, dtype=np.float32)
         self.class_prior_ = np.asarray(priors, dtype=np.float32)
@@ -90,6 +96,7 @@ class GaussianNBJAX:
         self.n_features_ = int(n_features)
         return self
 
+    # staticmethod so jax.jit sees only arrays: a plain Python self is not a valid traced argument.
     @staticmethod
     @jax.jit
     def _predict_log_proba_jit(X: jnp.ndarray, mu: jnp.ndarray, var: jnp.ndarray,
@@ -105,7 +112,9 @@ class GaussianNBJAX:
         Returns:
             Log-probabilities (n_samples, n_classes).
         """
+        # Log normalising constant of each class's diagonal Gaussian, shape (C,); it does not depend on X.
         const_term = -0.5 * jnp.sum(jnp.log(2.0 * jnp.pi * var), axis=1)
+        # (N,1,D) - (1,C,D) -> (N,C,D): every window against every class in one broadcast.
         diff = X[:, None, :] - mu[None, :, :]
         quad = -0.5 * jnp.sum((diff * diff) / (var[None, :, :]), axis=2)
         log_lik = quad + const_term[None, :]
@@ -123,6 +132,7 @@ class GaussianNBJAX:
         X_j = jnp.asarray(X, dtype=jnp.float32)
         mu = jnp.asarray(self.theta_, dtype=jnp.float32)
         var = jnp.asarray(self.var_, dtype=jnp.float32)
+        # 1e-12 keeps log(0) out of the scores for a class with zero prior (same guard as the TF sibling).
         log_prior = jnp.log(jnp.asarray(self.class_prior_, dtype=jnp.float32) + 1e-12)
         out = self._predict_log_proba_jit(X_j, mu, var, log_prior)
         return np.asarray(out)
@@ -137,6 +147,8 @@ class GaussianNBJAX:
             Class probabilities (n_samples, n_classes), row-wise normalized.
         """
         logp = self.predict_log_proba(X)
+        # Shift by the row max before exp: the largest term becomes exp(0), so no float32 overflow and no
+        # all-zero row in the normalisation below.
         m = np.max(logp, axis=1, keepdims=True)
         p = np.exp(logp - m)
         p /= np.sum(p, axis=1, keepdims=True)
@@ -190,6 +202,7 @@ def load_model(path: str) -> Tuple[GaussianNBJAX, Dict[str, Any]]:
     """
     with open(path, 'rb') as f:
         payload = pickle.load(f)
+    # A pickle without var_smoothing loads with the constructor default (1e-9).
     m = GaussianNBJAX(var_smoothing=payload['model'].get('var_smoothing', 1e-9))
     m.class_prior_ = np.array(payload['model']['class_prior_'], dtype=np.float32)
     m.theta_ = np.array(payload['model']['theta_'], dtype=np.float32)

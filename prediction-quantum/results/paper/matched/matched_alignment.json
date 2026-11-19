@@ -1,0 +1,178 @@
+{
+  "quantum_cache": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache/features_4df6a3d7e7044283.npz",
+  "quantum_cache_meta": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache/features_4df6a3d7e7044283.json",
+  "quantum_cache_shape": [
+    12089,
+    570
+  ],
+  "improved_cache": "/home/prasndhdl/Downloads/avatar/Tellekynezix/predictions_local/feature_cache/improved_windows_ab35c17b56ea1d35.npz",
+  "subject_cache": "/home/prasndhdl/Downloads/avatar/Tellekynezix/predictions_local/feature_cache/subject_windows_c306b8eda6314d14.npz",
+  "improved_cache_shape": [
+    12089,
+    570
+  ],
+  "subject_cache_shape": [
+    12089,
+    435
+  ],
+  "quantum_meta_n_windows": 12089,
+  "quantum_meta_n_recordings": 883,
+  "quantum_meta_n_participants": 18,
+  "quantum_meta_feature_version": "improved_logcov_dcov_tkeo_hybridlog_car_v1",
+  "gnb_groups_all_under_data_dir": true,
+  "quantum_recordings_contiguous": true,
+  "gnb_recordings_contiguous": true,
+  "gnb_keys_unique": true,
+  "cache_windows_aligned_by_recording_and_position": 12089,
+  "cache_alignment_is_bijection": true,
+  "cache_alignment_is_identity": true,
+  "cache_570_max_abs_diff_all_12089": 0.0,
+  "cache_570_bitwise_equal_all_12089": true,
+  "cache_labels_equal": true,
+  "cache_participants_equal": true,
+  "cache_participant_of_quantum_groups_equal": true,
+  "subject_vs_improved_first_240_columns_max_abs_diff": 0.0,
+  "gnb_feature_rows_unique": true,
+  "feature_hash_match_found": 12089,
+  "feature_hash_match_equals_position_match": true,
+  "loader_reconstruction": {
+    "seconds": 7.5,
+    "n_recordings_loaded": 1394,
+    "n_skipped": 432,
+    "n_windows_reconstructed": 12089,
+    "nonfinite_samples_zeroed": 0,
+    "same_number_of_windows": true,
+    "recording_sequence_identical": true,
+    "recomputed_vs_cached_570_max_abs_diff": 0.0,
+    "recomputed_vs_cached_570_exactly_equal": true,
+    "recomputed_vs_cached_rows_with_any_diff": 0,
+    "recomputed_vs_cached_570_max_rel_diff": 0.0
+  },
+  "subsample_reproduced": true,
+  "splits": {
+    "seed0": {
+      "rows": 11698,
+      "unique_window_index": true,
+      "window_index_in_range": true,
+      "window_index_sorted": true,
+      "equals_subsample_per_class_2000_seed0": true,
+      "recording_matches_quantum_cache": 11698,
+      "participant_matches_quantum_cache": 11698,
+      "label_matches_quantum_cache": 11698,
+      "aligned_to_gnb_uniquely": 11698,
+      "recording_matches_gnb_cache": 11698,
+      "participant_matches_gnb_cache": 11698,
+      "label_matches_gnb_cache": 11698,
+      "features_570_max_abs_diff": 0.0,
+      "features_570_bitwise_equal": true,
+      "parts": {
+        "train": 8173,
+        "val": 1171,
+        "test": 2354
+      },
+      "recordings_per_part": {
+        "train": 617,
+        "val": 89,
+        "test": 177
+      },
+      "participants_per_part": {
+        "train": 18,
+        "val": 17,
+        "test": 18
+      },
+      "train_test_recordings_overlap": 0,
+      "val_test_recordings_overlap": 0,
+      "train_val_recordings_overlap": 0,
+      "test_participants_absent_from_train": [],
+      "part_column_reproduced_by_make_split": true,
+      "first_test_window_position": {
+        "recording": "G01/person08/OpenBCISession_Backward_8/OpenBCI-RAW-2025-03-12_13-46-14.txt",
+        "segment": 0,
+        "start_sample_in_segment": 0
+      }
+    },
+    "seed1": {
+      "rows": 11698,
+      "unique_window_index": true,
+      "window_index_in_range": true,
+      "window_index_sorted": true,
+      "equals_subsample_per_class_2000_seed0": true,
+      "recording_matches_quantum_cache": 11698,
+      "participant_matches_quantum_cache": 11698,
+      "label_matches_quantum_cache": 11698,
+      "aligned_to_gnb_uniquely": 11698,
+      "recording_matches_gnb_cache": 11698,
+      "participant_matches_gnb_cache": 11698,
+      "label_matches_gnb_cache": 11698,
+      "features_570_max_abs_diff": 0.0,
+      "features_570_bitwise_equal": true,
+      "parts": {
+        "train": 8146,
+        "val": 1207,
+        "test": 2345
+      },
+      "recordings_per_part": {
+        "train": 617,
+        "val": 89,
+        "test": 177
+      },
+      "participants_per_part": {
+        "train": 18,
+        "val": 16,
+        "test": 18
+      },
+      "train_test_recordings_overlap": 0,
+      "val_test_recordings_overlap": 0,
+      "train_val_recordings_overlap": 0,
+      "test_participants_absent_from_train": [],
+      "part_column_reproduced_by_make_split": true,
+      "first_test_window_position": {
+        "recording": "G01/person08/OpenBCISession_Backward_8/OpenBCI-RAW-2025-03-12_13-46-37.txt",
+        "segment": 0,
+        "start_sample_in_segment": 0
+      }
+    },
+    "seed2": {
+      "rows": 11698,
+      "unique_window_index": true,
+      "window_index_in_range": true,
+      "window_index_sorted": true,
+      "equals_subsample_per_class_2000_seed0": true,
+      "recording_matches_quantum_cache": 11698,
+      "participant_matches_quantum_cache": 11698,
+      "label_matches_quantum_cache": 11698,
+      "aligned_to_gnb_uniquely": 11698,
+      "recording_matches_gnb_cache": 11698,
+      "participant_matches_gnb_cache": 11698,
+      "label_matches_gnb_cache": 11698,
+      "features_570_max_abs_diff": 0.0,
+      "features_570_bitwise_equal": true,
+      "parts": {
+        "train": 8166,
+        "val": 1202,
+        "test": 2330
+      },
+      "recordings_per_part": {
+        "train": 617,
+        "val": 89,
+        "test": 177
+      },
+      "participants_per_part": {
+        "train": 18,
+        "val": 17,
+        "test": 17
+      },
+      "train_test_recordings_overlap": 0,
+      "val_test_recordings_overlap": 0,
+      "train_val_recordings_overlap": 0,
+      "test_participants_absent_from_train": [],
+      "part_column_reproduced_by_make_split": true,
+      "first_test_window_position": {
+        "recording": "G01/person08/OpenBCISession_Backward_8/OpenBCI-RAW-2025-03-12_13-48-18.txt",
+        "segment": 0,
+        "start_sample_in_segment": 0
+      }
+    }
+  },
+  "ALIGNMENT_PROVEN": true
+}

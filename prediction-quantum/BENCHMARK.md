@@ -1,15 +1,15 @@
 # Benchmark: variational quantum classifier against classical baselines on Avatar EEG windows
 
-Deliverable of upstream issue Avanznow/Tellekynezix#52 (the benchmark step of the QML chain #49-#52). Every number below comes from a CSV in `results/` written by one command (`python -m prediction_quantum.run_benchmark --config configs/default.yaml`); see README.md for the environment. Generated 2026-10-17 21:39:56.
+Deliverable of upstream issue Avanznow/Tellekynezix#52 (the benchmark step of the QML chain #49-#52). Every number below comes from a CSV in `results/` written by one command (`python -m prediction_quantum.run_benchmark --config configs/default.yaml`); see README.md for the environment. Generated 2026-11-02 20:57:23.
 
 ## Headline
 
 - **Same data for every model.** 11,698 windows (1.024 s, 15 channels, 125 Hz) of 883 OpenBCI recordings from 18 participants, through the GaussianNB pipeline's verified loader and 570-feature extractor, split by recording (3 splits, seeds [0, 1, 2]). Chance (majority-class share) is 0.171.
-- **Accuracy.** The best circuit by mean test accuracy is **VQC 6q x 4 layers**: 0.236 +/- 0.013 (macro-F1 0.229 +/- 0.011). On the identical 6-dimensional input, logistic regression reaches 0.212 +/- 0.022, GaussianNB 0.195 +/- 0.012 and the 64-unit MLP 0.270 +/- 0.029; the circuit is above logistic regression and below the MLP. The best classical model overall is MLP-64 (570 features) at 0.649 +/- 0.005.
-- **Cost.** Training the best circuit took 220.8 s of optimiser time per seed against 3.6 s for the MLP and 0.13 s for logistic regression on the same input. One window takes 9.99 ms through the simulated circuit against 0.137 ms for logistic regression (73x) and 0.027 ms for the MLP. Training evaluated the circuit 374,200 times per seed (one run per window per forward pass, gradients by backprop on the simulator); the parameter-shift rule needed on hardware would have cost 47,337,667 runs before shots.
+- **Accuracy.** The best circuit by mean test accuracy is **VQC 6q x 4 layers**: 0.236 +/- 0.013 (macro-F1 0.229 +/- 0.011). On the identical 6-dimensional input, logistic regression reaches 0.212 +/- 0.022, GaussianNB 0.195 +/- 0.012 and the 64-unit MLP 0.262 +/- 0.019; the circuit is above logistic regression and below the MLP. The best classical model overall is MLP-64 (570 features) at 0.645 +/- 0.007.
+- **Cost.** Training the best circuit took 90.5 s of optimiser time per seed against 1.7 s for the MLP and 0.05 s for logistic regression on the same input. One window takes 6.62 ms through the simulated circuit against 0.073 ms for logistic regression (91x) and 0.012 ms for the MLP. Training evaluated the circuit 374,200 times per seed (one run per window per forward pass, gradients by backprop on the simulator); the parameter-shift rule needed on hardware would have cost 47,337,667 runs before shots.
 - **Noise.** With a depolarising channel on every qubit after the embedding and after each layer, the accuracy of the 6 swept circuits changes by between -0.044 and +0.010 at p = 0.1 (chance 0.171); the deepest circuits lose most (VQC 6q x 4 layers: 0.249 -> 0.206), shallow ones barely move because the channel contracts every expectation value towards zero while the linear head's decision depends mostly on their direction. At p = 0.1 the 1-layer circuits change 14%-23% of their predictions, the 4-layer circuits 76%-83%. Details in section 4.6.
 
-**Reading.** The best circuit beats the linear model on its own 6-dimensional input by +0.024 accuracy, more than one standard deviation over seeds (0.022), and is below the 64-unit MLP on the same input (-0.034). Against the best classical model on the full 570 features it is 0.413 lower, and it is 73x slower per window than logistic regression and 373x slower than the MLP. So on this problem the circuit adds some capacity over a linear read-out of the same components, far less than a small classical network, at orders of magnitude more compute. The value of this benchmark is the fair, reproducible comparison and its documented limits (section 5).
+**Reading.** The best circuit beats the linear model on its own 6-dimensional input by +0.024 accuracy, more than one standard deviation over seeds (0.022), and is below the 64-unit MLP on the same input (-0.027). Against the best classical model on the full 570 features it is 0.410 lower, and it is 91x slower per window than logistic regression and 544x slower than the MLP. So on this problem the circuit adds some capacity over a linear read-out of the same components, far less than a small classical network, at orders of magnitude more compute. The value of this benchmark is the fair, reproducible comparison and its documented limits (section 5).
 
 ## 1. Data and split
 
@@ -93,28 +93,28 @@ Mean +/- standard deviation over the seeds (one recording-level split and one in
 
 | model | input | parameters | accuracy | macro-F1 | balanced acc. | train (s) | latency (ms/window) | batched (us/window) | circuit evals (training) |
 |---|---|---|---|---|---|---|---|---|---|
-| VQC 4q x 1 layer | PCA-4 angles | 42 | 0.195 +/- 0.024 | 0.165 +/- 0.016 | 0.210 +/- 0.019 | 54.01 +/- 1.64 | 3.529 +/- 0.531 | 18.3 | 374,200 |
-| VQC 4q x 2 layers | PCA-4 angles | 54 | 0.226 +/- 0.039 | 0.209 +/- 0.031 | 0.237 +/- 0.038 | 84.13 +/- 3.48 | 4.552 +/- 0.274 | 23.5 | 374,200 |
-| VQC 4q x 4 layers | PCA-4 angles | 78 | 0.196 +/- 0.012 | 0.169 +/- 0.004 | 0.211 +/- 0.018 | 138.24 +/- 5.81 | 7.072 +/- 0.315 | 36.8 | 374,200 |
-| VQC 6q x 1 layer | PCA-6 angles | 60 | 0.200 +/- 0.032 | 0.188 +/- 0.035 | 0.214 +/- 0.027 | 83.60 +/- 0.68 | 4.582 +/- 0.288 | 27.1 | 374,200 |
-| VQC 6q x 2 layers | PCA-6 angles | 78 | 0.221 +/- 0.018 | 0.213 +/- 0.021 | 0.233 +/- 0.011 | 129.57 +/- 0.87 | 6.368 +/- 0.267 | 38.5 | 374,200 |
-| VQC 6q x 4 layers | PCA-6 angles | 114 | 0.236 +/- 0.013 | 0.229 +/- 0.011 | 0.247 +/- 0.010 | 220.81 +/- 1.44 | 9.995 +/- 0.645 | 63.7 | 374,200 |
-| VQC 8q x 1 layer | PCA-8 angles | 78 | 0.198 +/- 0.029 | 0.186 +/- 0.032 | 0.211 +/- 0.032 | 128.21 +/- 3.91 | 5.736 +/- 0.327 | 48.6 | 374,200 |
-| VQC 8q x 2 layers | PCA-8 angles | 102 | 0.206 +/- 0.003 | 0.203 +/- 0.006 | 0.211 +/- 0.003 | 200.78 +/- 8.11 | 8.258 +/- 0.599 | 72.6 | 374,200 |
-| VQC 8q x 4 layers | PCA-8 angles | 150 | 0.233 +/- 0.023 | 0.230 +/- 0.027 | 0.239 +/- 0.017 | 343.49 +/- 3.48 | 13.627 +/- 0.799 | 112.7 | 374,200 |
-| Logistic regression (PCA-4) | PCA-4 angles | 30 | 0.178 +/- 0.024 | 0.156 +/- 0.027 | 0.189 +/- 0.025 | 0.07 +/- 0.01 | 0.137 +/- 0.007 | 0.1 | - |
-| Logistic regression (PCA-6) | PCA-6 angles | 42 | 0.212 +/- 0.022 | 0.199 +/- 0.029 | 0.226 +/- 0.021 | 0.13 +/- 0.04 | 0.137 +/- 0.006 | 0.1 | - |
-| Logistic regression (PCA-8) | PCA-8 angles | 54 | 0.203 +/- 0.022 | 0.194 +/- 0.028 | 0.215 +/- 0.022 | 0.16 +/- 0.05 | 0.138 +/- 0.006 | 0.1 | - |
-| GaussianNB (PCA-4) | PCA-4 angles | 54 | 0.187 +/- 0.019 | 0.153 +/- 0.014 | 0.195 +/- 0.016 | 0.00 +/- 0.00 | 0.200 +/- 0.010 | 0.3 | - |
-| GaussianNB (PCA-6) | PCA-6 angles | 78 | 0.195 +/- 0.012 | 0.187 +/- 0.014 | 0.202 +/- 0.018 | 0.00 +/- 0.00 | 0.205 +/- 0.009 | 0.4 | - |
-| GaussianNB (PCA-8) | PCA-8 angles | 102 | 0.200 +/- 0.004 | 0.189 +/- 0.014 | 0.206 +/- 0.011 | 0.00 +/- 0.00 | 0.200 +/- 0.009 | 0.4 | - |
-| GaussianNB (570 features) | 570 standardised features | 6,846 | 0.271 +/- 0.005 | 0.253 +/- 0.008 | 0.266 +/- 0.004 | 0.05 +/- 0.01 | 0.182 +/- 0.033 | 11.2 | - |
-| MLP-64 (PCA-4) | PCA-4 angles | 710 | 0.240 +/- 0.032 | 0.228 +/- 0.032 | 0.251 +/- 0.031 | 2.86 +/- 0.32 | 0.027 +/- 0.001 | 0.2 | - |
-| MLP-64 (PCA-6) | PCA-6 angles | 838 | 0.270 +/- 0.029 | 0.264 +/- 0.027 | 0.276 +/- 0.025 | 3.56 +/- 0.12 | 0.027 +/- 0.001 | 0.2 | - |
-| MLP-64 (PCA-8) | PCA-8 angles | 966 | 0.322 +/- 0.024 | 0.319 +/- 0.027 | 0.324 +/- 0.024 | 2.71 +/- 0.10 | 0.026 +/- 0.000 | 0.2 | - |
-| MLP-64 (570 features) | 570 standardised features | 36,934 | 0.649 +/- 0.005 | 0.647 +/- 0.005 | 0.651 +/- 0.005 | 4.33 +/- 0.10 | 0.029 +/- 0.000 | 1.6 | - |
+| VQC 4q x 1 layer | PCA-4 angles | 42 | 0.195 +/- 0.024 | 0.165 +/- 0.016 | 0.210 +/- 0.019 | 23.39 +/- 0.19 | 2.086 +/- 0.003 | 12.0 | 374,200 |
+| VQC 4q x 2 layers | PCA-4 angles | 54 | 0.226 +/- 0.039 | 0.209 +/- 0.031 | 0.237 +/- 0.038 | 34.34 +/- 0.26 | 2.940 +/- 0.028 | 16.2 | 374,200 |
+| VQC 4q x 4 layers | PCA-4 angles | 78 | 0.196 +/- 0.012 | 0.169 +/- 0.004 | 0.211 +/- 0.018 | 57.99 +/- 0.12 | 4.519 +/- 0.045 | 25.4 | 374,200 |
+| VQC 6q x 1 layer | PCA-6 angles | 60 | 0.200 +/- 0.032 | 0.188 +/- 0.035 | 0.214 +/- 0.027 | 33.99 +/- 0.08 | 2.889 +/- 0.008 | 19.8 | 374,200 |
+| VQC 6q x 2 layers | PCA-6 angles | 78 | 0.221 +/- 0.018 | 0.213 +/- 0.021 | 0.233 +/- 0.011 | 53.26 +/- 0.59 | 4.103 +/- 0.035 | 28.6 | 374,200 |
+| VQC 6q x 4 layers | PCA-6 angles | 114 | 0.236 +/- 0.013 | 0.229 +/- 0.011 | 0.247 +/- 0.010 | 90.48 +/- 0.59 | 6.621 +/- 0.014 | 44.2 | 374,200 |
+| VQC 8q x 1 layer | PCA-8 angles | 78 | 0.199 +/- 0.028 | 0.186 +/- 0.032 | 0.211 +/- 0.032 | 53.95 +/- 0.06 | 3.769 +/- 0.129 | 36.9 | 374,200 |
+| VQC 8q x 2 layers | PCA-8 angles | 102 | 0.206 +/- 0.003 | 0.203 +/- 0.006 | 0.211 +/- 0.003 | 85.31 +/- 1.21 | 5.421 +/- 0.013 | 52.1 | 374,200 |
+| VQC 8q x 4 layers | PCA-8 angles | 150 | 0.233 +/- 0.023 | 0.230 +/- 0.027 | 0.239 +/- 0.017 | 144.79 +/- 0.90 | 8.851 +/- 0.051 | 85.4 | 374,200 |
+| Logistic regression (PCA-4) | PCA-4 angles | 30 | 0.178 +/- 0.024 | 0.156 +/- 0.027 | 0.189 +/- 0.025 | 0.03 +/- 0.00 | 0.050 +/- 0.001 | 0.1 | - |
+| Logistic regression (PCA-6) | PCA-6 angles | 42 | 0.212 +/- 0.022 | 0.199 +/- 0.029 | 0.226 +/- 0.021 | 0.05 +/- 0.01 | 0.073 +/- 0.040 | 0.1 | - |
+| Logistic regression (PCA-8) | PCA-8 angles | 54 | 0.203 +/- 0.022 | 0.194 +/- 0.028 | 0.215 +/- 0.022 | 0.07 +/- 0.01 | 0.049 +/- 0.000 | 0.1 | - |
+| GaussianNB (PCA-4) | PCA-4 angles | 54 | 0.187 +/- 0.019 | 0.153 +/- 0.014 | 0.195 +/- 0.016 | 0.00 +/- 0.00 | 0.079 +/- 0.000 | 0.1 | - |
+| GaussianNB (PCA-6) | PCA-6 angles | 78 | 0.195 +/- 0.012 | 0.187 +/- 0.014 | 0.202 +/- 0.018 | 0.00 +/- 0.00 | 0.079 +/- 0.001 | 0.2 | - |
+| GaussianNB (PCA-8) | PCA-8 angles | 102 | 0.200 +/- 0.004 | 0.189 +/- 0.014 | 0.206 +/- 0.011 | 0.00 +/- 0.00 | 0.079 +/- 0.000 | 0.2 | - |
+| GaussianNB (570 features) | 570 standardised features | 6,846 | 0.271 +/- 0.005 | 0.253 +/- 0.008 | 0.266 +/- 0.004 | 0.03 +/- 0.00 | 0.095 +/- 0.000 | 11.6 | - |
+| MLP-64 (PCA-4) | PCA-4 angles | 710 | 0.239 +/- 0.032 | 0.227 +/- 0.032 | 0.251 +/- 0.032 | 1.57 +/- 0.02 | 0.012 +/- 0.000 | 0.1 | - |
+| MLP-64 (PCA-6) | PCA-6 angles | 838 | 0.262 +/- 0.019 | 0.254 +/- 0.014 | 0.265 +/- 0.015 | 1.66 +/- 0.06 | 0.012 +/- 0.000 | 0.1 | - |
+| MLP-64 (PCA-8) | PCA-8 angles | 966 | 0.323 +/- 0.022 | 0.316 +/- 0.026 | 0.325 +/- 0.019 | 1.59 +/- 0.08 | 0.012 +/- 0.000 | 0.1 | - |
+| MLP-64 (570 features) | 570 standardised features | 36,934 | 0.645 +/- 0.007 | 0.642 +/- 0.004 | 0.645 +/- 0.004 | 1.95 +/- 0.01 | 0.013 +/- 0.000 | 0.5 | - |
 
-Source: `results/benchmark_summary.csv` (per-run values in `benchmark_results.csv`). Chance = 0.171. PCA encoding of one window adds 0.174 ms (median over runs) in front of every PCA model.
+Source: `results/benchmark_summary.csv` (per-run values in `benchmark_results.csv`). Chance = 0.171. PCA encoding of one window adds 0.089 ms (median over runs) in front of every PCA model.
 
 Two context notes. The GaussianNB rows are plain sklearn `GaussianNB` on globally standardised features; the project's deployed GaussianNB decoder (`prediction-gaussiannb/`) adds per-participant normalisation and a fitted projection and reports about 0.49 window accuracy on recording-grouped folds of the same windows, so these rows are a baseline, not the deployed decoder. The MLP-64 on 570 features is in line with the defense benchmark's run of the project's original JAX MLP on the same windows under six recording-grouped hold-outs (0.702 +/- 0.030, `prediction-gaussiannb/defense/defense_tables.md`), which used 100 epochs and early stopping.
 
@@ -126,7 +126,7 @@ Two context notes. The GaussianNB rows are plain sklearn `GaussianNB` on globall
 |---|---|---|---|
 | 4 qubits | 0.195 +/- 0.024 | 0.226 +/- 0.039 | 0.196 +/- 0.012 |
 | 6 qubits | 0.200 +/- 0.032 | 0.221 +/- 0.018 | 0.236 +/- 0.013 |
-| 8 qubits | 0.198 +/- 0.029 | 0.206 +/- 0.003 | 0.233 +/- 0.023 |
+| 8 qubits | 0.199 +/- 0.028 | 0.206 +/- 0.003 | 0.233 +/- 0.023 |
 
 **macro-F1**
 
@@ -140,17 +140,17 @@ Two context notes. The GaussianNB rows are plain sklearn `GaussianNB` on globall
 
 |  | 1 layer | 2 layers | 4 layers |
 |---|---|---|---|
-| 4 qubits | 54.01 +/- 1.64 | 84.13 +/- 3.48 | 138.24 +/- 5.81 |
-| 6 qubits | 83.60 +/- 0.68 | 129.57 +/- 0.87 | 220.81 +/- 1.44 |
-| 8 qubits | 128.21 +/- 3.91 | 200.78 +/- 8.11 | 343.49 +/- 3.48 |
+| 4 qubits | 23.39 +/- 0.19 | 34.34 +/- 0.26 | 57.99 +/- 0.12 |
+| 6 qubits | 33.99 +/- 0.08 | 53.26 +/- 0.59 | 90.48 +/- 0.59 |
+| 8 qubits | 53.95 +/- 0.06 | 85.31 +/- 1.21 | 144.79 +/- 0.90 |
 
 **latency (ms/window)**
 
 |  | 1 layer | 2 layers | 4 layers |
 |---|---|---|---|
-| 4 qubits | 3.53 +/- 0.53 | 4.55 +/- 0.27 | 7.07 +/- 0.32 |
-| 6 qubits | 4.58 +/- 0.29 | 6.37 +/- 0.27 | 9.99 +/- 0.65 |
-| 8 qubits | 5.74 +/- 0.33 | 8.26 +/- 0.60 | 13.63 +/- 0.80 |
+| 4 qubits | 2.09 +/- 0.00 | 2.94 +/- 0.03 | 4.52 +/- 0.04 |
+| 6 qubits | 2.89 +/- 0.01 | 4.10 +/- 0.04 | 6.62 +/- 0.01 |
+| 8 qubits | 3.77 +/- 0.13 | 5.42 +/- 0.01 | 8.85 +/- 0.05 |
 
 Source: `results/benchmark_summary.csv`.
 
@@ -160,10 +160,10 @@ Source: `results/benchmark_summary.csv`.
 
 | run (mean over seeds) | val loss ep. 1 | val loss last | val acc ep. 1 | best val acc | best epoch | s / epoch |
 |---|---|---|---|---|---|---|
-| VQC 6q x 1 layer | 1.785 | 1.795 | 0.185 | 0.203 | 23.7 | 2.1 |
-| VQC 6q x 2 layers | 1.778 | 1.751 | 0.182 | 0.240 | 18.0 | 3.2 |
-| VQC 6q x 4 layers | 1.793 | 1.731 | 0.188 | 0.255 | 31.3 | 5.5 |
-| MLP-64 (PCA-6) | 1.766 | 1.741 | 0.182 | 0.273 | 31.7 | 0.09 |
+| VQC 6q x 1 layer | 1.785 | 1.795 | 0.185 | 0.203 | 23.7 | 0.8 |
+| VQC 6q x 2 layers | 1.778 | 1.751 | 0.182 | 0.240 | 18.0 | 1.3 |
+| VQC 6q x 4 layers | 1.793 | 1.731 | 0.188 | 0.255 | 31.3 | 2.3 |
+| MLP-64 (PCA-6) | 1.766 | 1.768 | 0.182 | 0.276 | 32.7 | 0.04 |
 
 The figure shows the 6-qubit circuits at every depth and the MLP on the same input (mean over seeds; dotted = training, solid = validation). Source: `results/convergence.csv`.
 
@@ -238,19 +238,19 @@ The command rebuilds the feature cache from `Data_clean` when missing, writes ev
 
 | environment |  |
 |---|---|
-| python | 3.12.3 |
-| torch | 2.12.1+cu130 |
+| python | 3.12.10 |
+| torch | 2.14.1+cpu |
 | pennylane | 0.45.1 |
-| numpy | 2.5.0 |
-| scipy | 1.18.0 |
-| scikit_learn | 1.9.0 |
-| pandas | 3.0.3 |
-| cpu | 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz |
-| logical_cpus | 16 |
+| numpy | 2.5.4 |
+| scipy | 1.18.1 |
+| scikit_learn | 1.9.1 |
+| pandas | 3.0.6 |
+| cpu | AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD |
+| logical_cpus | 8 |
 | torch_threads | 2 |
 | n_jobs | 2 |
-| platform | Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39 |
-| generated | 2026-10-17 21:39:56 |
+| platform | Windows-11-10.0.26300-SP0 |
+| generated | 2026-11-02 20:57:23 |
 
 Source: `results/environment.json`. Tests: `pytest tests/`.
 

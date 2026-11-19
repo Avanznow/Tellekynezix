@@ -59,24 +59,24 @@ for p in (REPO_ROOT, GNB_DIR, PYTORCH_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-import improved_gnb_inference as I  # noqa: E402
-import subject_gnb_inference as S  # noqa: E402
-from fast_preprocessing import ParallelPowerTransformer  # noqa: E402
-from improved_gnb_features import ParticipantScaler, participant_of  # noqa: E402
-from signal_quality.acquisition import read_openbci  # noqa: E402
-from subject_gnb import SubjectSpecificGaussianNB  # noqa: E402
-from matplotlib.lines import Line2D  # noqa: E402
-from scipy import stats  # noqa: E402
-from sklearn.decomposition import PCA  # noqa: E402
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis  # noqa: E402
-from sklearn.impute import SimpleImputer  # noqa: E402
-from sklearn.metrics import (average_precision_score, balanced_accuracy_score, cohen_kappa_score, confusion_matrix,  # noqa: E402
+import improved_gnb_inference as I  
+import subject_gnb_inference as S  
+from fast_preprocessing import ParallelPowerTransformer  
+from improved_gnb_features import ParticipantScaler, participant_of  
+from eeg_quality import read_openbci 
+from subject_gnb import SubjectSpecificGaussianNB  
+from matplotlib.lines import Line2D 
+from scipy import stats  
+from sklearn.decomposition import PCA 
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis  
+from sklearn.impute import SimpleImputer  
+from sklearn.metrics import (average_precision_score, balanced_accuracy_score, cohen_kappa_score, confusion_matrix,  
                              f1_score, precision_recall_curve, precision_recall_fscore_support, roc_auc_score, roc_curve)
-from sklearn.model_selection import GroupKFold, StratifiedGroupKFold  # noqa: E402
-from sklearn.naive_bayes import GaussianNB as SkGaussianNB  # noqa: E402
-from sklearn.neighbors import KNeighborsClassifier  # noqa: E402
-from sklearn.pipeline import make_pipeline  # noqa: E402
-from sklearn.preprocessing import StandardScaler, label_binarize  # noqa: E402
+from sklearn.model_selection import GroupKFold, StratifiedGroupKFold  
+from sklearn.naive_bayes import GaussianNB as SkGaussianNB  
+from sklearn.neighbors import KNeighborsClassifier  
+from sklearn.pipeline import make_pipeline 
+from sklearn.preprocessing import StandardScaler, label_binarize  
 
 CACHE_DIR = REPO_ROOT / "predictions_local" / "feature_cache"
 # an empty user store for the chains, so the app's predictions_local/gnb_users* folders are never read or written;
@@ -103,6 +103,7 @@ CHANCE = 1.0 / len(COMMANDS)
 
 
 def say(msg):
+    """Progress line on stdout with a [defense] prefix."""
     print(f"[defense] {msg}", flush=True)
 
 
@@ -113,6 +114,7 @@ def value_of(obj, name):
 
 
 def write_csv(df, name):
+    """Save a table next to this script."""
     df.to_csv(HERE / name, index=False)
     say(f"wrote {name}")
 
@@ -131,6 +133,8 @@ def json_default(o):
 
 
 def md_table(df, floatfmt="{:.3f}"):
+    """A DataFrame as a GitHub-flavoured markdown table: floats by floatfmt (three decimals by default), missing
+    values as empty cells."""
     cols = list(df.columns)
     out = ["| " + " | ".join(str(c) for c in cols) + " |", "|" + "---|" * len(cols)]
     for _, r in df.iterrows():
@@ -147,6 +151,8 @@ def md_table(df, floatfmt="{:.3f}"):
 
 # ------------------------------------------------------------------------------------------------------ data
 def latest(pattern):
+    """The most recently written feature cache matching pattern (the notebooks key each cache file by a hash of
+    its spec)."""
     files = sorted(CACHE_DIR.glob(pattern), key=lambda f: f.stat().st_mtime)
     if not files:
         raise FileNotFoundError(f"no {pattern} in {CACHE_DIR}")
@@ -154,12 +160,16 @@ def latest(pattern):
 
 
 def load_caches():
+    """The improved (570 features) and subject (435 features) window caches, checked to describe the same windows in
+    the same order. Returns X_imp, X_sub, y, groups (recording path per window) and parts (participant per window)."""
     zi = np.load(latest("improved_windows_*.npz"), allow_pickle=True)
     zs = np.load(latest("subject_windows_*.npz"), allow_pickle=True)
     groups = zs["groups"].astype(str)
     y = zs["y"].astype(np.int64)
     if not (np.array_equal(zi["groups"].astype(str), groups) and np.array_equal(zi["y"].astype(np.int64), y)):
         raise RuntimeError("the improved and subject feature caches do not hold the same windows")
+    # every later step slices a recording as one contiguous run of windows, so count the runs and compare with the
+    # number of distinct recordings
     runs = 1 + int(np.sum(groups[1:] != groups[:-1]))
     if runs != len(np.unique(groups)):
         raise RuntimeError("windows of a recording are not contiguous in the cache")
@@ -181,6 +191,8 @@ def notebook_split(X, y, groups):
 def window_times(groups):
     """Approximate acquisition time of every window: the recording's file timestamp plus index x stride / fs."""
     t = np.zeros(len(groups))
+    # [start, end) index pairs of each recording's run of windows; the +1 moves from "last of the old" to "first of
+    # the new"
     starts = np.r_[0, np.flatnonzero(groups[1:] != groups[:-1]) + 1]
     ends = np.r_[starts[1:], len(groups)]
     file_time = {}
@@ -194,6 +206,9 @@ def window_times(groups):
 
 # ------------------------------------------------------------------------------------------------------ 1. confusion
 def chain_predictions(data, train, test):
+    """Both deployed PyTorch chains loaded from their artifacts, with their log-posteriors on every test window
+    (rows of train windows stay NaN). The chains pick the participant's scaler / own model from the name, so the
+    test windows are fed per participant."""
     chain_imp = I.ImprovedGaussianNBChain()
     chain_sub = S.SubjectSpecificGaussianNBChain(users_dir=TMP_USERS.name)
     n = len(data["y"])
@@ -211,6 +226,7 @@ def plot_cm(ax, cm, title, xlabels=None, ylabels=None, compact=False, show_x=Tru
     multiples). Labels default to the six commands; xlabels may add a column (the gate's 'uncertain')."""
     xlabels = list(COMMANDS) if xlabels is None else list(xlabels)
     ylabels = list(COMMANDS) if ylabels is None else list(ylabels)
+    # a command absent from the test set gives an all-zero row; the max keeps that from dividing by zero
     row = cm / np.maximum(cm.sum(1, keepdims=True), 1)
     ax.imshow(row, cmap=CMAP, vmin=0, vmax=1)
     for i in range(cm.shape[0]):
@@ -236,6 +252,9 @@ def plot_cm(ax, cm, title, xlabels=None, ylabels=None, compact=False, show_x=Tru
 
 
 def confusion_and_per_class(data, train, test, logp_imp, logp_sub, chain_imp):
+    """Section 1: window accuracy, per-class precision / recall / F1 (defense_per_class_metrics.csv) and the two
+    confusion matrices on the notebook's test windows. The improved chain is scored both with its deployed per-class
+    thresholds and with plain argmax. Returns the accuracies and the window predictions the later sections reuse."""
     y = data["y"][test]
     probs_imp = np.exp(logp_imp[test])
     pred_imp_thr = I.predict_with_thresholds(probs_imp, chain_imp.thresholds)
@@ -253,6 +272,7 @@ def confusion_and_per_class(data, train, test, logp_imp, logp_sub, chain_imp):
         p, r, f, s = precision_recall_fscore_support(y, pred, labels=range(len(COMMANDS)), zero_division=0)
         for k, c in enumerate(COMMANDS):
             rows.append(dict(Chain=name, Class=c, Precision=p[k], Recall=r[k], F1=f[k], Support=int(s[k])))
+        # the summary row reuses the three metric columns: Precision holds accuracy, Recall macro-F1, F1 balanced acc
         rows.append(dict(Chain=name, Class="all (accuracy / macro-F1 / balanced acc)", Precision=acc(pred),
                          Recall=f1_score(y, pred, average="macro"), F1=balanced_accuracy_score(y, pred), Support=int(len(y))))
     per_class = pd.DataFrame(rows)
@@ -281,6 +301,8 @@ def confusion_and_per_class(data, train, test, logp_imp, logp_sub, chain_imp):
 
 # ------------------------------------------------------------------------------------------------------ 2. per participant
 def per_participant_chart():
+    """Section 2: horizontal bars of the notebook's per-participant accuracy CSV, sorted, own models in orange and
+    the global fallback in aqua. Returns the window-weighted accuracy over all test windows."""
     df = pd.read_csv(PYTORCH_DIR / "gaussiannb_subject_specific_per_participant.csv")
     df = df.sort_values("Accuracy").reset_index(drop=True)
     weighted = float((df["Accuracy"] * df["Test windows"]).sum() / df["Test windows"].sum())
@@ -290,6 +312,7 @@ def per_participant_chart():
     for i, r in df.iterrows():
         ax.text(r["Accuracy"] + 0.01, i, f"{r['Accuracy']:.2f}", va="center", fontsize=8, color=INK)
         note = f"{int(r['Train windows'])} train windows, {int(r['Commands in train'])} commands"
+        # the note fits inside the bar (light text) once the bar is long enough, otherwise it goes after the value
         if r["Accuracy"] > 0.35:
             ax.text(0.01, i, note, va="center", fontsize=7, color=SURFACE)
         else:
@@ -313,6 +336,10 @@ def per_participant_chart():
 
 # ------------------------------------------------------------------------------------------------------ 3. vote gate
 def vote_gate(data, test, logp_by_chain):
+    """Section 3: for every k in 1..5, the share of 5-window decisions whose context decision is backed by at least k
+    of the last 5 window votes (coverage) and the accuracy of those accepted decisions; CSV and the coverage-accuracy
+    curve per chain, the deployed k = 4 ringed. Decisions are replayed per recording as live, so only positions
+    with a full 5-window history count."""
     rows, points = [], {}
     y, groups = data["y"], data["groups"]
     for name, logp in logp_by_chain.items():
@@ -329,6 +356,7 @@ def vote_gate(data, test, logp_by_chain):
         pts = []
         for k in range(1, S.VOTE_WINDOWS + 1):
             m = agree >= k
+            # accuracy is undefined when a strict gate accepts nothing; keep NaN rather than 0 so the curve stops
             cov, accu = float(m.mean()), float(correct[m].mean()) if m.any() else float("nan")
             rows.append({"Chain": name, "Agreement needed": f"{k} of {S.VOTE_WINDOWS}", "Coverage": cov,
                          "Accuracy of accepted decisions": accu, "Decisions": int(len(agree)), "Accepted": int(m.sum()),
@@ -377,6 +405,10 @@ def fit_eval_subject(Xtr, ytr, Xte, q, backend="torch"):
 
 
 def confound_controls(data, train, test, pred_sub, subject_acc):
+    """Section 4: the six leakage / drift controls (a-f below): (a) read from the notebook's improved-vs-baseline
+    CSV, (b)-(f) recomputed on the subject cache; each with the value, the reference it should be compared against,
+    the number the notebook reported and a one-line reading.
+    Writes defense_confound_controls.csv and returns it."""
     X, y, groups, parts = data["X_sub"], data["y"], data["groups"], data["parts"]
     t, file_time = window_times(groups)
     participants = sorted(np.unique(parts[test]))
@@ -414,6 +446,8 @@ def confound_controls(data, train, test, pred_sub, subject_acc):
             recs = np.unique(groups[tr])
             if len(recs) < 6 or te.sum() == 0:
                 continue
+            # a recording holds one command, so its label is permuted as a whole: windows of one recording keep
+            # sharing a label and the session structure the chain could latch onto stays intact
             rec_label = {r: int(y[groups == r][0]) for r in recs}
             permuted = dict(zip(recs, rng.permutation([rec_label[r] for r in recs])))
             y_perm = np.array([permuted[g] for g in groups[tr]])
@@ -457,6 +491,7 @@ def confound_controls(data, train, test, pred_sub, subject_acc):
             recs = sorted(np.unique(groups[(parts == q) & (y == c)]), key=lambda r: file_time[r])
             if len(recs) < 4:
                 continue
+            # recordings are time-sorted, so the label is 0 for the earlier half of the block and 1 for the later
             half = {r: int(i >= len(recs) / 2) for i, r in enumerate(recs)}
             m = np.isin(groups, recs)
             Xb, hb, gb = X[m], np.array([half[g] for g in groups[m]]), groups[m]
@@ -491,6 +526,8 @@ def confound_controls(data, train, test, pred_sub, subject_acc):
                 continue
             n_err += 1
             adjacent += int(abs(rank[pred_c] - rank[true_c]) == 1)
+            # reference: an error that ignored time would land on any of the other n_blocks - 1 blocks with equal
+            # chance, of which one or two (edge blocks have one neighbour) are adjacent
             n_adj = int(rank[true_c] > 0) + int(rank[true_c] < n_blocks - 1)
             expected += n_adj / max(n_blocks - 1, 1)
     rows.append(dict(Control="Errors of the subject-specific chain landing on the adjacent block in time", Classifier="subject-specific chain",
@@ -506,6 +543,10 @@ def confound_controls(data, train, test, pred_sub, subject_acc):
 
 # ------------------------------------------------------------------------------------------------------ 5. frameworks
 def framework_equivalence(data, train, test, chain_sub):
+    """Section 5: two comparisons of TensorFlow and JAX against PyTorch on the subject chain, (i) the stored PyTorch
+    arrays loaded into the other backend (decision agreement and the largest probability difference) and (ii) each
+    backend fitted on its own from the same training windows; then the three notebooks' own protocol numbers next to
+    their window geometry. Returns (equivalence table, notebook table, geometry table)."""
     X, y, parts = data["X_sub"], data["y"], data["parts"]
     same_agree = {b: [] for b in BACKENDS[1:]}
     same_maxdiff = {b: 0.0 for b in BACKENDS[1:]}
@@ -518,6 +559,8 @@ def framework_equivalence(data, train, test, chain_sub):
         if str(status).startswith("global fallback"):          # no per-participant model in the notebook's artifacts
             continue
         Zt = (np.asarray(X[mt], np.float64) - mean) / std
+        # renormalise the log-posteriors before comparing, so a backend that returns unnormalised joint log-densities
+        # is judged on the same probabilities
         lp_torch = I._log_softmax(np.asarray(model.predict_log_proba(Zt)))
         arrays = S.model_to_arrays(model)
         for b in BACKENDS[1:]:
@@ -633,6 +676,7 @@ def framework_performance(data, train, test, chain_sub, nb=None):
     metrics = ["Accuracy", "Macro-F1", "Balanced accuracy", "Cohen's kappa"]
     w = 0.26
     xs = np.arange(len(metrics))
+    # three bars per metric, centred on the tick: (i - 1) puts PyTorch left, TensorFlow on it, JAX right
     for i, r in enumerate(rows):
         vals = [r[m] for m in metrics]
         bars = ax1.bar(xs + (i - 1) * w, vals, w, color=colors[r["Framework"]], label=r["Framework"])
@@ -706,6 +750,7 @@ def _old_random_split(n, seed):
 
 
 def _scores(yt, yp):
+    """Accuracy, macro-F1 and balanced accuracy over the six commands: the three columns every benchmark row has."""
     labels = list(range(len(COMMANDS)))
     return dict(Accuracy=float((yp == yt).mean()),
                 **{"Macro-F1": float(f1_score(yt, yp, labels=labels, average="macro", zero_division=0))},
@@ -835,7 +880,7 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
     # backard) as classes of their own; map every folder name to the six commands with the loader's label table so
     # that the models are trained on the same six classes they were reported on.
     try:
-        from signal_quality.salvage import folder_label
+        from eeg_quality import folder_label
         norm = lambda c: folder_label(str(c)) or RF.normalize_class_label(str(c))  # noqa: E731
     except Exception:  # noqa: BLE001
         fix = {"b ackward": "backward", "backard": "backward", "foreward": "forward", "fowward": "forward", "takoff": "takeoff"}
@@ -846,6 +891,7 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
     y_rows = np.array([COMMANDS.index(mapped[int(v)]) for v in y_raw], np.int32)
     say("folder labels mapped to the six commands: " + ", ".join(f"{c} -> {mapped[i]}" for i, c in enumerate(class_names) if str(c) != mapped[i]))
     n_rows_all, n_files_all = len(y_rows), len(np.unique(file_of_row))
+    # fixed seed so every run of this benchmark uses the same rows; sorted so the file order of the loader survives
     if row_subsample is not None and row_subsample < n_rows_all:
         sub = np.sort(np.random.default_rng(0).choice(n_rows_all, row_subsample, replace=False))
     else:
@@ -873,6 +919,8 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
     c3 = "3. same code on the verified windows (570 features), split by recording"
     for seed in range(n_repeats):
         tr, te = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed).split(X, y, groups))
+        # the forest and the MLP cannot take NaN, so any missing feature is imputed from the training fold only
+        # (the current caches hold none); the MLP's input is standardised the way its script does
         imp = SimpleImputer(strategy="median").fit(X[tr])
         Xtr, Xte = imp.transform(X[tr]).astype(np.float32), imp.transform(X[te]).astype(np.float32)
         mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-8
@@ -900,6 +948,7 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
             gnb_rows.append(dict(Model=f"GaussianNB subject-specific chain ({BACKEND_LABEL[b]})", Condition=c3, Seed=seed,
                                  n_train=int(len(tr)), n_test=int(len(te)), **_scores(y[te], pred), seconds=time.perf_counter() - t1))
             say(f"GNB subject chain ({BACKEND_LABEL[b]}), seed {seed}: accuracy {gnb_rows[-1]['Accuracy']:.4f}, macro-F1 {gnb_rows[-1]['Macro-F1']:.4f}")
+    # GNB rows first so the summary (groupby keeps the order) lists the chains before the original models
     rows = gnb_rows + list(rows)
     for r in rows:
         r["Reported"] = reported.get(r["Model"], float("nan")) if r["Condition"].startswith("1.") else float("nan")
@@ -969,6 +1018,7 @@ def project_models_benchmark(data, data_dir=None, n_repeats=6, max_rows_per_file
 
 # ------------------------------------------------------------------------------------------------------ 6. latency
 def _median_ms(fn, repeat, warmup=3):
+    """(median, p90) wall time of fn in ms over repeat calls, after warmup unmeasured calls (JIT, caches)."""
     for _ in range(warmup):
         fn()
     ts = []
@@ -1004,16 +1054,23 @@ print(json.dumps(rows))
 
 
 def bench_decision_models():
+    """Section 6a: the bare GaussianNB classifier of each framework on synthetic 5-dimensional data (the LDA output
+    size), timing the first fit, a second fit, the first prediction and the steady-state prediction of a 5-window
+    batch; PyTorch on CPU and CUDA where available, TensorFlow and JAX on CPU, JAX on the GPU in a subprocess.
+    Writes defense_decision_model_latency.csv."""
     import torch
-    from gaussiannb_model import GaussianNB as TorchGaussianNB
+    import importlib
+    TorchGaussianNB = importlib.import_module("gaussiannb_model").GaussianNB
     rows = []
     rng = np.random.default_rng(0)
+    # about one participant's training windows and about the whole training split of the notebook
     for n in (600, 9670):
         X = rng.normal(size=(n, 5)).astype(np.float32)
         yv = rng.integers(0, len(COMMANDS), n)
         Xq = rng.normal(size=(5, 5)).astype(np.float32)
         # PyTorch, CPU and CUDA
         for dev in (["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]):
+            # CUDA kernels return before they finish, so every timed region ends with a synchronize on the GPU
             sync = torch.cuda.synchronize if dev == "cuda" else (lambda: None)
             Xt, yt, Xqt = (torch.as_tensor(a).to(dev) for a in (X, yv, Xq))
             m = TorchGaussianNB(5, len(COMMANDS)).to(dev)
@@ -1022,6 +1079,7 @@ def bench_decision_models():
             m.fit(Xt, yt)
             sync()
             fit_ms = (time.perf_counter() - t0) * 1e3
+            # the second fit is the one without first-call costs (kernel loading, allocator warm-up)
             t0 = time.perf_counter()
             TorchGaussianNB(5, len(COMMANDS)).to(dev).fit(Xt, yt)
             sync()
@@ -1081,6 +1139,7 @@ def bench_decision_models():
         env = {k: v for k, v in os.environ.items() if k != "JAX_PLATFORMS"}
         out = subprocess.run([sys.executable, "-c", JAX_GPU_SCRIPT, str(GNB_DIR / "jax")], capture_output=True, text=True,
                              timeout=600, env=env)
+        # the result is the last JSON line on stdout: a dict means "skipped", a list holds the rows
         last = [l for l in out.stdout.strip().splitlines() if l.startswith("{") or l.startswith("[")]
         payload = json.loads(last[-1]) if last else {"skipped": out.stderr[-300:]}
         if isinstance(payload, dict):
@@ -1097,6 +1156,11 @@ def bench_decision_models():
 
 
 def bench_chains(data, participant="G03/person03"):
+    """Section 6b: end-to-end latency of one live capture through each chain in each framework, measured on a real
+    recording of the participant: the time from raw samples to features (filter, windows, features) and from
+    features to the decision (scaling, projection, GaussianNB, context), median of 50 captures after warm-up. The
+    quality gate is not included. Writes
+    defense_latency_per_capture.csv and the stacked bar figure."""
     paths = [g for g, p in zip(data["groups"], data["parts"]) if p == participant and Path(g).exists()]
     if not paths:
         raise FileNotFoundError(f"no Data_clean recording of {participant} on this machine")
@@ -1108,6 +1172,7 @@ def bench_chains(data, participant="G03/person03"):
         for name, chain in (("Improved global chain", I.ImprovedGaussianNBChain(backend=b)),
                             ("Subject-specific chain", S.SubjectSpecificGaussianNBChain(backend=b, users_dir=users_tmp))):
             n = int(value_of(chain, "capture_samples"))
+            # one capture starting 10 s into the recording, pulled back when the recording is shorter
             start = min(int(10 * fs), raw.shape[1] - n)
             cap = np.ascontiguousarray(raw[:, start:start + n])
             X = chain.features_from_raw(cap, channels, fs)
@@ -1186,6 +1251,7 @@ def context_decisions(logp, groups, test, k=I.CONTEXT_WINDOWS, vote_windows=S.VO
     vote_windows window votes agree with it, and whether a full context was available (the GUI decides per capture,
     so only full-context positions count as decisions)."""
     idx_test = np.flatnonzero(test)
+    # cache index -> position in the test-only arrays below
     pos = {int(i): n for n, i in enumerate(idx_test)}
     n = len(idx_test)
     dec, agree = np.zeros(n, int), np.zeros(n, int)
@@ -1240,6 +1306,8 @@ def context_accuracy(logp, groups, y, test):
 
 
 def own_model_participants():
+    """From the notebook's per-participant CSV: the sorted names of the participants with an own model, and the rows
+    of those on the global fallback (one command in training)."""
     pp = pd.read_csv(PYTORCH_DIR / "gaussiannb_subject_specific_per_participant.csv")
     own = sorted(pp[pp["Model"] == "own"]["Participant"])
     fallback = pp[pp["Model"] != "own"]
@@ -1247,6 +1315,7 @@ def own_model_participants():
 
 
 def command_legend(ax, loc="upper right", markers=False, **kw):
+    """Legend of the six commands in their fixed colours (squares, or the per-command markers when markers=True)."""
     handles = [Line2D([], [], marker=COMMAND_MARKERS[k] if markers else "s", linestyle="", color=COMMAND_COLORS[k],
                       markersize=7, label=c) for k, c in enumerate(COMMANDS)]
     return ax.legend(handles=handles, loc=loc, fontsize=8, **kw)
@@ -1287,6 +1356,7 @@ def gated_confusions(data, test, logp_by_chain):
         m = cd["full"]
         yt, dec = y[cd["index"]][m], cd["decision"][m]
         accepted = cd["agreement"][m] >= S.MIN_AGREEMENT
+        # withheld decisions get the extra label 6 ("uncertain"); the truth never has it, so drop that 7th row
         pred = np.where(accepted, dec, len(COMMANDS))
         cm = confusion_matrix(yt, pred, labels=range(len(COMMANDS) + 1))[:len(COMMANDS)]
         cov = float(accepted.mean())
@@ -1326,6 +1396,7 @@ def baseline_predictions(Xh, y, train, test):
     """The notebook's original chain rebuilt with sklearn on the training windows only (cell 8 / cell 15): drop
     zero-variance features, median imputation, Yeo-Johnson power transform, PCA keeping 95 % of the variance,
     GaussianNB. Returns the test log-posteriors and the PCA dimensionality."""
+    # zero-variance features are found on the training windows only, as the notebook does before its power transform
     keep = Xh[train].var(0) > 1e-15
     pipe = make_pipeline(SimpleImputer(strategy="median"), ParallelPowerTransformer(method="yeo-johnson", standardize=True),
                          PCA(n_components=0.95, random_state=42), SkGaussianNB())
@@ -1396,6 +1467,7 @@ def participant_confusions(data, test, pred_sub):
         ax = axes.flat[n]
         m = pt == q
         cm = confusion_matrix(yt[m], pred_sub[m], labels=range(len(COMMANDS)))
+        # tick labels only on the bottom panel of each column and the left panel of each row, the rest stays blank
         last_row = n + ncol >= len(order)
         plot_cm(ax, cm, f"{q}   {accs[q]:.2f}   ({int(m.sum())} windows)", compact=True, show_x=last_row, show_y=(n % ncol == 0))
     for ax in axes.flat[len(order):]:
@@ -1479,6 +1551,7 @@ def decision_timeline(data, test, logp_sub, participant=TEST_PARTICIPANT):
         x = x0 + np.arange(len(idx)) * stride_s
         x1 = x0 + len(idx) * stride_s
         ax_band.axvspan(x0, x1, color=COMMAND_COLORS[truth], alpha=0.9, linewidth=0)
+        # backward (blue) and takeoff (green) bands are dark, so their label is drawn in the light surface colour
         ax_band.text((x0 + x1) / 2, 0.5, f"true: {COMMANDS[truth]}", ha="center", va="center", fontsize=8,
                      color=SURFACE if truth in (0, 5) else INK)
         lo = np.zeros(len(idx))
@@ -1576,6 +1649,7 @@ def permutation_test(data, train, test, n_perm=100, seed=0, n_jobs=4):
         if (i + 1) % 20 == 0:
             say(f"permutation {i + 1}/{n_perm} ({time.perf_counter() - t0:.0f} s)")
     null = np.array(null)
+    # the observed value counts as one of the permutations, so p is never 0 and is at least 1 / (n_perm + 1)
     p_value = float((1 + (null >= observed).sum()) / (1 + n_perm))
     out = dict(n_permutations=int(n_perm), observed_accuracy=float(observed), null_mean=float(null.mean()),
                null_std=float(null.std()), null_min=float(null.min()), null_max=float(null.max()), p_value=p_value,
@@ -1679,6 +1753,8 @@ def time_distance_figure(data, train, test, pred_sub):
         tt = np.sort(t[tr])
         sel = parts[idx_test] == q
         tq = t[idx_test][sel]
+        # nearest training time is either the one just before or just after the insertion point; the clip keeps
+        # both neighbours inside the sorted array at the ends
         pos = np.clip(np.searchsorted(tt, tq), 1, len(tt) - 1)
         gap[sel] = np.minimum(np.abs(tq - tt[pos - 1]), np.abs(tq - tt[pos]))
     edges = [0, 2, 10, 15, 20, 30, 60, np.inf]
@@ -1737,6 +1813,7 @@ def learning_curve_spread(data, train, test):
             for q in np.unique(parts[train]):
                 for c in range(len(COMMANDS)):
                     m = train & (parts == q) & (y == c)
+                    # sorted paths (session folder, then the timestamp in the file name) are the notebook's file ordering
                     keep |= m & np.isin(groups, sorted(np.unique(groups[m]))[:k])
         logp, model = subject_chain_logp(X[keep], y[keep], parts[keep], X[test], parts[test])
         pred = logp.argmax(1)
@@ -1797,6 +1874,7 @@ def channel_contribution(chain_sub):
     models = chain_sub.notebook_models.models_
     contrib = np.zeros((len(models), len(channels), len(groups_of)))
     for p, (q, model) in enumerate(sorted(models.items())):
+        # projection_ is (features x up to 5 discriminant axes); one weight per feature, normalised per participant
         w = np.abs(np.asarray(model.projection_, np.float64)).sum(1)
         w = w / w.sum()
         for f, (chs, g) in enumerate(zip(feat_chans, feat_group)):
@@ -1851,7 +1929,7 @@ def dataset_figure_and_table(data, train, test, chain_imp, skip_load=False):
                  ("Named OpenBCI recordings found", len(recs) + len(skipped), "eeg_data.load_recordings"),
                  (f"Recordings loaded ({chain_imp.config.board}, {len(chain_imp.config.channels)} channels)", len(recs), "eeg_data.load_recordings"),
                  ("Recordings skipped (other board, unreadable or unlabelled)", len(skipped), f"{other_board} of another board"),
-                 ("2 s blocks assessed", sum(r["n_blocks"] for r in recs), "signal_quality policy on the kept channels"),
+                 ("2 s blocks assessed", sum(r["n_blocks"] for r in recs), "quality policy (eeg_quality.py) on the kept channels"),
                  ("2 s blocks kept", sum(r["n_blocks_kept"] for r in recs),
                   f"{100 * sum(r['n_blocks_kept'] for r in recs) / max(1, sum(r['n_blocks'] for r in recs)):.1f} %"),
                  ("Recordings with usable data", sum(1 for r in recs if r["segments"]), "at least one kept block"),
@@ -1917,6 +1995,7 @@ def itr_table(data, test, logp_by_chain, window_pred):
                                             (f"5-window context ({CONTEXT_SECONDS:.2f} s)", CONTEXT_SECONDS, acc_c, 1.0, int(m.sum())),
                                             (f"gated context, {S.MIN_AGREEMENT} of {S.VOTE_WINDOWS} votes ({CONTEXT_SECONDS:.2f} s)", CONTEXT_SECONDS, acc_g, cov, int(accepted.sum()))):
             bits = wolpaw_bits(acc)
+            # bits per minute of the gated decision are scaled by coverage: withheld decisions carry no information
             rows.append({"Chain": name, "Decision": decision, "Seconds per decision": round(secs, 3), "Accuracy": acc,
                          "Coverage": cov_, "Bits per decision": bits, "Bits per minute": bits * 60 / secs * cov_, "n": n})
     df = pd.DataFrame(rows)
@@ -1953,6 +2032,8 @@ def statistics_table(data, test, logp_by_chain, window_pred):
                          **{"95 % low": float("nan"), "95 % high": float("nan")}, n=int(len(yt)), Detail="0 = chance agreement, 1 = perfect"))
     names = list(logp_by_chain)
     a, b = correct[names[0]], correct[names[1]]
+    # McNemar only looks at the discordant windows (one chain right, the other wrong); under the null they split
+    # 50/50, so the exact test is a two-sided binomial on the smaller count
     n01, n10 = int((a & ~b).sum()), int((~a & b).sum())
     exact_p = float(stats.binomtest(min(n01, n10), n01 + n10, 0.5).pvalue)
     chi2 = (abs(n01 - n10) - 1) ** 2 / max(n01 + n10, 1)
@@ -1982,6 +2063,8 @@ def subject_ablation(data, train, test, chain_sub):
     notebook split (the notebook's chain incl. fallback), window accuracy and the notebook's other metrics."""
     X, y, groups, parts = data["X_sub"], data["y"], data["groups"], data["parts"]
     n_ch = len(chain_sub.channels)
+    # feature layout of the subject cache: three log-covariance blocks of n_ch (n_ch + 1) / 2 upper-triangle
+    # entries each, then the multitaper band powers up to the last column
     n_cov = n_ch * (n_ch + 1) // 2
     blocks = {"log-covariance 1-40 Hz": (0, n_cov), "log-covariance, first difference": (n_cov, 2 * n_cov),
               "log-covariance 30-45 Hz": (2 * n_cov, 3 * n_cov), "multitaper band powers": (3 * n_cov, X.shape[1])}
@@ -2018,6 +2101,7 @@ def model_complexity(data, train, chain_imp, chain_sub, repeats=20):
     n_people_imp = len(chain_imp.training_scaler.stats_)
     models = chain_sub.notebook_models.models_
     n_people_sub = len(chain_sub.notebook_scaler.stats_)
+    # one prior per class, then a mean and a variance per class and projected dimension
     gnb_params = n_cls + 2 * n_cls * n_proj
     rows = [
         dict(Model="Improved global chain", Stage=f"participant z-score ({n_people_imp} participants + global)",
@@ -2135,6 +2219,9 @@ def write_tables_md():
 
 # ------------------------------------------------------------------------------------------------------ main
 def main(argv=None):
+    """Run every section (latency last), each --skip flag dropping one of the slow ones, and collect every
+    section's headline numbers in defense_summary.json. --only-latency redoes the two latency tables, their figure
+    and defense_tables.md alone."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--skip-latency", action="store_true")
     ap.add_argument("--skip-controls", action="store_true")

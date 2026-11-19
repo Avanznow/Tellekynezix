@@ -1,0 +1,24 @@
+[matched 15:14:42] loading the GNB caches (defense load_caches) and proving the alignment
+[matched 15:14:51] alignment proven: True
+[matched 15:14:51] VQC worker (PennyLane environment): stored predictions + re-evaluation of params.pt
+{"run_id": "vqc_q6_l4_s0", "accuracy_recomputed": 0.24936278674596432, "accuracy_benchmark_csv": 0.2493627867459643, "predictions_identical_to_stored": true, "latency_ms": 9.565017000568332}
+{"run_id": "vqc_q6_l4_s1", "accuracy_recomputed": 0.23496801705756928, "accuracy_benchmark_csv": 0.2349680170575692, "predictions_identical_to_stored": true, "latency_ms": 9.62630499907391}
+{"run_id": "vqc_q6_l4_s2", "accuracy_recomputed": 0.22274678111587984, "accuracy_benchmark_csv": 0.2227467811158798, "predictions_identical_to_stored": true, "latency_ms": 9.627253500184452}
+[matched 15:14:58] seed 0, fit on train
+[matched 15:15:21] seed 0, fit on train+val
+[matched 15:15:39] seed 1, fit on train
+[matched 15:16:03] seed 1, fit on train+val
+[matched 15:16:22] seed 2, fit on train
+[matched 15:16:45] seed 2, fit on train+val
+[matched 15:17:04] fidelity checks against the repository's recorded results
+[matched 15:17:38] done: matched_alignment.json, matched_benchmark_runs.csv, matched_benchmark_summary.csv, matched_checks.json, matched_confusions.json, matched_environment.json, matched_mcnemar.csv, matched_per_class.csv, matched_per_class_summary.csv, matched_run_log.txt, matched_sanity_vs_quantum_benchmark.csv, matched_test_predictions.csv.gz, matched_vqc_test_predictions.npz, matched_vqc_worker.json, matched_window_positions.csv.gz
+                                              model                              variant  n_seeds  accuracy_mean  accuracy_sd  macro_f1_mean  latency_ms_mean
+               GNB subject-specific chain (PyTorch)                                train        3       0.844044     0.008876       0.843564         0.079341
+        GNB improved global chain (PyTorch, argmax)                                train        3       0.486422     0.016003       0.482253         0.072648
+GNB improved global chain (PyTorch, threshold rule)                                train        3       0.482719     0.014472       0.477152         0.083848
+     sklearn GaussianNB (570 standardised features)                                train        3       0.271034     0.005159       0.252779         0.122318
+               GNB subject-specific chain (PyTorch)                            train+val        3       0.855023     0.001940       0.854793         0.079996
+        GNB improved global chain (PyTorch, argmax)                            train+val        3       0.499373     0.022518       0.495249         0.073294
+GNB improved global chain (PyTorch, threshold rule)                            train+val        3       0.496818     0.020890       0.493188         0.085404
+     sklearn GaussianNB (570 standardised features)                            train+val        3       0.275936     0.020048       0.254681         0.125885
+                                  VQC 6q x 4 layers train (val for checkpoint selection)        3       0.235693     0.013323       0.228651         9.606192

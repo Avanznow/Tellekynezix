@@ -66,7 +66,7 @@
 |---|---|---|---|---|---|---|
 | Held-out participants (5-fold by participant) | improved global chain | 0.184 | 0.167 | chance | 0.180 | nothing transfers across people |
 | Held-out participants (5-fold by participant) | subject-specific chain | 0.189 | 0.167 | chance | 0.180 | nothing transfers across people |
-| Acquisition time only, no EEG (label of the nearest training window in time) | time of the window | 0.885 | 0.167 | chance | 0.970 | the split lets time alone predict the command |
+| Acquisition time only, no EEG (label of the nearest training window in time) | time of the window | 0.884 | 0.167 | chance | 0.970 | the split lets time alone predict the command |
 | Labels permuted across recordings within participant (3 seeds) | subject-specific chain | 0.159 | 0.167 | chance | 0.150 | the chain learns nothing from shuffled labels: no leak through features |
 | Train on the first 60 % of every command block, test on the last 40 % | subject-specific chain | 0.677 | 0.846 | same chain, notebook split | 0.660 | accuracy falls with time distance to the training recordings |
 | First half vs second half of the SAME command block | LDA + GaussianNB, leave-one-recording-out | 0.757 | 0.500 | chance (2 classes) | 0.730 | windows carry the session's drift, not only the command |
@@ -168,11 +168,11 @@
 
 | Quantity | Value | Detail |
 |---|---|---|
-| Files under Data_clean | 3648 | eeg_data.load_recordings |
+| Files under Data_clean | 3653 | eeg_data.load_recordings |
 | Named OpenBCI recordings found | 1826 | eeg_data.load_recordings |
 | Recordings loaded (16ch_125hz, 15 channels) | 1394 | eeg_data.load_recordings |
 | Recordings skipped (other board, unreadable or unlabelled) | 432 | 422 of another board |
-| 2 s blocks assessed | 6703 | signal_quality policy on the kept channels |
+| 2 s blocks assessed | 6703 | quality policy (eeg_quality.py) on the kept channels |
 | 2 s blocks kept | 3249 | 48.5 % |
 | Recordings with usable data | 883 | at least one kept block |
 | Participants with usable data | 18 of 23 | none usable: G03/person02, G04/person03, G04/person06, G04/person08, G04/person10 |
@@ -202,10 +202,10 @@
 | Subject-specific chain | one user's LDA projection (435 -> 5) | 2175.000 | torch_gaussiannb_subject_models.joblib | 323.600 | the artifact holds 17 own models + the global fallback |
 | Subject-specific chain | one user's GaussianNB (6 classes x 5 dims) | 66.000 | torch_gaussiannb_subject_models.joblib |  | priors, means, variances |
 | Subject-specific chain | total per user | 3111.000 | model.npz per user in the GUI's store |  | all 18 models + scaler: 455.4 KB |
-| Subject-specific chain | fit of one user's model (631 windows of G03/person03) |  |  |  | median 269 ms over 20 fits (p90 303 ms): z-score, LDA, GaussianNB |
-| RandomForest (PyTorch notebook) | saved artifact |  | prediction-random-forest/pytorch/custom_rf.pt.gz | 8387.100 | gzip-compressed state; parameters not counted (not loaded here) |
-| RandomForest (JAX notebook) | saved artifact |  | prediction-random-forest/JAX/trained_classifier_rf_jax.pkl | 799.700 | pickle; parameters not counted (not loaded here) |
-| JAX MLP (deep learning notebook) | saved artifact |  | prediction_deep_learning/JAX/trained_classifier_dl_jax.pkl | 213.200 | pickle; parameters not counted (not loaded here) |
+| Subject-specific chain | fit of one user's model (631 windows of G03/person03) |  |  |  | median 44 ms over 20 fits (p90 67 ms): z-score, LDA, GaussianNB |
+| RandomForest (PyTorch notebook) | saved artifact |  | prediction-random-forest\pytorch\custom_rf.pt.gz | 8387.100 | gzip-compressed state; parameters not counted (not loaded here) |
+| RandomForest (JAX notebook) | saved artifact |  | prediction-random-forest\JAX\trained_classifier_rf_jax.pkl | 799.700 | pickle; parameters not counted (not loaded here) |
+| JAX MLP (deep learning notebook) | saved artifact |  | prediction_deep_learning\JAX\trained_classifier_dl_jax.pkl | 213.200 | pickle; parameters not counted (not loaded here) |
 
 ## defense_framework_equivalence.csv
 
@@ -245,15 +245,15 @@
 
 | Model | Condition | runs | Accuracy | Accuracy_sd | Macro-F1 | Macro-F1_sd | Balanced accuracy | Reported | n_train | n_test | seconds | rows_in_loader | files_in_loader | rows_used |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| GaussianNB subject-specific chain (PyTorch) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.839 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 5.171 | 291200 | 1820 | 30000 |
-| GaussianNB subject-specific chain (TensorFlow) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.838 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 5.414 | 291200 | 1820 | 30000 |
-| GaussianNB subject-specific chain (JAX) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.838 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 16.798 | 291200 | 1820 | 30000 |
-| JAX random forest | 1. as reported: own loader, random split of rows | 1 | 0.930 |  | 0.930 |  | 0.930 | 0.944 | 21000.000 | 6000.000 | 409.353 | 291200 | 1820 | 30000 |
-| JAX deep learning (MLP) | 1. as reported: own loader, random split of rows | 1 | 0.958 |  | 0.957 |  | 0.957 | 0.936 | 21000.000 | 6000.000 | 29.293 | 291200 | 1820 | 30000 |
-| JAX random forest | 2. same code and rows, split by recording | 1 | 0.846 |  | 0.850 |  | 0.851 |  | 24055.000 | 5945.000 | 458.172 | 291200 | 1820 | 30000 |
-| JAX deep learning (MLP) | 2. same code and rows, split by recording | 1 | 0.906 |  | 0.905 |  | 0.908 |  | 24055.000 | 5945.000 | 29.400 | 291200 | 1820 | 30000 |
-| JAX random forest | 3. same code on the verified windows (570 features), split by recording | 6 | 0.509 | 0.035 | 0.501 | 0.039 | 0.506 |  | 9672.333 | 2416.667 | 120.956 | 291200 | 1820 | 30000 |
-| JAX deep learning (MLP) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.702 | 0.030 | 0.697 | 0.033 | 0.699 |  | 9672.333 | 2416.667 | 13.289 | 291200 | 1820 | 30000 |
+| GaussianNB subject-specific chain (PyTorch) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.839 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 0.972 | 291200 | 1820 | 30000 |
+| GaussianNB subject-specific chain (TensorFlow) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.838 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 0.946 | 291200 | 1820 | 30000 |
+| GaussianNB subject-specific chain (JAX) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.841 | 0.016 | 0.838 | 0.019 | 0.841 |  | 9672.333 | 2416.667 | 3.331 | 291200 | 1820 | 30000 |
+| JAX random forest | 1. as reported: own loader, random split of rows | 1 | 0.919 |  | 0.920 |  | 0.919 | 0.944 | 21000.000 | 6000.000 | 177.253 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 1. as reported: own loader, random split of rows | 1 | 0.950 |  | 0.950 |  | 0.950 | 0.936 | 21000.000 | 6000.000 | 15.847 | 291200 | 1820 | 30000 |
+| JAX random forest | 2. same code and rows, split by recording | 1 | 0.797 |  | 0.798 |  | 0.802 |  | 24055.000 | 5945.000 | 221.474 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 2. same code and rows, split by recording | 1 | 0.908 |  | 0.908 |  | 0.910 |  | 24055.000 | 5945.000 | 15.608 | 291200 | 1820 | 30000 |
+| JAX random forest | 3. same code on the verified windows (570 features), split by recording | 6 | 0.509 | 0.035 | 0.501 | 0.039 | 0.506 |  | 9672.333 | 2416.667 | 52.030 | 291200 | 1820 | 30000 |
+| JAX deep learning (MLP) | 3. same code on the verified windows (570 features), split by recording | 6 | 0.703 | 0.022 | 0.699 | 0.026 | 0.701 |  | 9672.333 | 2416.667 | 6.857 | 291200 | 1820 | 30000 |
 
 ## defense_decision_model_latency.csv
 

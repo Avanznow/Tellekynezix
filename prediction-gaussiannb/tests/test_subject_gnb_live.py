@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from portable import link_or_copy, local_recording
 
 GNB_DIR = Path(__file__).resolve().parents[1]
 MODEL_DIR = GNB_DIR / "pytorch"
@@ -30,10 +31,8 @@ for _p in (MODEL_DIR, GNB_DIR, REPO_ROOT):
 import subject_gnb_inference as S  # noqa: E402
 import eeg_data as E  # noqa: E402
 from improved_gnb_features import participant_of  # noqa: E402
-from signal_quality import QualityAssessor, QualityGatedPredictor, may_execute  # noqa: E402
-from signal_quality.acquisition import read_openbci  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
-from signal_quality.salvage import folder_label  # noqa: E402
+from eeg_quality import (QualityAssessor, QualityGatedPredictor, folder_label, load_default_config,  # noqa: E402
+                         may_execute, read_openbci)
 
 CACHE_DIR = REPO_ROOT / "predictions_local" / "feature_cache"
 PER_PARTICIPANT_CSV = MODEL_DIR / "gaussiannb_subject_specific_per_participant.csv"
@@ -65,7 +64,9 @@ def split():
     if not caches:
         pytest.skip("notebook subject feature cache not present")
     z = np.load(caches[-1], allow_pickle=True)
-    X, y, groups = z["X"].astype(np.float32), z["y"].astype(np.int64), z["groups"].astype(str)
+    # the cache names recordings by the paths of the machine that wrote it: map them to this checkout's Data_clean
+    # (same sorted order, so notebook_split's group codes and the fold are unchanged)
+    X, y, groups = z["X"].astype(np.float32), z["y"].astype(np.int64), np.array([local_recording(g) for g in z["groups"].astype(str)])
     assert X.shape[1] == 435
     tr, _ = notebook_split(X, y, groups)
     train = np.zeros(len(y), dtype=bool)
@@ -405,8 +406,8 @@ def test_guided_session_collects_labelled_windows_and_trains_the_user(chain, par
     raw_dir = Path(summary["raw_dir"])
     assert raw_dir == chain.user_dir("tester") / "sessions" / "unit-session"
     index = json.loads((raw_dir / "cues.json").read_text())
-    z = np.load(raw_dir / "cues.npz")
-    assert len(index) == 12 and all(z[f"raw_{k:03d}"].shape == (16, 1250) for k in range(12))
+    with np.load(raw_dir / "cues.npz") as z:        # closed before forget_user: Windows cannot delete an open file
+        assert len(index) == 12 and all(z[f"raw_{k:03d}"].shape == (16, 1250) for k in range(12))
     assert [i["command"] for i in index] == [c["command"] for c in plan.schedule]
     # a second session accumulates, and stopping early keeps what was collected
     stop_after = {"n": 4}
@@ -434,7 +435,7 @@ def test_cli_train_folder_status_and_replay(participant, tmp_path, capsys):
     folder = tmp_path / "recordings"
     for p in train_paths[:18]:
         (folder / Path(p).parent.name).mkdir(parents=True, exist_ok=True)
-        (folder / Path(p).parent.name / Path(p).name).symlink_to(p)
+        link_or_copy(folder / Path(p).parent.name / Path(p).name, p)
     users = tmp_path / "users"
     S.main(["--users-dir", str(users), "train-folder", "--participant", "cli-user", "--folder", str(folder), "--no-self-check"])
     out = json.loads(capsys.readouterr().out)

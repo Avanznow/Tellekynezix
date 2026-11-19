@@ -1,10 +1,13 @@
 import time
 import pandas as pd
 import torch
-import serial # required pyserial install
-import brainflow
 import uuid
-from signal_quality.acquisition import brainflow_capture
+import sys
+from pathlib import Path
+_GNB = Path(__file__).resolve().parents[1] / "prediction-gaussiannb"
+if str(_GNB) not in sys.path:
+    sys.path.insert(0, str(_GNB))
+from eeg_quality import brainflow_capture  # noqa: E402
 from sklearn.preprocessing import StandardScaler
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from serial.tools import list_ports

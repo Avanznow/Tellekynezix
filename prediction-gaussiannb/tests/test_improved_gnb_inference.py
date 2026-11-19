@@ -16,6 +16,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pytest
+from portable import local_recording
 import torch
 
 GNB_DIR = Path(__file__).resolve().parents[1]
@@ -28,9 +29,7 @@ for _p in (MODEL_DIR, GNB_DIR, REPO_ROOT):
 import improved_gnb_inference as I  # noqa: E402
 from gaussiannb_model import GaussianNB as TorchGaussianNB  # noqa: E402
 from improved_gnb_features import participant_of  # noqa: E402
-from signal_quality import QualityAssessor, QualityGatedPredictor, may_execute  # noqa: E402
-from signal_quality.acquisition import read_openbci  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
+from eeg_quality import QualityAssessor, QualityGatedPredictor, load_default_config, may_execute, read_openbci  # noqa: E402
 
 CACHE_DIR = REPO_ROOT / "predictions_local" / "feature_cache"
 BLOCK = 250  # one 2 s quality block at 125 Hz; the loader drops block 0 (start-up transient)
@@ -93,15 +92,17 @@ def recording():
     groups = z["groups"].astype(str)
     counts = collections.Counter(groups)
     for path in sorted(counts):
-        if counts[path] >= 10 and Path(path).exists():
+        # the cache names the recording by the path of the machine that wrote it; the file is read from this checkout
+        local = local_recording(path)
+        if counts[path] >= 10 and Path(local).exists():
             rows = np.where(groups == path)[0]
             assert np.array_equal(rows, np.arange(rows[0], rows[-1] + 1)), "cached windows of a recording are contiguous"
-            return path, z["X"][rows].astype(np.float32), z["y"][rows].astype(int)
+            return local, z["X"][rows].astype(np.float32), z["y"][rows].astype(int)
     pytest.skip("no cached Data_clean recording present on this machine")
 
 
 def chain_assessor(chain):
-    """The app's quality policy (signal_quality/default_config.json), as the loader uses it."""
+    """The app's quality policy (prediction-gaussiannb/quality_policy.json), as the loader uses it."""
     return QualityAssessor(load_default_config())
 
 

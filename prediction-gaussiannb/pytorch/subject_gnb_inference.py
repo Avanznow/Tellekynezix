@@ -52,6 +52,7 @@ import torch
 MODEL_DIR = Path(__file__).resolve().parent
 GNB_DIR = MODEL_DIR.parent
 REPO_ROOT = GNB_DIR.parent
+# the sibling modules live in these three folders; importable whether run as a script, from the GUI or in tests
 for _p in (MODEL_DIR, GNB_DIR, REPO_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -62,10 +63,8 @@ from improved_gnb_features import (SUBJECT_FEATURE_VERSION, ParticipantScaler, b
                                    extract_subject_features, participant_of, subject_feature_names)
 from improved_gnb_inference import (CONTEXT_WINDOWS, MODEL_FILE, WINDOW_SIZE, WINDOW_STRIDE,  # noqa: E402
                                     _log_softmax, _safe_name, context_log_posteriors, cut_windows)
-from signal_quality import QualityAssessor, QualityGatedPredictor  # noqa: E402
-from signal_quality.acquisition import brainflow_capture, read_openbci  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
-from signal_quality.salvage import folder_label  # noqa: E402
+from eeg_quality import (QualityAssessor, QualityGatedPredictor, brainflow_capture, folder_label,  # noqa: E402
+                         load_default_config, read_openbci)
 from subject_gnb import ProjectedTorchGaussianNB, SubjectSpecificGaussianNB, framework_backend  # noqa: E402
 
 COMMANDS = list(LABELS)                       # alphabetical = the notebook's LabelEncoder order (0..5)
@@ -129,6 +128,7 @@ def select_channels(raw, channels, trained_channels):
         rows = [int(_BRAINFLOW_NAME.match(c)[1]) for c in channels]
         if rows != sorted(rows):
             raise ValueError("BrainFlow EEG rows must be in board order")
+        # "EXG Channel i" is the i-th EEG row (0-based): EEG_1..16 come in board order, so the row index is i
         return raw[[int(c.split()[-1]) for c in trained_channels]]
     raise ValueError(f"cannot map capture channels {channels} to the trained channels {trained_channels}")
 
@@ -136,6 +136,7 @@ def select_channels(raw, channels, trained_channels):
 def segment_views(raw_selected, config):
     """Selected raw rows (channels, samples) -> (filt, raw, gamma), each (samples, channels) float32, filtered as one
     segment: the loader's filtering, mean removal only, and the 30-45 Hz band-pass of the raw view."""
+    # _filter works on (samples, channels), hence the transpose; each view is filtered as one continuous segment
     x = np.asarray(raw_selected, np.float64).T
     filt = _filter(x, config)
     rawd = _filter(x, raw_config(config))
@@ -159,6 +160,7 @@ def kept_runs(raw_selected, capture, config, channels, assessor):
     fs = config.sfreq
     counters, timestamps = capture.get("counters"), capture.get("timestamps")
     block = int(round(BLOCK_SECONDS * fs))
+    # whole 2 s blocks only (250 samples at 125 Hz); a trailing partial block is never windowed
     n_blocks = raw_selected.shape[1] // block
     usable = np.zeros(n_blocks, dtype=bool)
     reasons = []
@@ -180,6 +182,8 @@ def kept_runs(raw_selected, capture, config, channels, assessor):
         reasons.append(report["reasons"])
     runs, run = [], []
     max_gap = assessor.config.max_arrival_gap_seconds
+    # a run is a stretch of consecutive kept blocks, also cut where the one-byte packet counter (wraps at 256)
+    # skips or the arrival gap is too long, so no window ever straddles lost samples
     for b in range(n_blocks):
         if usable[b] and run and counters is not None and timestamps is not None:
             a = b * block
@@ -210,6 +214,7 @@ def expected_accuracy(recordings_per_command):
     if k <= 0:
         return CHANCE
     xs, ys = zip(*LEARNING_CURVE)
+    # below the first curve point: a straight line from chance at zero recordings
     if k <= xs[0]:
         return float(CHANCE + (ys[0] - CHANCE) * k / xs[0])
     return float(np.interp(k, xs, ys))
@@ -240,18 +245,23 @@ class TrainingPlan:
             raise ValueError(f"need >= 1 round and cues of >= {2 * BLOCK_SECONDS:.0f} s (the first 2 s block is dropped)")
         self.rounds, self.cue_seconds, self.rest_seconds = int(rounds), float(cue_seconds), float(rest_seconds)
         self.settle_seconds, self.commands = float(settle_seconds), [str(c) for c in commands]
+        # the seed is kept so meta.json can reproduce the cue order of a session
         self.seed = int(time.time()) if seed is None else int(seed)
         self.schedule = build_schedule(self.commands, self.rounds, self.seed)
 
     @property
     def n_cues(self):
+        """Cues in the schedule: rounds x commands."""
         return len(self.schedule)
 
     @property
     def total_seconds(self):
+        """Wall-clock length of the session in seconds, settle included."""
         return self.settle_seconds + self.n_cues * (self.rest_seconds + self.cue_seconds)
 
     def as_dict(self):
+        """JSON-able plan for the GUI and meta.json. Each round cues every command once and one cue counts as one
+        recording, so rounds = recordings per command on the learning curve."""
         k = self.rounds
         return dict(rounds=self.rounds, cue_seconds=self.cue_seconds, rest_seconds=self.rest_seconds,
                     settle_seconds=self.settle_seconds, commands=self.commands, seed=self.seed, n_cues=self.n_cues,
@@ -290,6 +300,7 @@ def model_from_arrays(z, backend="torch"):
     model.n_train_ = int(z["n_train"])
     means = np.asarray(z["means"], np.float32)
     nb = TorchGaussianNB(num_features=means.shape[1], num_classes=means.shape[0])
+    # copy the stored arrays into the module's buffers so it looks exactly like a model that went through fit()
     with torch.no_grad():
         nb.class_priors.copy_(torch.from_numpy(np.asarray(z["priors"], np.float32)))
         nb.means.copy_(torch.from_numpy(means))
@@ -314,6 +325,7 @@ def fit_user_model(X, y, participant, min_windows=MIN_WINDOWS, backend="torch"):
     Z = (X - mean) / std
     ssg = SubjectSpecificGaussianNB(n_components=N_COMPONENTS, shrinkage=SHRINKAGE, min_windows=min_windows,
                                     n_classes=len(COMMANDS), backend=backend)
+    # add_participant expects the containers fit() would create; no global model is fitted for a single user
     ssg.models_, ssg.skipped_ = {}, {}
     model = ssg.add_participant(Z, y, participant)
     return mean, std, model, ssg.skipped_.get(str(participant))
@@ -330,14 +342,17 @@ def cue_grouped_cv(X, y, cue_ids, participant, min_windows=MIN_WINDOWS, max_fold
     per_command = {c: len(np.unique(cue_ids[y == c])) for c in np.unique(y)}
     if len(per_command) < 2 or min(per_command.values()) < 2:
         return None
+    # no more folds than the rarest command has cues; otherwise a command could vanish from a fold's training half
     n_splits = int(min(max_folds, min(per_command.values())))
     correct = ctx_correct = total = 0
     for tr, te in GroupKFold(n_splits=n_splits).split(X, y, groups=cue_ids):
+        # a fold's training part may fall under MIN_WINDOWS; lower the bar so small stores still get their check
         mean, std, model, _ = fit_user_model(X[tr], y[tr], participant, min_windows=min(min_windows, len(tr)), backend=backend)
         if model is None:
             return None
         logp = model.predict_log_proba((X[te] - mean) / std)
         correct += int((logp.argmax(1) == y[te]).sum())
+        # context posteriors are summed within one cue only: windows of different cues are not contiguous in time
         for cue in np.unique(cue_ids[te]):
             m = np.where(cue_ids[te] == cue)[0]
             ctx_correct += int((context_log_posteriors(logp[m]).argmax(1) == y[te][m]).sum())
@@ -355,19 +370,27 @@ class UserModel:
 
     @property
     def n_windows(self):
+        """Labelled windows in the user's store (from meta.json)."""
         return int(self.meta.get("n_windows", 0))
 
     @property
     def cues_per_command(self):
+        """Stored cues (recordings) per command, 0 for a command not seen yet."""
         return {c: int(self.meta.get("cues_per_command", {}).get(c, 0)) for c in COMMANDS}
 
     @property
     def min_cues(self):
+        """The command with the fewest cues: what bounds the learning-curve expectation."""
         return min(self.cues_per_command.values())
 
     def status(self):
+        """One line for the GUI: why the global fallback applies, or the own model's size and expected accuracy."""
         if self.model is None:
-            return f"too few labelled windows ({self.n_windows} < {MIN_WINDOWS}, {len(self.meta.get('commands', []))} commands): global fallback"
+            commands = list(self.meta.get("commands", []))
+            if len(commands) < 2:          # add_participant also needs two classes, however many windows there are
+                return (f"only {len(commands)} command recorded ({', '.join(commands) or 'none'}); the own model needs at "
+                        f"least two: global fallback")
+            return f"too few labelled windows ({self.n_windows} < {MIN_WINDOWS}): global fallback"
         return f"own model ({self.n_windows} windows, {self.min_cues} cues/command, expect ~{_pct(expected_accuracy(self.min_cues))} %)"
 
 
@@ -377,6 +400,8 @@ class SubjectSpecificGaussianNBChain:
     artifacts (training participants + global fallback)."""
 
     def __init__(self, users_dir=None, model_dir=None, device="cpu", load_notebook_artifacts=True, backend="torch"):
+        """users_dir and model_dir default to the backend's own folders; load_notebook_artifacts=False skips the
+        notebook's pickles (tests, or a GUI without them). The window geometry is the backend's notebook's."""
         if backend not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}")
         self.backend = backend
@@ -403,10 +428,12 @@ class SubjectSpecificGaussianNBChain:
                 print(f"[GaussianNB subject] {file_name} has another feature version or window geometry; ignored")
             else:
                 models, scaler = framework_backend(backend).subject_models_from_pickle(payload, n_classes=len(self.classes))
+                # projection_ is (n_features, <= 5): its rows tell which feature set the artifact was fitted on
                 if isinstance(scaler, ParticipantScaler) and scaler.n_features_in_ == self.n_features and models.global_.projection_.shape[0] == self.n_features:
                     self.notebook_models, self.notebook_scaler = models, scaler
                 else:
                     print(f"[GaussianNB subject] {file_name} does not match the 435-feature set; ignored")
+        # the PyTorch notebook wrote two joblib files (models, scaler) instead of one pickle
         elif backend == "torch" and load_notebook_artifacts and (self.model_dir / SUBJECT_MODELS_FILE).exists() and (self.model_dir / SUBJECT_SCALER_FILE).exists():
             models = joblib.load(self.model_dir / SUBJECT_MODELS_FILE)
             scaler = joblib.load(self.model_dir / SUBJECT_SCALER_FILE)
@@ -424,6 +451,7 @@ class SubjectSpecificGaussianNBChain:
         if self.backend != "torch":
             if self._pickled_payload is not None:
                 cfg = dict(self._pickled_payload.get("load_config", {}))
+                # JSON lists back to the tuples LoadConfig was built with, and only its own fields
                 return LoadConfig(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg.items()
                                      if k in ("board", "exclude_channels", "quality_filter", "bandpass_hz", "notch_hz", "filter_order")})
             return LoadConfig()
@@ -441,14 +469,17 @@ class SubjectSpecificGaussianNBChain:
     # ----------------------------------------------------------------------------------------------- geometry
     @property
     def capture_samples(self):
+        """Samples one live capture needs for CONTEXT_WINDOWS windows: 128 + 4 x 64 = 384 (PyTorch geometry)."""
         return self.window_size + (CONTEXT_WINDOWS - 1) * self.window_stride
 
     @property
     def capture_seconds(self):
+        """The same in seconds: 3.07 s at 125 Hz with the PyTorch geometry."""
         return self.capture_samples / self.sfreq
 
     # ----------------------------------------------------------------------------------------------- raw -> features
     def select_channels(self, raw, channels):
+        """Rows of this chain's trained channels from a capture; the module-level helper has the name rules."""
         return select_channels(raw, channels, self.channels)
 
     def features_from_segment(self, raw_selected):
@@ -496,10 +527,12 @@ class SubjectSpecificGaussianNBChain:
         return self.notebook_scaler.global_mean_, self.notebook_scaler.global_std_, self.notebook_models.global_, "global fallback"
 
     def has_own_model(self, participant):
+        """True when the user's store holds a fitted model (statistics alone still mean the global fallback)."""
         user = self.users.get(str(participant))
         return user is not None and user.model is not None
 
     def participant_status(self, participant):
+        """One-line status for the GUI: the user's own line, 'training participant', or which fallback applies."""
         key = str(participant)
         if key in self.users:
             return self.users[key].status()
@@ -524,6 +557,8 @@ class SubjectSpecificGaussianNBChain:
 
     # ----------------------------------------------------------------------------------------------- features -> decision
     def log_posteriors(self, X, participant):
+        """Per-window class log-posteriors (n, 6): features standardised with the resolved statistics, then the
+        resolved model. An empty X gives an empty (0, 6) array rather than an error."""
         X = np.asarray(X, np.float64)
         if X.ndim != 2 or X.shape[1] != self.n_features:
             raise ValueError(f"expected (n, {self.n_features}) features")
@@ -537,6 +572,7 @@ class SubjectSpecificGaussianNBChain:
         logp = np.asarray(logp, np.float64)
         if logp.ndim != 2 or len(logp) == 0:
             raise ValueError("need at least one window")
+        # last row of the causal context = log-posteriors summed over the final 5 windows: the capture's decision
         ctx = context_log_posteriors(logp)[-1]
         probs = np.exp(_log_softmax(ctx))
         index = int(np.argmax(ctx))
@@ -551,6 +587,8 @@ class SubjectSpecificGaussianNBChain:
                     window_labels=[self.classes[i] for i in window_votes])
 
     def predict_windows(self, X, participant, **gate_kwargs):
+        """Features of one time-ordered capture -> the decision dict of decide() plus participant, status and the
+        per-window log-posteriors; kept in last_decision so predict_capture can read the vote gate's verdict."""
         logp = self.log_posteriors(X, participant)
         decision = self.decide(logp, **gate_kwargs)
         decision.update(participant=str(participant), participant_status=self.resolve(participant)[3], log_posteriors=logp)
@@ -558,13 +596,14 @@ class SubjectSpecificGaussianNBChain:
         return decision
 
     def predict_raw(self, raw, channels, sfreq, participant, **gate_kwargs):
+        """Raw rows (channels, samples) in uV -> decision dict; a capture shorter than one window is an error."""
         X = self.features_from_raw(raw, channels, sfreq)
         if len(X) == 0:
             raise ValueError(f"capture too short for one {self.window_size}-sample window")
         return self.predict_windows(X, participant, **gate_kwargs)
 
     def predict_capture(self, capture, participant, gate=None, **gate_kwargs):
-        """Quality-gated live prediction on a signal_quality capture dict. The quality gate assesses the raw samples
+        """Quality-gated live prediction on an eeg_quality capture dict. The quality gate assesses the raw samples
         first; an uncertain decision (vote gate) is returned as a withheld result with reason 'uncertain_decision: ...'."""
         gate = gate or QualityGatedPredictor(QualityAssessor(load_default_config()))
         self.last_decision = None
@@ -575,6 +614,7 @@ class SubjectSpecificGaussianNBChain:
 
         result = gate.predict(predict=callback, **capture)
         d = self.last_decision
+        # d is None when quality failed (the quality reason stands); an uncertain vote gets its own reason instead
         if d is not None and not d["certain"] and result.get("status") == "withheld":
             result = gate.withhold(f"uncertain_decision: {d['agreement']}/{d['votes']} window votes agree with "
                                    f"'{d['command']}', need {d['votes_needed']}", result.get("quality"),
@@ -583,9 +623,12 @@ class SubjectSpecificGaussianNBChain:
 
     # ----------------------------------------------------------------------------------------------- users on disk
     def user_dir(self, participant):
+        """users_dir/<participant id made file-safe>."""
         return self.users_dir / _safe_name(participant)
 
     def load_users(self):
+        """(Re)read every user folder under users_dir into self.users. A folder that fails to load (another chain's
+        geometry, a missing array) is reported and skipped, so one broken store never blocks the chain."""
         self.users = {}
         if not self.users_dir.is_dir():
             return self.users
@@ -600,6 +643,8 @@ class SubjectSpecificGaussianNBChain:
         return self.users
 
     def _read_user(self, d, with_windows=False):
+        """One user folder -> UserModel, or None when meta.json / scaler.npz are missing. Raises ValueError when the
+        store was written with another feature version or window geometry (another backend's chain)."""
         if not (d / "meta.json").exists() or not (d / "scaler.npz").exists():
             return None
         meta = json.loads((d / "meta.json").read_text())
@@ -656,6 +701,7 @@ class SubjectSpecificGaussianNBChain:
             X_old, y_old, cues_old, sessions_old, rec_old = self.training_windows(key)
         X = np.concatenate([X_old, X_new]) if len(X_old) else X_new
         y = np.concatenate([y_old, y_new]) if len(y_old) else y_new
+        # cue ids are prefixed with the session id so the cue-grouped self-check never merges cue003 of two sessions
         cue_ids = np.concatenate([cues_old, np.array([f"{session_id}/{c}" for c in cue_ids_new])]) if len(cues_old) else np.array([f"{session_id}/{c}" for c in cue_ids_new])
         session_ids = np.concatenate([sessions_old, np.array([session_id] * len(y_new))]) if len(sessions_old) else np.array([session_id] * len(y_new))
         recorded = np.concatenate([rec_old, np.full(len(y_new), float(session.get("started_unix", time.time())))]) if len(rec_old) else np.full(len(y_new), float(session.get("started_unix", time.time())))
@@ -664,6 +710,7 @@ class SubjectSpecificGaussianNBChain:
         mean, std, model, skipped = fit_user_model(X, y, key, backend=self.backend)
         cue_cv = cue_grouped_cv(X, y, cue_ids, key, backend=self.backend) if (self_check and model is not None) else None
         old_meta = self.users[key].meta if key in self.users and not replace else {}
+        # re-training with the same session id replaces its entry rather than listing it twice
         sessions = [s for s in old_meta.get("sessions", []) if s.get("id") != session_id]
         sessions.append(dict(id=session_id, source=session.get("source", "live"), started=session.get("started"),
                              n_windows=int(len(y_new)), n_cues=int(len(np.unique(cue_ids_new))),
@@ -689,6 +736,7 @@ class SubjectSpecificGaussianNBChain:
         np.savez(d / "scaler.npz", mean=mean, std=std, n_windows=np.int64(len(y)))
         if model is not None:
             np.savez(d / "model.npz", **model_to_arrays(model))
+        # a user who dropped back to the fallback must not keep a stale model.npz
         elif (d / "model.npz").exists():
             (d / "model.npz").unlink()
         (d / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
@@ -749,10 +797,17 @@ class SubjectSpecificGaussianNBChain:
         paths = []
         for p in sorted(Path(folder).rglob("*.txt")):
             label = folder_label(p.parent.name)
+            # the OpenBCI GUI export starts with this 21-character header; any other .txt in the folder is skipped
             if label in COMMANDS and p.open(errors="ignore").read(21) == "%OpenBCI Raw EXG Data":
                 paths.append((p, label))
         if not paths:
             raise ValueError(f"no named OpenBCI recordings in labelled command folders under {folder}")
+        labels = sorted({label for _, label in paths})
+        if len(labels) < 2:
+            # a single command's folder was chosen: refuse before anything is stored, or the user would be left with
+            # one-command statistics and the global fallback (every vote uncertain)
+            raise ValueError(f"the recordings under {Path(folder).name} are all '{labels[0]}'; the own model needs at least "
+                             f"two commands, so choose the person's folder (one sub-folder per command)")
         return self.train_from_recordings(participant, paths, source=f"folder:{Path(folder).name}", **kwargs)
 
     def replay_recording(self, path, participant=None, assessor=None, **gate_kwargs):
@@ -780,13 +835,15 @@ class SubjectSpecificGaussianNBChain:
 # ====================================================================================================== acquisition + session
 class BrainFlowStream:
     """Continuous acquisition for a training session: one board session for the whole session; read() returns the
-    samples received since the previous read() / discard() as a signal_quality capture dict."""
+    samples received since the previous read() / discard() as an eeg_quality capture dict."""
 
     def __init__(self, board_id=None, serial_port=None, ring_buffer_samples=450_000):
         self.board_id, self.serial_port, self.ring_buffer_samples = board_id, serial_port, ring_buffer_samples
         self.board = None
 
     def start(self):
+        """Open the board and start streaming (Cyton+Daisy unless board_id says otherwise); synthetic boards need no
+        serial port. brainflow is imported here, not at module level, so the rest of the module works without it."""
         from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
         board_id = BoardIds.CYTON_DAISY_BOARD.value if self.board_id is None else int(self.board_id)
         params = BrainFlowInputParams()
@@ -794,6 +851,7 @@ class BrainFlowStream:
             params.serial_port = self.serial_port or self._detect_serial_port()
         self._board_id = board_id
         self._real = board_id in (BoardIds.CYTON_BOARD.value, BoardIds.CYTON_DAISY_BOARD.value)
+        # with the Daisy, two 8-channel packets become one 16-channel sample, so the packet counter advances by 2
         self._counter_step = 2 if board_id == BoardIds.CYTON_DAISY_BOARD.value else 1
         self.descr = BoardShim.get_board_descr(board_id)
         self.board = BoardShim(board_id, params)
@@ -802,6 +860,7 @@ class BrainFlowStream:
 
     @staticmethod
     def _detect_serial_port():
+        """First USB / FTDI / serial port found; the Cyton dongle is an FTDI device."""
         from serial.tools import list_ports
         for p in list_ports.comports():
             text = (p.description + " " + p.hwid).lower()
@@ -810,15 +869,18 @@ class BrainFlowStream:
         raise RuntimeError("Could not auto-detect the Cyton serial port")
 
     def discard(self):
+        """Drop what was buffered so far: called when a cue starts so the rest gap is not part of its capture."""
         self.board.get_board_data()
 
     def read(self):
+        """Samples since the previous read() / discard() as an eeg_quality capture dict with a unique stream id."""
         data = self.board.get_board_data()
         capture = brainflow_capture(data, self.descr, real=self._real, counter_step=self._counter_step)
         capture.update(captured_monotonic=time.monotonic(), stream_id=f"brainflow:{self._board_id}:{uuid.uuid4()}")
         return capture
 
     def stop(self):
+        """Stop streaming and release the board; a second call is a no-op."""
         if self.board is not None:
             try:
                 self.board.stop_stream()
@@ -835,6 +897,8 @@ class TrainingSession:
 
     def __init__(self, chain, participant, plan, stream, present=None, should_stop=None, sleep=time.sleep,
                  clock=time.monotonic, assessor=None, session_id=None, keep_raw=True):
+        """present, should_stop, sleep and clock are injectable so the GUI thread and the tests drive the session
+        without real time; keep_raw stores every cue's raw EEG under sessions/<id>/ for audits and re-training."""
         self.chain, self.participant, self.plan, self.stream = chain, str(participant), plan, stream
         self.present = present or (lambda event: None)
         self.should_stop = should_stop or (lambda: False)
@@ -847,6 +911,7 @@ class TrainingSession:
         self.stopped = False
 
     def _emit(self, **event):
+        """Record one progress event and hand it to the GUI callback, with the session-wide fields filled in."""
         event.setdefault("session_id", self.session_id)
         event.setdefault("participant", self.participant)
         event.setdefault("n_cues", self.plan.n_cues)
@@ -864,10 +929,13 @@ class TrainingSession:
                 return False
             self._emit(remaining=int(np.ceil(remaining)), **event)
             self.sleep(min(1.0, remaining))
+            # re-read from the clock rather than subtracting the sleep, so overshoot does not stretch the cue
             remaining = end - self.clock()
         return True
 
     def run(self):
+        """The whole plan: settle, then rest + cue for every scheduled cue. The board is released even when stopped
+        early or on an error, and _finish fits whatever was collected."""
         plan = self.plan
         started = time.time()
         self.stream.start()
@@ -880,6 +948,7 @@ class TrainingSession:
                 base = dict(index=cue["index"], round=cue["round"], rounds=plan.rounds, command=cue["command"])
                 if plan.rest_seconds > 0 and not self._countdown(plan.rest_seconds, phase="rest", **base):
                     return self._finish(started)
+                # drop the rest-gap samples; everything streamed during the cue is read in one go after it ends
                 self.stream.discard()
                 if not self._countdown(plan.cue_seconds, phase="cue", **base):
                     return self._finish(started)
@@ -896,6 +965,9 @@ class TrainingSession:
         return self._finish(started)
 
     def _finish(self, started):
+        """Fit and persist the user's model from the cues collected so far (nothing is stored when no cue gave a
+        window), then emit the 'finished' event with the summary (the plan is dropped from the event; when a model
+        is stored, meta.json carries it)."""
         feats = [c["X"] for c in self.cues if c["n_windows"]]
         summary = dict(session_id=self.session_id, participant=self.participant, stopped_early=self.stopped,
                        cues_done=len(self.cues), n_cues=self.plan.n_cues, plan=self.plan.as_dict(),
@@ -940,8 +1012,20 @@ def session_plan_from_env():
                         rest_seconds=env("AVATAR_GNB_TRAIN_REST_SECONDS", DEFAULT_REST_SECONDS, float))
 
 
-# ====================================================================================================== CLI
+# ====================================================================================================== 
+##Creates a command-line parser with the optional:
+##--backend: torch, tensorflow, or jax
+##--users-dir: custom directory for stored participant models
+##Registers four commands:
+##train-folder: trains a participant from labelled OpenBCI recordings.
+##replay: runs a recording through the full prediction pipeline.
+##status: displays stored participant information.
+##forget: deletes a participant’s model and recorded data.
+##Creates the SubjectSpecificGaussianNBChain using the selected backend and user directory.
+##Dispatches the requested command and prints the result as formatted JSON.
+##Starts automatically when the script is run directly
 def main(argv=None):
+    """Command line: train-folder / replay / status / forget against one backend's users folder."""
     p = argparse.ArgumentParser(description="Subject-specific GaussianNB: train a user from labelled recordings, replay, status.")
     p.add_argument("--users-dir", default=None, help="where users are stored (default: %s, TensorFlow: %s, JAX: %s)"
                    % (DEFAULT_USERS_DIR, DEFAULT_USERS_DIR_TF, DEFAULT_USERS_DIR_JAX))

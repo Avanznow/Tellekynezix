@@ -1,0 +1,24 @@
+{
+ "blocks_total": 6703,
+ "startup_blocks_dropped": 1381,
+ "blocks_assessed": 5322,
+ "blocks_kept": 3249,
+ "blocks_failed": 2073,
+ "recordings_loaded": 1394,
+ "recordings_with_usable_data": 883,
+ "recordings_without_usable_block": 511,
+ "recordings_skipped": {
+  "other board (8-channel Cyton at 250 Hz)": 422,
+  "unreadable or header-only export": 10
+ },
+ "reasons_never_triggered": [
+  "acquisition_gap",
+  "excessive_line_noise",
+  "insufficient_samples",
+  "nonadvancing_time",
+  "nonfinite_eeg",
+  "nonmonotonic_time",
+  "out_of_range_eeg"
+ ],
+ "policy_id": "avatar-raw-quality-v1-955cc6c1f48fa7c8"
+}

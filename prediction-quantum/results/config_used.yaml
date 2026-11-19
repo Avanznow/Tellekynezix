@@ -1,6 +1,6 @@
 data:
-  data_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/Data_clean
-  cache_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache
+  data_dir: C:\Starred Paper\avatar\Tellekynezix - windows\Data_clean
+  cache_dir: C:\Starred Paper\avatar\Tellekynezix - windows\prediction-quantum\results\cache
   max_windows_per_class: 2000
   subsample_seed: 0
   n_jobs_load: -1
@@ -54,4 +54,4 @@ compute:
 report:
   reference_qubits: 6
   reference_layers: 2
-output_dir: /home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results
+output_dir: C:\Starred Paper\avatar\Tellekynezix - windows\prediction-quantum\results

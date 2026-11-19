@@ -32,6 +32,7 @@ PKG_DIR = Path(__file__).resolve().parent          # prediction-quantum/predicti
 PROJECT_DIR = PKG_DIR.parent                        # prediction-quantum
 REPO_ROOT = PROJECT_DIR.parent
 GNB_DIR = REPO_ROOT / "prediction-gaussiannb"
+# eeg_data and improved_gnb_features live in prediction-gaussiannb and are imported below as top-level modules
 for _p in (REPO_ROOT, GNB_DIR):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -68,6 +69,7 @@ N_FEATURES = 570         # for 15 channels: 120 + 120 + 30 + 150 + 150
 def window_starts(n_rows, size=WINDOW_SIZE, stride=WINDOW_STRIDE):
     """Start samples of the windows of a segment with n_rows samples (the PyTorch notebook's rule: regular
     starts, plus a last window ending at the segment end when the stride does not land there)."""
+    # max(1, ...) keeps start 0 for a segment shorter than one window, so cut_windows still yields one window
     starts = list(range(0, max(1, n_rows - size + 1), stride))
     if not starts or starts[-1] != max(0, n_rows - size):
         starts.append(max(0, n_rows - size))
@@ -80,16 +82,21 @@ def cut_windows(segment, size=WINDOW_SIZE, stride=WINDOW_STRIDE):
     n_rows = segment.shape[0]
     if n_rows < MIN_SEGMENT_ROWS:
         return np.empty((0, segment.shape[1], min(size, max(n_rows, 1))))
+    # a short segment (MIN_SEGMENT_ROWS <= rows < size) gives one window of its own length, not a zero-padded one;
+    # sliding_window_view puts the window axis last, so the result is (n, channels, win_len)
     win_len = min(size, n_rows)
     return sliding_window_view(segment, win_len, axis=0)[window_starts(n_rows, size, stride)]
 
 
 def feature_spec(load_config=LoadConfig()):
+    """What the cache key hashes: loader settings, window rule, feature version and label order. Changing any of
+    them gives a new key; the files under data_dir and the quality policy are not part of it."""
     return dict(load_config.as_dict(), window_size=WINDOW_SIZE, window_stride=WINDOW_STRIDE,
                 min_segment_rows=MIN_SEGMENT_ROWS, feature_version=FEATURE_VERSION, labels=CLASSES)
 
 
 def feature_cache_key(load_config=LoadConfig()):
+    """SHA-256 of feature_spec as sorted JSON, first 16 hex digits; names the features_<key>.npz / .json pair."""
     return hashlib.sha256(json.dumps(feature_spec(load_config), sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
@@ -106,7 +113,8 @@ def build_features(data_dir, cache_dir, load_config=LoadConfig(), n_jobs=-1, ver
     if npz.exists():
         z = np.load(npz, allow_pickle=True)
         meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
-        return dict(X=z["X"].astype(np.float32), y=z["y"].astype(np.int64), groups=z["groups"].astype(str),
+        # posix_names: a cache written on Windows before the names were normalised holds backslashes
+        return dict(X=z["X"].astype(np.float32), y=z["y"].astype(np.int64), groups=posix_names(z["groups"]),
                     participants=z["participants"].astype(str), cache=str(npz), meta=meta)
 
     data_dir = Path(data_dir)
@@ -116,12 +124,17 @@ def build_features(data_dir, cache_dir, load_config=LoadConfig(), n_jobs=-1, ver
     recordings, skipped = load_recordings(data_dir, load_config, n_jobs=n_jobs, verbose=verbose)
     feats, labels, groups, n_short, n_nonfinite = [], [], [], 0, 0
     for r in recordings:
-        rel = str(Path(r["path"]).relative_to(data_dir)) if Path(r["path"]).is_absolute() else r["path"]
+        # recording path relative to data_dir: the group key, the split CSV's recording column, and what
+        # participant_of reads the G../person.. folders from. Always with forward slashes, so a split CSV written
+        # on one platform names the same recordings on the other.
+        rel = recording_name(r["path"], data_dir)
         for seg in r["segments"]:
             W = cut_windows(seg)
             if len(W) == 0:
                 n_short += 1
                 continue
+            # count the non-finite samples before nan_to_num replaces them (NaN -> 0, inf -> largest float);
+            # the total goes into the cache's .json
             if not np.isfinite(W).all():
                 n_nonfinite += int((~np.isfinite(W)).sum())
                 W = np.nan_to_num(W)
@@ -148,6 +161,21 @@ def build_features(data_dir, cache_dir, load_config=LoadConfig(), n_jobs=-1, ver
     return dict(X=X, y=y, groups=groups, participants=participants, cache=str(npz), meta=meta)
 
 
+def posix_names(names):
+    """Array of recording names with forward slashes only, whatever platform wrote them."""
+    return np.char.replace(np.asarray(names).astype(str), "\\", "/")
+
+
+def recording_name(path, data_dir):
+    """Path of a recording (or session folder) relative to data_dir as a POSIX string; the path itself when it does
+    not lie under data_dir (a relative --data-dir and a relative recording path both resolve to the same place)."""
+    path, data_dir = Path(path).resolve(), Path(data_dir).resolve()
+    try:
+        return path.relative_to(data_dir).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def subsample_per_class(y, max_per_class, seed):
     """Sorted indices keeping at most max_per_class windows of every class (fixed seed; None keeps everything)."""
     rng = np.random.default_rng(seed)
@@ -169,7 +197,9 @@ def make_split(y, groups, seed, test_fraction=0.2, val_fraction=0.1):
     """
     idx = np.arange(len(y))
     tr, te = next(GroupShuffleSplit(n_splits=1, test_size=test_fraction, random_state=seed).split(idx, y, groups))
+    # the second split only sees the training recordings, so rescale to hold out val_fraction of all recordings
     rel_val = val_fraction / (1.0 - test_fraction)
+    # tr2 and va index into tr, not into y, hence tr[tr2] and tr[va] when the parts are assigned
     tr2, va = next(GroupShuffleSplit(n_splits=1, test_size=rel_val, random_state=seed).split(tr, y[tr], groups[tr]))
     part = np.empty(len(y), dtype=object)
     part[tr[tr2]], part[tr[va]], part[te] = "train", "val", "test"
@@ -184,17 +214,50 @@ def write_split(path, keep, y, groups, participants, part):
     return df
 
 
-def load_split(path):
-    """Split CSV -> dict(train=idx, val=idx, test=idx) of indices into the feature cache, plus the frame."""
+def load_split(path, feats=None):
+    """Split CSV -> dict(train=idx, val=idx, test=idx) of indices into the feature cache, plus the frame.
+
+    With `feats` (the dict build_features returns) the CSV is checked against the cache it indexes into, see
+    check_split: a split written against a cache with another row order would silently train on mislabelled windows.
+    """
     df = pd.read_csv(path)
+    df["recording"] = posix_names(df["recording"])
     out = {p: df.loc[df["part"] == p, "window_index"].to_numpy() for p in ("train", "val", "test")}
+    # windows of one recording in two parts would leak between them, so refuse such a split rather than warn
     assert not (set(df.loc[df.part == "train", "recording"]) & set(df.loc[df.part == "test", "recording"]))
     assert not (set(df.loc[df.part == "train", "recording"]) & set(df.loc[df.part == "val", "recording"]))
     out["frame"] = df
+    if feats is not None:
+        check_split(df, feats, path)
     return out
 
 
+def check_split(df, feats, path="split CSV"):
+    """Raise ValueError unless every row of the split names the recording and label the feature cache holds at its
+    window_index. The row order of a cache follows the loader's recording order; a cache rebuilt on another machine
+    or from other data, or an edited Data_clean, moves rows, and the committed split CSVs would then index windows of
+    other recordings. Returns the number of rows checked."""
+    idx = df["window_index"].to_numpy()
+    n = len(feats["y"])
+    if len(idx) and (idx.min() < 0 or idx.max() >= n):
+        raise ValueError(f"{path}: window_index up to {idx.max()} but the feature cache {feats.get('cache', '')} has {n} rows; "
+                         "the split was written for another cache. Re-run with --force to regenerate the splits.")
+    rec_ok = posix_names(feats["groups"][idx]) == posix_names(df["recording"])
+    labels = np.asarray([CLASSES[i] for i in feats["y"][idx]])
+    lab_ok = labels == df["label"].to_numpy().astype(str)
+    bad = int((~rec_ok | ~lab_ok).sum())
+    if bad:
+        first = int(np.flatnonzero(~rec_ok | ~lab_ok)[0])
+        raise ValueError(f"{path}: {bad} of {len(df)} rows do not match the feature cache {feats.get('cache', '')} "
+                         f"(first at row {first}: split says {df['recording'].iloc[first]!r} / {df['label'].iloc[first]!r}, "
+                         f"cache row {idx[first]} is {str(feats['groups'][idx[first]])!r} / {str(labels[first])!r}). "
+                         "The split was written against a cache with another row order (another machine, other data). "
+                         "Re-run with --force to regenerate the splits, or restore the cache the splits were written for.")
+    return len(df)
+
+
 def split_summary(df):
+    """Split frame -> one row per part with its window, recording and participant counts and windows per class."""
     rows = []
     for p in ("train", "val", "test"):
         d = df[df.part == p]

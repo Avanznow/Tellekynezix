@@ -6,7 +6,7 @@
 import pip
 
 importlsl = ['opencv-python',
-             "paramiko<3.0",
+             "paramiko<4",
              'pandas',
              'requests',
              'brainflow',
@@ -27,7 +27,6 @@ for i in importlsl:
         print()
     except Exception as e:
         print(f"faild to install {i}\n")
-
 
 
 

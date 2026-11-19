@@ -13,13 +13,9 @@ Rectangle {
     property string currentFramework: "PyTorch"
     property string selectedHeadset: "OpenBCI"
     property string neurosityStatus: "Offline"
-    property string signalQualityStatus: "EEG quality: no assessed input"
-    // Structured quality view from backend.qualityViewChanged (signal_quality.gui_view)
-    property string qualityState: "idle"
-    property string qualityHeadline: ""
-    property string qualitySummary: ""
-    property var qualityReasons: []
-    property var qualityChannels: []
+    property string signalQualityStatus: "EEG quality: no assessed input"   // one-line status of the capture check
+    // Replay Recording source: "Replay: <file> at <position> of <length> s" while a recording stands in for the headset
+    property string replayRecording: ""
     // Improved GaussianNB chain: "<participant>: calibrated | training participant | global fallback"
     property string gnbStatus: ""
     // Subject-specific GaussianNB: "global" = one model for everyone, "subject" = this user's own model trained in
@@ -107,20 +103,12 @@ Rectangle {
                     onClicked: backend.readMyMind()
                 }
 
-                // EEG quality tools, beside the button that produces quality decisions
+                // Model-specific controls, beside the button that produces decisions
                 Column {
                     anchors.left: parent.right
                     anchors.leftMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 6
-                    Button {
-                        text: "Quality dashboard..."
-                        onClicked: backend.openQualityDashboard()
-                    }
-                    Button {
-                        text: "Check recording..."
-                        onClicked: backend.checkRecordingQuality()
-                    }
                     // GaussianNB (improved chain): the participant id picks the per-participant feature
                     // statistics; a new user records ~30 s of EEG once (or picks one of their recordings).
                     Row {
@@ -227,6 +215,15 @@ Rectangle {
                                 backend.trainGaussianNBFromFolder()
                             }
                         }
+                        Button {
+                            text: "Forget my model"
+                            enabled: !root.gnbTraining
+                            // removes this participant's stored model, statistics and windows for the selected framework
+                            onClicked: {
+                                backend.setGaussianNBParticipant(gnbParticipantField.text)
+                                backend.forgetGaussianNBUser()
+                            }
+                        }
                     }
                     Text {
                         visible: selectedModel === "GaussianNB" && root.gnbMode === "subject"
@@ -241,74 +238,15 @@ Rectangle {
                 }
             }
 
-            // EEG quality: withholding indicator, channel grid and quality tools (compact for 1200x800)
-            Rectangle {
-                id: qualityPanel
+            // EEG quality: one-line status of the capture check (a rejected capture produces no command)
+            Label {
+                text: root.signalQualityStatus
+                color: root.signalQualityStatus.indexOf("withheld") >= 0 ? "#ffcf70" : "white"
+                font.pixelSize: 13
                 width: parent.width * 0.9
-                height: qualityColumn.implicitHeight + 10
-                radius: 6
-                color: "#242c4d"
-                border.width: 2
-                border.color: root.qualityState === "accepted" ? "#66bb6a"
-                            : root.qualityState === "withheld" ? "#ff8a65" : "#8a94a6"
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
                 anchors.horizontalCenter: parent.horizontalCenter
-
-                Column {
-                    id: qualityColumn
-                    x: 6
-                    y: 5
-                    width: parent.width - 12
-                    spacing: 3
-
-                    Label {
-                        // Before the first structured view (or while assessing) show the plain status line.
-                        text: (root.qualityHeadline !== "" && root.signalQualityStatus.indexOf("Assessing") < 0
-                               ? root.qualityHeadline : root.signalQualityStatus)
-                              + (root.qualitySummary !== "" ? "  ·  " + root.qualitySummary : "")
-                        color: root.qualityState === "withheld" ? "#ffcf70"
-                             : root.qualityState === "accepted" ? "#a5d6a7" : "white"
-                        font.bold: true
-                        font.pixelSize: 13
-                        width: parent.width
-                        elide: Text.ElideRight
-                    }
-                    Label {
-                        id: qualityReasonsLabel
-                        visible: root.qualityReasons.length > 0
-                        text: root.qualityReasons.join("  ·  ")
-                        color: "white"
-                        font.pixelSize: 11
-                        width: parent.width
-                        elide: Text.ElideRight
-                        HoverHandler { id: reasonsHover }
-                        ToolTip.visible: reasonsHover.hovered
-                        ToolTip.text: root.qualityReasons.join("\n")
-                    }
-                    Flow {
-                        width: parent.width
-                        spacing: 2
-                        Repeater {
-                            model: root.qualityChannels
-                            Rectangle {
-                                width: 26
-                                height: 18
-                                radius: 3
-                                color: modelData.status === "pass" ? "#2e7d4f"
-                                     : modelData.status === "fail" ? "#c62828"
-                                     : modelData.status === "warn" ? "#b7791f" : "#5a6275"
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: modelData.label.replace("Ch ", "")
-                                    color: "white"
-                                    font.pixelSize: 10
-                                }
-                                HoverHandler { id: channelHover }
-                                ToolTip.visible: channelHover.hovered
-                                ToolTip.text: modelData.name + ": " + modelData.status + " - " + modelData.detail
-                            }
-                        }
-                    }
-                }
             }
             Label {
                 text: "The model says ..."
@@ -323,6 +261,7 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
 
                 Row {
+                    id: modelSaysHeader
                     width: parent.width
                     height: parent.height * 0.28
                     spacing: parent.width * 0.01
@@ -354,17 +293,24 @@ Rectangle {
 
                 ListView {
                     id: predictionListView
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors.top: modelSaysHeader.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    clip: true
                     model: ListModel {
+                        id: modelSaysModel          // filled from backend.predictionsTableUpdated (count, label)
                     }
-                    delegate: RowLayout {
-                        spacing: 150
-                        Text { 
-                            text: model.count; font.bold: true; color: "white"; width: 80 
+                    delegate: Item {
+                        width: ListView.view.width
+                        height: 22
+                        Text {
+                            x: 0; width: parent.width * 0.5; horizontalAlignment: Text.AlignHCenter
+                            text: model.count; font.bold: true; color: "white"
                         }
-                        Text { 
-                            text: model.label; font.bold: true; color: "white"; width: 80 
+                        Text {
+                            x: parent.width * 0.5; width: parent.width * 0.5; horizontalAlignment: Text.AlignHCenter
+                            text: model.label; font.bold: true; color: "white"
                         }
                     }
                 }
@@ -505,18 +451,29 @@ Rectangle {
                     var timestamp = new Date().toLocaleString()
                     consoleLog.append(message + " at " + timestamp)
                 }
+                // One row per Read my mind (or manual command) in both tables; the backend sends the whole list.
+                function onPredictionsTableUpdated(rows) {
+                    predictionsModel.clear()
+                    modelSaysModel.clear()
+                    for (let row of rows) {
+                        predictionsModel.append({ count: String(row.count), server: String(row.server), label: String(row.label) })
+                        modelSaysModel.append({ count: String(row.count), label: String(row.label) })
+                    }
+                    predictionsTableView.positionViewAtEnd()
+                    predictionListView.positionViewAtEnd()
+                }
+                // The flight log arrives newest first.
+                function onFlightLogUpdated(entries) {
+                    flightLog.text = entries.join("\n")
+                }
                 function onNeurosityStatusChanged(status) {
                     neurosityStatus = status
                 }
                 function onSignalQualityChanged(status) {
                     root.signalQualityStatus = status
                 }
-                function onQualityViewChanged(view) {
-                    root.qualityState = view.state
-                    root.qualityHeadline = view.headline
-                    root.qualitySummary = view.summary
-                    root.qualityReasons = view.reasons
-                    root.qualityChannels = view.channels
+                function onReplayRecordingChanged(status) {
+                    root.replayRecording = status
                 }
                 function onGnbParticipantStatusChanged(status) {
                     root.gnbStatus = status
@@ -559,6 +516,7 @@ Rectangle {
                 }
 
                 Row {
+                    id: predictionsHeader
                     width: parent.width
                     height: parent.height * 0.1
                     spacing: parent.width * 0.001
@@ -601,34 +559,32 @@ Rectangle {
                 }
 
                 ListView {
-                    Layout.preferredWidth: 700
-                    Layout.preferredHeight: 550
+                    id: predictionsTableView
+                    anchors.top: predictionsHeader.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    clip: true
                     model: ListModel {
-                        ListElement { 
-                            count: "1"; server: "Prediction A"; label: "Label A" 
-                        }
-                        ListElement { 
-                            count: "2"; server: "Prediction B"; label: "Label B" 
-                        }
+                        id: predictionsModel        // filled from backend.predictionsTableUpdated (count, server, label)
                     }
 
                     delegate: Rectangle {
-                        width: parent.width
-                        height: 40
-                        color: "white"
+                        width: ListView.view.width
+                        height: 28
+                        color: index % 2 ? "#f2f4f7" : "white"
 
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: 50
-                            Text { 
-                                text: model.count; font.bold: true; color: "black"; width: 120 
-                            }
-                            Text { 
-                                text: model.server; font.bold: true; color: "black"; width: 200 
-                            }
-                            Text { 
-                                text: model.label; font.bold: true; color: "black"; width: 120 
-                            }
+                        Text {
+                            x: 0; width: parent.width * 0.33; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignHCenter
+                            text: model.count; font.bold: true; color: "black"
+                        }
+                        Text {
+                            x: parent.width * 0.33; width: parent.width * 0.33; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignHCenter
+                            text: model.server; font.bold: true; color: "black"
+                        }
+                        Text {
+                            x: parent.width * 0.66; width: parent.width * 0.34; anchors.verticalCenter: parent.verticalCenter; horizontalAlignment: Text.AlignHCenter
+                            text: model.label; font.bold: true; color: model.label === "WITHHELD" ? "#b25c00" : "black"
                         }
                     }
                 }
@@ -1009,7 +965,7 @@ Rectangle {
 
     // Radio Buttons - Fixed to bottom left, next to connect
    Row {
-        width: parent.width * 0.25
+        width: parent.width * 0.38
         height: parent.height * 0.06
         spacing: width * 0.02
         anchors.left: parent.left
@@ -1019,9 +975,9 @@ Rectangle {
         RadioButton {
             id: liveRadio
             text: "Live Data"
-            font.pixelSize: parent.width * 0.04
+            font.pixelSize: parent.width * 0.028
             font.bold: true
-            checked: true
+            checked: false      // the backend starts in Synthetic Data mode (BrainwavesBackend.current_data_mode)
             contentItem: Text {
                 text: liveRadio.text
                 color: "white"
@@ -1036,9 +992,9 @@ Rectangle {
         RadioButton {
             id: syntheticRadio
             text: "Synthetic Data"
-            font.pixelSize: parent.width * 0.04
+            font.pixelSize: parent.width * 0.028
             font.bold: true
-            checked: false
+            checked: true
             contentItem: Text {
                 text: syntheticRadio.text
                 color: "white"
@@ -1049,7 +1005,46 @@ Rectangle {
             }
             onClicked: backend.setDataMode("synthetic")
         }
+
+        RadioButton {
+            id: replayRadio
+            text: "Replay Recording"
+            font.pixelSize: parent.width * 0.028
+            font.bold: true
+            checked: false
+            contentItem: Text {
+                text: replayRadio.text
+                color: "white"
+                font.pixelSize: replayRadio.font.pixelSize
+                font.bold: replayRadio.font.bold
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: replayRadio.indicator.width + replayRadio.spacing
+            }
+            // opens the file dialog; the chosen OpenBCI export then stands in for the headset
+            onClicked: backend.chooseReplayRecording()
+        }
          
+    }
+
+    // Replay Recording: which file stands in for the headset and how far the replay has advanced; clicking it
+    // opens the file dialog again. Empty (hidden) in Live and Synthetic mode.
+    Label {
+        visible: root.replayRecording !== ""
+        text: root.replayRecording
+        color: "#cfe3ff"
+        font.pixelSize: 13
+        padding: 4
+        background: Rectangle { color: "#e0213040"; radius: 3 }    // readable over the flight log's white box
+        width: parent.width * 0.38
+        elide: Text.ElideRight
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: parent.width * 0.14
+        anchors.bottomMargin: parent.height * 0.095
+        MouseArea {
+            anchors.fill: parent
+            onClicked: backend.chooseReplayRecording()
+        }
     }
 
     // Guided labelled session (subject-specific GaussianNB): the cue the user should think about, the countdown,

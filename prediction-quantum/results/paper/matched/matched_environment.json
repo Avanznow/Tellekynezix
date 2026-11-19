@@ -1,0 +1,434 @@
+{
+  "generated": "2026-10-18 15:17:38 -0500",
+  "command": "/home/prasndhdl/ai_env/bin/python /home/prasndhdl/Downloads/paper_revision/scripts/matched_gnb_vs_vqc.py",
+  "script": "/home/prasndhdl/Downloads/paper_revision/scripts/matched_gnb_vs_vqc.py",
+  "script_sha256": "cf73155064cbab34c303610705450664395b11e20dd6701da722c6a94ad299af",
+  "platform": "Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "logical_cpus": 16,
+  "torch_threads": 2,
+  "load_average_at_start": [
+    2.619140625,
+    6.3232421875,
+    4.984375
+  ],
+  "load_average_at_end": [
+    22.43408203125,
+    13.26416015625,
+    7.8515625
+  ],
+  "fit_repeats": 3,
+  "latency": {
+    "repeats": 50,
+    "warmup": 5,
+    "definition": "median of single-window calls (prediction_quantum/metrics.py median_latency_ms)"
+  },
+  "gnb_python": {
+    "executable": "/home/prasndhdl/ai_env/bin/python",
+    "python": "3.12.3",
+    "numpy": "2.5.0",
+    "scipy": "1.18.0",
+    "scikit_learn": "1.9.0",
+    "pandas": "3.0.3",
+    "torch": "2.12.1+cu130",
+    "joblib": "1.5.3"
+  },
+  "vqc_python": {
+    "python": "3.12.3",
+    "executable": "/home/prasndhdl/qml_env/bin/python",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "scikit_learn": "1.9.1",
+    "pandas": "3.0.6",
+    "torch": "2.14.1+cpu",
+    "pennylane": "0.45.1",
+    "joblib": "1.6.0",
+    "torch_threads": 2
+  },
+  "git": {
+    "repo": "/home/prasndhdl/Downloads/avatar/Tellekynezix",
+    "HEAD": "f178d5e62f1f8da6dbecdad34864957bfef46eb7",
+    "HEAD_branch": "qml-benchmark-52",
+    "gnb-improved-pipeline": "f914e83eedefdc084073743a18b75aa28c2c6edf 2026-10-17 00:12:46 -0500 Compare the project's original models with the best GNB model in each framework",
+    "qml-benchmark-52": "f178d5e62f1f8da6dbecdad34864957bfef46eb7 2026-10-17 21:56:28 -0500 Add F1 scores and confusion matrix to notebook",
+    "note": "read-only: rev-parse / log / hash-object (no -w); the working tree has one user-modified notebook (prediction-gaussiannb/pytorch/gaussiannb_train.ipynb) and one untracked file (prediction-quantum/results/vqcmean.png), neither used here"
+  },
+  "files": [
+    {
+      "label": "quantum feature cache",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache/features_4df6a3d7e7044283.npz",
+      "exists": true,
+      "sha256": "555e9fc9837bd08c0678ba225a7e651801a70bdd939dd5f14b505420fae21295",
+      "bytes": 25571220,
+      "git_tracked_at_HEAD": false
+    },
+    {
+      "label": "quantum feature cache meta",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/cache/features_4df6a3d7e7044283.json",
+      "exists": true,
+      "sha256": "884b91c8ddecb6afc8f24f827e109ef4f9239f458af542949f186d85419735f6",
+      "bytes": 1338,
+      "git_tracked_at_HEAD": false
+    },
+    {
+      "label": "GNB improved cache (570)",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/predictions_local/feature_cache/improved_windows_ab35c17b56ea1d35.npz",
+      "exists": true,
+      "sha256": "76f99a74941e69d7afcd48798f156b14109bfbfb505cb1cf42181874be1febbb",
+      "bytes": 25584508,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "2e33078ae6f8ea169d4a5345c58961d587f391bf",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "GNB subject cache (435)",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/predictions_local/feature_cache/subject_windows_c306b8eda6314d14.npz",
+      "exists": true,
+      "sha256": "fffc83a9dff3108abf0251730960daacd46532018d96e390a36ce2f241d2d527",
+      "bytes": 19551059,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "187e6ff75c655fd21cbc6ec8d275b5d1fe739f79",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "quantum benchmark_results.csv",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/benchmark_results.csv",
+      "exists": true,
+      "sha256": "f92631133f6d112749161a659767c24d990a58966be11df2e410741e6a1f1c96",
+      "bytes": 23493,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "900c7223b189d52b633d5aee77658f2caee09884",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "quantum dataset.json",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/dataset.json",
+      "exists": true,
+      "sha256": "4040c9d7fcf8ccd1f71b328ed8451eb95e732ef33412e7e7180a12d853d3fa8f",
+      "bytes": 1841,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "af9696b519eea4486125876a07ca7f8ffa7e74ff",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "quantum config_used.yaml",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/config_used.yaml",
+      "exists": true,
+      "sha256": "3497fb45c6404c593397da4d58c994a09f8c11faad7abd9c15d2e54ce8581e26",
+      "bytes": 886,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "daa2473512b6123ae26d094ecf11af0dfbf70341",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "defense_project_models_benchmark_runs.csv",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/defense/defense_project_models_benchmark_runs.csv",
+      "exists": true,
+      "sha256": "8f5e4d1d2fff0701f024abd6c7bc17fdcc9a83747cb3c07cc29a747a09cc9203",
+      "bytes": 6665,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "a1103bc1b6b3aa14bb22fcbd34b815f099b9bc27",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "make_defense_figures.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/defense/make_defense_figures.py",
+      "exists": true,
+      "sha256": "92d3d0d65d1e1fb69d2da6c8bf1cd81743cd7fc852f28d67bf507a0312e5c270",
+      "bytes": 134279,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "cc0b922d98acd4aa1d57a0c97a8237dd850fdf13",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "subject_gnb.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/subject_gnb.py",
+      "exists": true,
+      "sha256": "84f481895c80408bf0526595df663f8fa7933d838244fb194e98d8b30060957c",
+      "bytes": 9342,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "156b8f83e50ef3ae4eaba2209c7ac1930b8531d7",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "improved_gnb_features.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/improved_gnb_features.py",
+      "exists": true,
+      "sha256": "a0846eca112ba16cfa499557675d36273b06891ab31feac96cd93e72219cd730",
+      "bytes": 11356,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "b2b3ec19d154df2b5736d07316b43bff644800d1",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "gaussiannb_model.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/pytorch/gaussiannb_model.py",
+      "exists": true,
+      "sha256": "9b0c6e38b3d384d0bf1417fae015301e18668cd872d98576c9c36593956aeaab",
+      "bytes": 4785,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "fa85da8a5964d799440e2cde16fa1a47abbf788e",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "GaussianNB_EEG_Classification_Notebook.ipynb",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/pytorch/GaussianNB_EEG_Classification_Notebook.ipynb",
+      "exists": true,
+      "sha256": "8a6e8cdce0270f87fb1e352e9ba132974001761ce1f2b90b1bc0507f5b884c55",
+      "bytes": 2373255,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "5868f31698685c506e961d888dace091508135c7",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "improved artifact .pth",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/pytorch/torch_gaussiannb_improved_features.pth",
+      "exists": true,
+      "sha256": "110614afc8f8cff744176b641f2fa69504daeb48a7543f9c745501a8aaa8f2a4",
+      "bytes": 26411,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "74d09733ac283d10d3c4ee2003ea853a23da0ea9",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "improved artifact preprocessing",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/pytorch/torch_gaussiannb_preprocessing.joblib",
+      "exists": true,
+      "sha256": "d09b5fcf8a9e678054a72555364bd4d7305fe9d4f415f93c6df567d3c8831af3",
+      "bytes": 5254444,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "69dd2b8f125e64831b6a6144ff6b41588771ceba",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "improved artifact participant scaler",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-gaussiannb/pytorch/torch_gaussiannb_participant_scaler.joblib",
+      "exists": true,
+      "sha256": "67bef563aae191463f9e16228f7386e3ba26b319fa1e8b7fa860faca71ba09e9",
+      "bytes": 175747,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "09f0ee451cd0677fd3b2c3e4d9c6a98353c292f3",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "prediction_quantum/data.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/prediction_quantum/data.py",
+      "exists": true,
+      "sha256": "75b0e7a8e23e64910aa6f477fd62cd65c57878b6347e728354540bf453987f0c",
+      "bytes": 10620,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "99318a22802d05c74597e0870419fba30c93dd1e",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "prediction_quantum/vqc.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/prediction_quantum/vqc.py",
+      "exists": true,
+      "sha256": "69b3e4de03494063b3b066a5bb54f85100953c2bc7b2afb3f07ad1c909523705",
+      "bytes": 4914,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "7491b5c394dd86e43609ae24a067a2e0cf13d3b2",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "prediction_quantum/encoding.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/prediction_quantum/encoding.py",
+      "exists": true,
+      "sha256": "1e7c99484f1756476387045b03b1f11d4a7cb0aa0285bf859a7506cc982a30d8",
+      "bytes": 3491,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "925cd64f493fac24d630d5634d7dc53e4007d3f4",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "prediction_quantum/metrics.py",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/prediction_quantum/metrics.py",
+      "exists": true,
+      "sha256": "1663f42b75ad58fa327e443f6dd494a7368dcb3c1bd7d33a7d5ad817623520a4",
+      "bytes": 1699,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "b92f4300a644075aaca392da44bb3316bbb46052",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "split_seed0.csv",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/split_seed0.csv",
+      "exists": true,
+      "sha256": "c8c88170a1d1e9d12645c8457fab57bf915135245f2b0e91e24f47cd0022e6bd",
+      "bytes": 1116033,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "3a6f5f79c8bd5b35295d1d2b6f4e84f20ad2864e",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "encoder_q6_s0.joblib",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/encoders/encoder_q6_s0.joblib",
+      "exists": true,
+      "sha256": "b5597e9b73329f156d907c4169e51cf62a7baef1987e14fbb8c2871c5cec5f6e",
+      "bytes": 47475,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "002222d89265bd3a11227111df0d834ffd8b6819",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s0/params.pt",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s0/params.pt",
+      "exists": true,
+      "sha256": "4bdb36d458338354f98840d7dded2a1d7a40c83dfc2b2cef14f4d5e1304ab425",
+      "bytes": 2584,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "44f3bc49035eff75126ac91e93197e7a93f1ef2a",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s0/test_predictions.npy",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s0/test_predictions.npy",
+      "exists": true,
+      "sha256": "04261ddff21b85a2051d499692fb65e282490027dc4e71c5779b065bd041c577",
+      "bytes": 4836,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "fe708a4480203210a5366390f3d96c3a33ea85b1",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s0/metrics.json",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s0/metrics.json",
+      "exists": true,
+      "sha256": "9eadebe5f966ea6763ad7cfc218a13c9c4478cb051b10a4cfac80b3a8112cea2",
+      "bytes": 1184,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "ed7826cd645cab9e9c431c8e8552bb8b5e3ac489",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "gnb_full_s0/test_predictions.npy",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/gnb_full_s0/test_predictions.npy",
+      "exists": true,
+      "sha256": "dfc5b5cf6b5caa4265d30f1365ca2a1b19b321d5db298accd8d9f7e439a2f259",
+      "bytes": 4836,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "01f7393f98c388bbfc143404bf120ae1d0d6c50f",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "split_seed1.csv",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/split_seed1.csv",
+      "exists": true,
+      "sha256": "a1b001f44160df4ceaf13ec2a483625466b4f5514930a159414c496b57367626",
+      "bytes": 1115970,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "de1c65976fd3f2054aa492ff88db289263bf952d",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "encoder_q6_s1.joblib",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/encoders/encoder_q6_s1.joblib",
+      "exists": true,
+      "sha256": "14330314ba59ec90dff86b143030fcfff0e5f8675f6e7d7e29a32213a8a68cba",
+      "bytes": 47475,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "4596e04b77b279982a8f5fea105594ad9258b01d",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s1/params.pt",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s1/params.pt",
+      "exists": true,
+      "sha256": "f65a6debfffb41482efc433d57552508ad30912d6972a0937bc402494d400dd8",
+      "bytes": 2584,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "9b42689cc8316aff9450f09c02b6cb80deaaec5b",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s1/test_predictions.npy",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s1/test_predictions.npy",
+      "exists": true,
+      "sha256": "529d2facfb885a9b81b3e5aeeabc463962e38db112326a1ecf15890ab59c37b2",
+      "bytes": 4818,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "a435c771a3f9aef6de9261f9a37ccce3750916ef",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s1/metrics.json",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s1/metrics.json",
+      "exists": true,
+      "sha256": "b3cc34737e4d83d1debc9c9af89e22a3a1275637e2f234d621a8d15f071aeb35",
+      "bytes": 1184,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "16ff17cdaa62fb14ab458241c27c17833f338adf",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "gnb_full_s1/test_predictions.npy",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/gnb_full_s1/test_predictions.npy",
+      "exists": true,
+      "sha256": "475e009f0548fb574d2305ffe189496a7dd75714c8c11fbff5e8af0ca0233251",
+      "bytes": 4818,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "430eab650b41ef4618fca3585248afa45c0cd730",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "split_seed2.csv",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/split_seed2.csv",
+      "exists": true,
+      "sha256": "879b39f284205c39649232cbba8ecec31c04f65deb87e1cff6aedfd746b639b3",
+      "bytes": 1115995,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "9b94444ce8885a0566ecb866aefe7e15ed77fed9",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "encoder_q6_s2.joblib",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/encoders/encoder_q6_s2.joblib",
+      "exists": true,
+      "sha256": "11af89913cac070453649205a19bcd66d4fa30279091945eb9f5b4819860bb2f",
+      "bytes": 47475,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "5f2cc4e1fe4bd3e4aa7682f5c973c134e66098a7",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s2/params.pt",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s2/params.pt",
+      "exists": true,
+      "sha256": "fcd8ace2622ee9a1701f1318428871a0ab50865cdc2413328e5d0dba2ebf25ad",
+      "bytes": 2584,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "1b0afb3090f7a680407dfd7412352410991f872a",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s2/test_predictions.npy",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s2/test_predictions.npy",
+      "exists": true,
+      "sha256": "c84e2c4ae68610414b8fd91e89a69ee0bcb467d1458b4191a9afc1933c6c0333",
+      "bytes": 4788,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "983b2c1fd7201fb54f689b25ec87928f46d00fa6",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "vqc_q6_l4_s2/metrics.json",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/vqc_q6_l4_s2/metrics.json",
+      "exists": true,
+      "sha256": "cf522c60522306b9cd244f46c133928ac83cb763f6426a887632d001ab744287",
+      "bytes": 1183,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "cc86db62064db6806930b48bfd859d4063fafbdd",
+      "working_file_equals_HEAD_blob": true
+    },
+    {
+      "label": "gnb_full_s2/test_predictions.npy",
+      "path": "/home/prasndhdl/Downloads/avatar/Tellekynezix/prediction-quantum/results/runs/gnb_full_s2/test_predictions.npy",
+      "exists": true,
+      "sha256": "c41bc40edbf2044c28e5cf37c9de2ab81edda3baac8dd0632682cf7b1321d439",
+      "bytes": 4788,
+      "git_tracked_at_HEAD": true,
+      "git_blob_HEAD": "3f08ad8e89b61b38dcfb6254e533e282c2125bd7",
+      "working_file_equals_HEAD_blob": true
+    }
+  ]
+}

@@ -24,11 +24,9 @@ from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from predictions_local.brainflowprocessor import BrainFlowDataProcessor
 from predictions_local.deeplearningpytorchpredictor import DeeplearningPytorchPredictor
 from predictions_local.neurosityprocessor import NeurosityDataProcessor
-from signal_quality import QualityAssessor, QualityGatedPredictor, may_execute, withheld_result
-from signal_quality.config import load_default_config
-from signal_quality.dashboard import build as build_quality_dashboard
-from signal_quality.gui_view import preflight_view, quality_view
-from signal_quality.report import preflight as preflight_recording
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prediction-gaussiannb'))
+from eeg_quality import COMMANDS, QualityAssessor, QualityGatedPredictor, folder_label, load_default_config, may_execute, read_openbci, withheld_result  
+from scipy.signal import decimate
 from sklearn.preprocessing import StandardScaler
 from cameraview.camera_controller import CameraController
 from NAO6.nao_connection import send_command
@@ -78,10 +76,10 @@ class BrainwavesBackend(QObject):
     enqueueMoveRequested = Signal(str)
     neurosityStatusChanged = Signal(str)
     signalQualityChanged = Signal(str)
-    qualityViewChanged = Signal(dict)  # withholding indicator + channel grid (signal_quality.gui_view)
     gnbParticipantStatusChanged = Signal(str)  # improved GaussianNB chain: participant id and calibration state
     gnbTrainingCueChanged = Signal(dict)  # subject-specific GaussianNB: guided session progress (phase, command, seconds)
     gnbTrainingFinished = Signal(dict)  # subject-specific GaussianNB: session summary (windows, model state, expectation)
+    replayRecordingChanged = Signal(str)  # Replay Recording source: file and position while it stands in for the headset, else ""
 
     @Slot()
     def startNaoManual(self):
@@ -136,10 +134,15 @@ class BrainwavesBackend(QObject):
         self.predictions_log = []  # List to store prediction records
         self.current_prediction_label = ""
         self.current_prediction_result = withheld_result("no_assessed_input")
-        # Deployed policy from signal_quality/default_config.json (verified 60 Hz mains).
+        # Deployed policy from prediction-gaussiannb/quality_policy.json (verified 60 Hz mains).
         self.quality_gate = QualityGatedPredictor(QualityAssessor(load_default_config()))
         self.current_data_mode = "synthetic"
         self.current_bci_source = "openbci"
+        # Replay Recording source (chooseReplayRecording): a named OpenBCI GUI export read one capture at a time from
+        # replay_pos, so the gate and the chains can be shown without a headset.
+        self.replay_capture = None
+        self.replay_path = None
+        self.replay_pos = 0
         self.current_model = "Random Forest"  # Default model
         self.current_framework = "PyTorch"  # Default framework
         # Improved GaussianNB chain (prediction-gaussiannb/pytorch/improved_gnb_inference.py): loaded on first use.
@@ -279,7 +282,6 @@ class BrainwavesBackend(QObject):
         self.current_model = model_name
         self.current_prediction_label = ""
         self.current_prediction_result = withheld_result("configuration_changed")
-        self.qualityViewChanged.emit(quality_view(self.current_prediction_result, self.quality_gate.assessor.config))
         self.flight_log.insert(0, f"Selected Model: {model_name}")
         self.flightLogUpdated.emit(self.flight_log)
         if model_name == "GaussianNB":
@@ -292,7 +294,6 @@ class BrainwavesBackend(QObject):
         self.current_framework = framework_name
         self.current_prediction_label = ""
         self.current_prediction_result = withheld_result("configuration_changed")
-        self.qualityViewChanged.emit(quality_view(self.current_prediction_result, self.quality_gate.assessor.config))
         self.flight_log.insert(0, f"Selected Framework: {framework_name}")
         self.flightLogUpdated.emit(self.flight_log)
         if self.current_model == "GaussianNB":
@@ -328,16 +329,22 @@ class BrainwavesBackend(QObject):
             self.signalQualityChanged.emit(message)
             self.logMessage.emit(message)
             self.flight_log.insert(0, message)
-            self.predictions_log.append({"count": str(len(self.predictions_log) + 1), "server": "Quality gate", "label": "WITHHELD"})
+            self.predictions_log.append({"count": str(len(self.predictions_log) + 1),
+                                         "server": "Synthetic" if self.current_data_mode == "synthetic" else "Quality gate", "label": "WITHHELD"})
         else:
             prediction = result["prediction_label"]
             self.current_prediction_label = prediction
-            self.signalQualityChanged.emit("EEG passed configured quality checks")
-            self.logMessage.emit(f"Prediction received: {prediction}")
+            # a replayed recording or the synthetic board is marked as such wherever the command shows up: neither is live use
+            synthetic = result.get("source_kind") == "synthetic"
+            replay = self.current_data_mode == "replay" and not synthetic
+            source = self._source_suffix(result)
+            self.signalQualityChanged.emit("Synthetic board: test source, capture check bypassed" if synthetic
+                                           else "EEG passed configured quality checks" + source)
+            self.logMessage.emit(f"Prediction received: {prediction}{source}")
             self._queue_prediction(result)
-            self.predictions_log.append({"count": str(len(self.predictions_log) + 1), "server": "Brainwave AI", "label": prediction})
-            self.flight_log.insert(0, f"Queued: {prediction} (Model: {self.current_model}, Framework: {self.current_framework})")
-        self.qualityViewChanged.emit(quality_view(result, self.quality_gate.assessor.config))
+            self.predictions_log.append({"count": str(len(self.predictions_log) + 1),
+                                         "server": "Replay" if replay else ("Synthetic" if synthetic else "Brainwave AI"), "label": prediction})
+            self.flight_log.insert(0, f"Queued: {prediction} (Model: {self.current_model}, Framework: {self.current_framework}{source})")
         self.predictionsTableUpdated.emit(self.predictions_log)
         self.flightLogUpdated.emit(self.flight_log)
 
@@ -345,94 +352,179 @@ class BrainwavesBackend(QObject):
         path, _ = QFileDialog.getOpenFileName(None, title, str(Path.home()), "OpenBCI recordings (*.txt)")
         return path or None
 
-    @Slot()
-    def openQualityDashboard(self):
-        """Build the interactive quality dashboard for a recording and open it in the browser."""
-        path = self._choose_recording("Open EEG recording in the quality dashboard")
-        if path is None:
-            return
-        out_dir = Path(tempfile.gettempdir()) / "avatar_quality_dashboards"
-        try:
-            out, payload = build_quality_dashboard(path, out_dir / (Path(path).stem + ".quality.html"),
-                                                   self.quality_gate.assessor.config)
-        except (ValueError, OSError) as error:
-            self.logMessage.emit(f"Quality dashboard not built for {Path(path).name}: {error}")
-            return
-        session = payload["session"]
-        self.logMessage.emit(f"Quality dashboard: {session['usable_windows']}/{session['windows']} windows pass "
-                             f"({out})")
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(out)))
+    # ---- Replay recording: a stored OpenBCI export stands in for the headset (demonstrations without hardware) ----
+    REPLAY_START_SECONDS = 2.0   # the loader drops the first 2 s block of every recording; the replay starts after it
 
     @Slot()
-    def checkRecordingQuality(self):
-        """Preflight a recording file (e.g. right after a collection session) and show its channels."""
-        path = self._choose_recording("Check an EEG recording")
-        if path is None:
-            return
-        try:
-            result = preflight_recording(path, self.quality_gate.assessor.config)
-        except (ValueError, OSError) as error:
-            result = dict(path=path, error=str(error))
-        view = preflight_view(result, self.quality_gate.assessor.config)
-        self.qualityViewChanged.emit(view)
-        self.logMessage.emit(f"{Path(path).name}: {view['headline']}")
-        for reason in view["reasons"]:
-            self.logMessage.emit(f"  {reason}")
+    def chooseReplayRecording(self):
+        """Pick the recording to replay and switch to the replay source. Cancelling the dialog keeps the recording
+        already loaded (if any). A file the reader rejects, or one that is not the 16-channel 125 Hz export the chains
+        were trained on, is reported in the label; the source still follows the radio button."""
+        path = self._choose_recording("OpenBCI recording to replay in place of the headset")
+        message = None
+        if path is not None:
+            try:
+                capture = read_openbci(path)
+                if (float(capture["sfreq"]), len(capture["channels"])) != (125.0, 16):
+                    raise ValueError(f"{len(capture['channels'])} channels at {capture['sfreq']:g} Hz; the chains need the "
+                                     f"16-channel Cyton+Daisy export at 125 Hz")
+            except Exception as error:
+                message = f"Replay recording rejected: {error}"
+                self.logMessage.emit(message)
+            else:
+                self.replay_capture, self.replay_path = capture, path
+                self.replay_pos = int(round(self.REPLAY_START_SECONDS * capture["sfreq"]))
+        self.setDataMode("replay")
+        if message:
+            self.replayRecordingChanged.emit(message)
 
-    def run_riemannian(self):
-        # Load lazily: existing routes do not require pyRiemann installed.
-        from prediction_riemannian.predictor import AvatarRiemannianPredictor
-        model_path = os.environ.get("AVATAR_RIEMANNIAN_MODEL")
-        if not model_path:
-            return self.quality_gate.withhold("Set AVATAR_RIEMANNIAN_MODEL to an independently validated artifact")
-        predictor = AvatarRiemannianPredictor(model_path)
-        if predictor.artifact.get("task_labels_verified") is not True:
-            return self.quality_gate.withhold("task_labels_unverified_experimental_model")
-        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
-            return self.quality_gate.withhold("Riemannian inference requires verified live OpenBCI acquisition")
-        if predictor.assessor.config.policy_id != self.quality_gate.assessor.config.policy_id:
-            return self.quality_gate.withhold("Riemannian quality policy differs from GUI policy")
-        predictor.gate = self.quality_gate
-        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
-                                           sample_time=predictor.config.seconds + 1)
-        capture = processor.get_quality_capture()
-        n = predictor.config.samples
-        if capture["raw"].shape[1] < n:
-            return self.quality_gate.withhold("Insufficient samples for Riemannian window")
-        for name in ("raw", "counters", "timestamps"):
-            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
-        return predictor.predict_capture(capture)
+    def _source_suffix(self, result):
+        """", replay of <file>" or ", synthetic board (not screened)" after a queued command; "" for the headset."""
+        if isinstance(result, dict) and result.get("source_kind") == "synthetic":
+            return ", synthetic board (not screened)"
+        if self.current_data_mode == "replay" and self.replay_path:
+            return f", replay of {Path(self.replay_path).name}"
+        return ""
 
-    def run_bandpower_svm(self):
-        # Load lazily: existing routes do not require extra classifier dependencies installed.
-        from prediction_bandpower.predictor import AvatarBandPowerSVMPredictor
-        model_path = os.environ.get("AVATAR_BANDPOWER_SVM_MODEL")
-        if not model_path:
-            return self.quality_gate.withhold("Set AVATAR_BANDPOWER_SVM_MODEL to an independently validated artifact")
-        predictor = AvatarBandPowerSVMPredictor(model_path)
-        if predictor.artifact.get("task_labels_verified") is not True:
-            return self.quality_gate.withhold("task_labels_unverified_experimental_model")
-        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
-            return self.quality_gate.withhold("Band-power SVM inference requires verified live OpenBCI acquisition")
-        if predictor.assessor.config.policy_id != self.quality_gate.assessor.config.policy_id:
-            return self.quality_gate.withhold("Band-power SVM quality policy differs from GUI policy")
-        predictor.gate = self.quality_gate
-        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
-                                           sample_time=predictor.config.seconds + 1)
-        capture = processor.get_quality_capture()
-        n = predictor.config.samples
-        if capture["raw"].shape[1] < n:
-            return self.quality_gate.withhold("Insufficient samples for Band-power SVM window")
-        for name in ("raw", "counters", "timestamps"):
-            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
-        return predictor.predict_capture(capture)
+    def _replay_status(self):
+        """One line for the GUI label: file and position, or that no recording is loaded."""
+        if self.replay_capture is None:
+            return "Replay: no recording chosen"
+        fs, total = self.replay_capture["sfreq"], self.replay_capture["raw"].shape[1]
+        return f"Replay: {Path(self.replay_path).name} at {self.replay_pos / fs:.1f} of {total / fs:.1f} s"
+
+    def _replay_slice(self, n):
+        """The next n samples of the replay recording as a capture dict, or (None, reason). The samples are real EEG,
+        so source_kind stays "real"; one stream id per file keeps the gate's recovery count across presses, and the
+        file name in it shows in the log that this is a replay."""
+        cap = self.replay_capture
+        if cap is None:
+            return None, "No replay recording chosen (Replay Recording opens the file dialog)"
+        start, total, fs = int(round(self.REPLAY_START_SECONDS * cap["sfreq"])), cap["raw"].shape[1], cap["sfreq"]
+        if start + n > total:
+            return None, (f"Replay recording {Path(self.replay_path).name} is too short: {total / fs:.1f} s, one capture needs "
+                          f"{(start + n) / fs:.1f} s")
+        if self.replay_pos + n > total:
+            self.replay_pos = start
+            self.replayRecordingChanged.emit(self._replay_status())
+            return None, f"Replay of {Path(self.replay_path).name} reached its end; the next press starts it again"
+        a, z = self.replay_pos, self.replay_pos + n
+        self.replay_pos = z
+        out = {k: v for k, v in cap.items() if k not in ("raw", "counters", "timestamps")}
+        out.update(raw=cap["raw"][:, a:z], counters=cap["counters"][a:z], timestamps=cap["timestamps"][a:z],
+                   captured_monotonic=time.monotonic(), stream_id=f"replay:{Path(self.replay_path).name}")
+        self.replayRecordingChanged.emit(self._replay_status())
+        return out, None
+
+    def _capture(self, board_id, seconds, n=None):
+        """The raw capture a route assesses: a fresh board read of `seconds` (Live or Synthetic), or the next slice of
+        the replay recording (n samples, else `seconds` worth). Returns (capture, None) or (None, reason to withhold)."""
+        if self.current_data_mode == "replay":
+            if self.replay_capture is None:
+                return self._replay_slice(0)
+            return self._replay_slice(n or int(round(seconds * self.replay_capture["sfreq"])))
+        self.brainwave_processor = BrainFlowDataProcessor(board_id=board_id, sample_time=seconds)
+        return self.brainwave_processor.get_quality_capture(), None
+
+    # ---- Synthetic Data mode: the project's test source, run without the capture check as before this work ----
+    # BrainFlow's synthetic board is not EEG, so the gate refuses it by design (source_kind "synthetic"). The GUI before
+    # this work used that board as a stand-in whenever no headset was attached; this mode keeps that use: the selected
+    # model runs on the synthetic capture unscreened, and the result is marked synthetic wherever it shows up.
+    def _synthetic_result(self, prediction, confidence=None):
+        """An executable result for a synthetic capture (may_execute needs the same fields the gate fills in), with the
+        quality record saying it was never screened. An unsupported label is withheld, never replaced by a default."""
+        label = prediction.get("prediction_label") if isinstance(prediction, dict) else prediction
+        label = "land" if label == "landing" else label
+        quality = dict(usable=True, continuity_checked=True, reasons=[], bad_channels=[], source_kind="synthetic", screened=False)
+        if not isinstance(label, str) or label not in COMMANDS:
+            return withheld_result("missing_or_unsupported_prediction", quality)
+        now = time.monotonic()
+        return dict(status="accepted", command_allowed=True, prediction_label=label, prediction_count=1, quality=quality,
+                    issued_monotonic=now, expires_monotonic=now + self.quality_gate.assessor.config.max_prediction_age_seconds,
+                    confidence=confidence, source_kind="synthetic")
+
+    def _synthetic_capture(self, model_sfreq, seconds, n):
+        """A capture from the synthetic board, decimated to the model's rate when the board runs faster (250 -> 125 Hz
+        for the GaussianNB chains, anti-aliased), cut to its last n samples. Returns (capture, None) or (None, reason)."""
+        capture, problem = self._capture(BoardIds.SYNTHETIC_BOARD.value, seconds)
+        if problem:
+            return None, problem
+        raw, fs = capture["raw"], float(capture["sfreq"])
+        if fs != float(model_sfreq):
+            q = fs / float(model_sfreq)
+            if q < 1 or q != int(q):
+                return None, f"synthetic board at {fs:g} Hz cannot be decimated to the model's {model_sfreq:g} Hz"
+            raw = decimate(raw, int(q), axis=1, zero_phase=True)
+        if raw.shape[1] < n:
+            return None, "Insufficient samples for the GaussianNB 5-window context"
+        return dict(capture, raw=raw[:, -n:], sfreq=float(model_sfreq), source_kind="synthetic"), None
+
+    # def run_riemannian(self):
+    #     # Load lazily: existing routes do not require pyRiemann installed.
+    #     from prediction_riemannian.predictor import AvatarRiemannianPredictor
+    #     model_path = os.environ.get("AVATAR_RIEMANNIAN_MODEL")
+    #     if not model_path:
+    #         return self.quality_gate.withhold("Set AVATAR_RIEMANNIAN_MODEL to an independently validated artifact")
+    #     predictor = AvatarRiemannianPredictor(model_path)
+    #     if predictor.artifact.get("task_labels_verified") is not True:
+    #         return self.quality_gate.withhold("task_labels_unverified_experimental_model")
+    #     if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+    #         return self.quality_gate.withhold("Riemannian inference requires verified live OpenBCI acquisition")
+    #     if predictor.assessor.config.policy_id != self.quality_gate.assessor.config.policy_id:
+    #         return self.quality_gate.withhold("Riemannian quality policy differs from GUI policy")
+    #     predictor.gate = self.quality_gate
+    #     processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
+    #                                        sample_time=predictor.config.seconds + 1)
+    #     capture = processor.get_quality_capture()
+    #     n = predictor.config.samples
+    #     if capture["raw"].shape[1] < n:
+    #         return self.quality_gate.withhold("Insufficient samples for Riemannian window")
+    #     for name in ("raw", "counters", "timestamps"):
+    #         capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+    #     return predictor.predict_capture(capture)
+
+    # def run_bandpower_svm(self):
+    #     # Load lazily: existing routes do not require extra classifier dependencies installed.
+    #     from prediction_bandpower.predictor import AvatarBandPowerSVMPredictor
+    #     model_path = os.environ.get("AVATAR_BANDPOWER_SVM_MODEL")
+    #     if not model_path:
+    #         return self.quality_gate.withhold("Set AVATAR_BANDPOWER_SVM_MODEL to an independently validated artifact")
+    #     predictor = AvatarBandPowerSVMPredictor(model_path)
+    #     if predictor.artifact.get("task_labels_verified") is not True:
+    #         return self.quality_gate.withhold("task_labels_unverified_experimental_model")
+    #     if self.current_bci_source != "openbci" or self.current_data_mode != "live":
+    #         return self.quality_gate.withhold("Band-power SVM inference requires verified live OpenBCI acquisition")
+    #     if predictor.assessor.config.policy_id != self.quality_gate.assessor.config.policy_id:
+    #         return self.quality_gate.withhold("Band-power SVM quality policy differs from GUI policy")
+    #     predictor.gate = self.quality_gate
+    #     processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
+    #                                        sample_time=predictor.config.seconds + 1)
+    #     capture = processor.get_quality_capture()
+    #     n = predictor.config.samples
+    #     if capture["raw"].shape[1] < n:
+    #         return self.quality_gate.withhold("Insufficient samples for Band-power SVM window")
+    #     for name in ("raw", "counters", "timestamps"):
+    #         capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+    #     return predictor.predict_capture(capture)
 
     def _run_quality_gated_remote_rf(self):
         if self.current_bci_source != "openbci":
             return self.quality_gate.withhold("Neurosity quality contract needs raw timestamps, rate and physical channel metadata")
+        if self.current_data_mode == "replay":
+            return self.quality_gate.withhold("The Random Forest service reads the board itself; choose GaussianNB or Deep Learning (PyTorch) to replay a recording")
         if not self.bcicon:
             return self.quality_gate.withhold("BCI connection unavailable")
         self.bcicon.set_mode(DataMode.LIVE if self.current_data_mode != "synthetic" else DataMode.SYNTHETIC)
+        if self.current_data_mode == "synthetic":
+            # the synthetic board goes to the service unscreened, as before this work; a failure is reported, not replaced
+            try:
+                data = self.bcicon.read_from_board()
+                self.bcicon.column_labels = [f"c{i}" for i in range(data.shape[0])]    # as bciConnectionController sets them
+                response = self.bcicon.send_data_to_server(data)
+                response.raise_for_status()
+                return self._synthetic_result(response.json())
+            except Exception as error:
+                return withheld_result(f"capture_or_server_failed: {error}")
         return self.bcicon.bciConnectionController(quality_gate=self.quality_gate)
 
     def run_random_forest_pytorch(self):
@@ -447,12 +539,15 @@ class BrainwavesBackend(QObject):
         if self.current_bci_source != "openbci":
             return self.quality_gate.withhold("Neurosity quality acquisition metadata unavailable")
         board_id = BoardIds.SYNTHETIC_BOARD.value if self.current_data_mode == "synthetic" else BoardIds.CYTON_DAISY_BOARD.value
-        self.brainwave_processor = BrainFlowDataProcessor(board_id=board_id, sample_time=3)
-        capture = self.brainwave_processor.get_quality_capture()
+        capture, problem = self._capture(board_id, seconds=3)
+        if problem:
+            return self.quality_gate.withhold(problem)
         def predict_same_capture(raw):
             # Preserve the legacy CNN's scaling interface after raw assessment.
             self.brainwave_data = torch.tensor(StandardScaler().fit_transform(raw.T), dtype=torch.float32)
             return DeeplearningPytorchPredictor()(self.brainwave_data)
+        if self.current_data_mode == "synthetic":
+            return self._synthetic_result(predict_same_capture(capture["raw"]))     # unscreened test source
         return self.quality_gate.predict(predict=predict_same_capture, **capture)
 
     def get_brainwave_data(self):
@@ -468,6 +563,7 @@ class BrainwavesBackend(QObject):
 
     # ---- GaussianNB: the improved chains of prediction-gaussiannb (PyTorch, TensorFlow or JAX decision model) ----
     GNB_BACKENDS = {"PyTorch": "torch", "TensorFlow": "tensorflow", "JAX": "jax"}
+    GNB_COMMANDS = ("backward", "forward", "landing", "left", "right", "takeoff")   # the folder names of a labelled recording set
     GNB_LABELS = {"torch": "PyTorch", "tensorflow": "TensorFlow", "jax": "JAX"}
 
     def _gnb_backend(self, framework=None):
@@ -536,6 +632,11 @@ class BrainwavesBackend(QObject):
         self.logMessage.emit(f"GaussianNB participant: {participant}")
         self._emit_gnb_status()
 
+    def _say(self, message):
+        """Console log and the one-line status under Read my mind (for button presses that would otherwise look like nothing)."""
+        self.logMessage.emit(message)
+        self.signalQualityChanged.emit(message)
+
     def _log_gnb_calibration(self, entry):
         self.logMessage.emit(f"GaussianNB calibrated '{entry['participant']}': {entry['n_windows']} windows from "
                              f"{entry.get('n_blocks_kept', '?')}/{entry.get('n_blocks', '?')} usable 2 s blocks "
@@ -544,9 +645,16 @@ class BrainwavesBackend(QObject):
     @Slot()
     def calibrateGaussianNB(self):
         """Record AVATAR_GNB_CALIBRATION_SECONDS (default 30) s of unlabelled EEG from the current participant and
-        register their feature statistics; runs in a worker thread so the window stays responsive."""
-        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
-            self.logMessage.emit("GaussianNB calibration requires live OpenBCI acquisition")
+        register their feature statistics; runs in a worker thread so the window stays responsive. In Replay Recording
+        mode the loaded recording stands in for the headset (the same as Calibrate from recording... with that file)."""
+        if self.current_bci_source != "openbci" or self.current_data_mode not in ("live", "replay"):
+            self._say("GaussianNB calibration needs EEG from the headset (Live Data) or a replay recording; the synthetic "
+                      "board has no user statistics to learn" if self.current_bci_source == "openbci"
+                      else "GaussianNB calibration requires OpenBCI acquisition")
+            return
+        replay_path = self.replay_path if self.current_data_mode == "replay" else None
+        if self.current_data_mode == "replay" and self.replay_capture is None:
+            self._say("GaussianNB calibration: choose a replay recording first")
             return
         if self._gnb_calibrating:
             self.logMessage.emit("GaussianNB calibration already running")
@@ -558,18 +666,25 @@ class BrainwavesBackend(QObject):
             seconds = 30
         self._gnb_calibrating = True
         self._emit_gnb_status()
-        self.logMessage.emit(f"GaussianNB calibration ({self.current_framework}): recording {seconds} s of EEG for '{participant}' "
-                             "(sit still, eyes open, headset settled)")
+        if replay_path:
+            self._say(f"GaussianNB calibration ({self.current_framework}): from the replay recording {Path(replay_path).name} for '{participant}'")
+        else:
+            self._say(f"GaussianNB calibration ({self.current_framework}): recording {seconds} s of EEG for '{participant}' "
+                      "(sit still, eyes open, headset settled)")
 
         def work():
             try:
                 chain = self._gnb_chain()
-                processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value, sample_time=seconds)
-                capture = processor.get_quality_capture()
-                entry = chain.calibrate_from_capture(participant, capture, assessor=self.quality_gate.assessor)
+                if replay_path:
+                    entry = chain.calibrate_from_recording(participant, replay_path, assessor=self.quality_gate.assessor)
+                else:
+                    processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value, sample_time=seconds)
+                    capture = processor.get_quality_capture()
+                    entry = chain.calibrate_from_capture(participant, capture, assessor=self.quality_gate.assessor)
                 self._log_gnb_calibration(entry)
+                self.signalQualityChanged.emit(f"GaussianNB calibrated '{participant}': {entry['n_windows']} windows ({entry['source']})")
             except Exception as error:
-                self.logMessage.emit(f"GaussianNB calibration failed: {error}")
+                self._say(f"GaussianNB calibration failed: {error}")
             finally:
                 self._gnb_calibrating = False
                 self._emit_gnb_status()
@@ -624,16 +739,15 @@ class BrainwavesBackend(QObject):
         self.gnb_mode = mode
         self.current_prediction_label = ""
         self.current_prediction_result = withheld_result("configuration_changed")
-        self.qualityViewChanged.emit(quality_view(self.current_prediction_result, self.quality_gate.assessor.config))
         if mode == "subject":
             try:
                 self._gnb_subject_chain()
             except Exception as error:
                 self.logMessage.emit(f"GaussianNB subject-specific chain failed to load: {error}")
-            self.logMessage.emit("GaussianNB mode: my model (subject-specific; trained from this user's own labelled "
-                                 "windows, acts only when 4 of the last 5 window votes agree)")
+            self._say("GaussianNB mode: my model (subject-specific; trained from this user's own labelled "
+                      "windows, acts only when 4 of the last 5 window votes agree)")
         else:
-            self.logMessage.emit("GaussianNB mode: global chain (one model for every user)")
+            self._say("GaussianNB mode: global chain (one model for every user)")
         self._emit_gnb_status()
 
     @Slot(result="QVariant")
@@ -661,7 +775,8 @@ class BrainwavesBackend(QObject):
         labelled; then the user's statistics and model are fitted from all their stored windows and saved under
         predictions_local/gnb_users/<id>/. Runs in a worker thread; progress arrives on gnbTrainingCueChanged."""
         if self.current_bci_source != "openbci" or self.current_data_mode != "live":
-            self.logMessage.emit("GaussianNB training requires live OpenBCI acquisition")
+            self._say("The guided training session records from the headset (Live Data). Without one, Train from folder... "
+                      "fits your model from labelled recordings laid out like Data_clean/<person>/<command>/")
             return
         if self._gnb_training is not None or self._gnb_calibrating:
             self.logMessage.emit("GaussianNB: a training session or calibration is already running")
@@ -721,13 +836,35 @@ class BrainwavesBackend(QObject):
                                                   str(Path.home()))
         if not folder:
             return
+        folder = Path(folder)
+        # one command's folder was picked (Data_clean/<person>/Takeoff): the person's folder above it is what was meant
+        if folder_label(folder.name) in self.GNB_COMMANDS and any(folder.glob("OpenBCI-RAW-*.txt")):
+            siblings = [d for d in folder.parent.iterdir() if d.is_dir() and folder_label(d.name) in self.GNB_COMMANDS and any(d.glob("OpenBCI-RAW-*.txt"))]
+            if len(siblings) >= 2:
+                self._say(f"GaussianNB: {folder.name} holds one command; using its parent {folder.parent.name} ({len(siblings)} commands)")
+                folder = folder.parent
         try:
-            user = self._gnb_subject_chain().train_from_folder(self.gnb_participant_id, folder, assessor=self.quality_gate.assessor)
+            user = self._gnb_subject_chain().train_from_folder(self.gnb_participant_id, str(folder), assessor=self.quality_gate.assessor)
             cv = user.meta.get("cue_cv")
-            self.logMessage.emit(f"GaussianNB trained '{user.participant}' from {Path(folder).name}: {user.status()}"
-                                 + (f"; cue-grouped self-check {100 * cv['accuracy']:.0f} %" if cv else ""))
+            self._say(f"GaussianNB trained '{user.participant}' from {folder.name}: {user.status()}"
+                      + (f"; cue-grouped self-check {100 * cv['accuracy']:.0f} %" if cv else ""))
         except Exception as error:
-            self.logMessage.emit(f"GaussianNB training from {Path(folder).name} failed: {error}")
+            self._say(f"GaussianNB training from {folder.name} failed: {error}")
+        self._emit_gnb_status()
+
+    @Slot()
+    def forgetGaussianNBUser(self):
+        """Delete the current participant's stored model, statistics and windows for the selected framework (the way
+        back to the global fallback after a bad session or a wrong folder)."""
+        participant = self.gnb_participant_id
+        try:
+            chain = self._gnb_subject_chain()
+            had = participant in chain.users
+            chain.forget_user(participant)
+            self._say(f"GaussianNB: forgot '{participant}' ({self._gnb_label(chain.backend)}): stored model, statistics and windows removed"
+                      if had else f"GaussianNB: nothing stored for '{participant}' ({self._gnb_label(chain.backend)})")
+        except Exception as error:
+            self._say(f"GaussianNB: could not forget '{participant}': {error}")
         self._emit_gnb_status()
 
     def _run_gaussiannb_subject(self, framework=None):
@@ -735,15 +872,25 @@ class BrainwavesBackend(QObject):
         -> vote-agreement gate (>= 4 of the last 5 window votes). Only accepted raw captures reach it."""
         chain = self._gnb_subject_chain(framework)
         self._emit_gnb_status()
-        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
-                                           sample_time=int(chain.capture_seconds) + 2)
-        capture = processor.get_quality_capture()
         n = chain.capture_samples
-        if capture["raw"].shape[1] < n:
-            return self.quality_gate.withhold("Insufficient samples for the GaussianNB 5-window context")
-        for name in ("raw", "counters", "timestamps"):
-            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
-        result = chain.predict_capture(capture, self.gnb_participant_id, gate=self.quality_gate)
+        if self.current_data_mode == "synthetic":
+            # test source: the chain runs unscreened; the vote gate of the chain still decides certain / uncertain
+            capture, problem = self._synthetic_capture(chain.sfreq, int(chain.capture_seconds) + 2, n)
+            if problem:
+                return withheld_result(problem)
+            d = chain.predict_raw(capture["raw"], capture["channels"], capture["sfreq"], self.gnb_participant_id)
+            result = (self._synthetic_result(d["command"], d["confidence"]) if d["certain"] else
+                      withheld_result(f"uncertain_decision: {d['agreement']}/{d['votes']} window votes agree with "
+                                      f"'{d['command']}', need {d['votes_needed']}"))
+        else:
+            capture, problem = self._capture(BoardIds.CYTON_DAISY_BOARD.value, int(chain.capture_seconds) + 2, n)
+            if problem:
+                return self.quality_gate.withhold(problem)
+            if capture["raw"].shape[1] < n:
+                return self.quality_gate.withhold("Insufficient samples for the GaussianNB 5-window context")
+            for name in ("raw", "counters", "timestamps"):
+                capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+            result = chain.predict_capture(capture, self.gnb_participant_id, gate=self.quality_gate)
         decision = chain.last_decision
         if decision is not None:
             probs = ", ".join(f"{k} {v:.2f}" for k, v in decision["probabilities"].items())
@@ -771,8 +918,8 @@ class BrainwavesBackend(QObject):
     def _run_gaussiannb(self, framework):
         """Only accepted raw captures reach the chain. In subject-specific mode (setGaussianNBMode("subject")) the
         user's own model of the selected framework runs instead of the global chain."""
-        if self.current_bci_source != "openbci" or self.current_data_mode != "live":
-            return self.quality_gate.withhold("GaussianNB inference requires verified live OpenBCI acquisition")
+        if self.current_bci_source != "openbci" or self.current_data_mode not in ("live", "replay", "synthetic"):
+            return self.quality_gate.withhold("GaussianNB inference requires OpenBCI acquisition: live, a replay recording or the synthetic board")
         if framework not in self.GNB_BACKENDS:
             return self.quality_gate.withhold(f"GaussianNB is not implemented for the {framework} framework")
         if self._gnb_calibrating:
@@ -783,15 +930,23 @@ class BrainwavesBackend(QObject):
             return self._run_gaussiannb_subject(framework)
         chain = self._gnb_chain(framework)
         self._emit_gnb_status()
-        processor = BrainFlowDataProcessor(board_id=BoardIds.CYTON_DAISY_BOARD.value,
-                                           sample_time=int(chain.capture_seconds) + 2)
-        capture = processor.get_quality_capture()
         n = chain.capture_samples
-        if capture["raw"].shape[1] < n:
-            return self.quality_gate.withhold("Insufficient samples for the GaussianNB 5-window context")
-        for name in ("raw", "counters", "timestamps"):
-            capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
-        result = chain.predict_capture(capture, self.gnb_participant_id, gate=self.quality_gate)
+        if self.current_data_mode == "synthetic":
+            # test source: the chain runs on the decimated synthetic capture without the capture check
+            capture, problem = self._synthetic_capture(chain.sfreq, int(chain.capture_seconds) + 2, n)
+            if problem:
+                return withheld_result(problem)
+            d = chain.predict_raw(capture["raw"], capture["channels"], capture["sfreq"], self.gnb_participant_id)
+            result = self._synthetic_result(d["label"], d["confidence"])
+        else:
+            capture, problem = self._capture(BoardIds.CYTON_DAISY_BOARD.value, int(chain.capture_seconds) + 2, n)
+            if problem:
+                return self.quality_gate.withhold(problem)
+            if capture["raw"].shape[1] < n:
+                return self.quality_gate.withhold("Insufficient samples for the GaussianNB 5-window context")
+            for name in ("raw", "counters", "timestamps"):
+                capture[name] = capture[name][:, -n:] if name == "raw" else capture[name][-n:]
+            result = chain.predict_capture(capture, self.gnb_participant_id, gate=self.quality_gate)
         decision = chain.last_decision
         if decision is not None:
             probs = ", ".join(f"{k} {v:.2f}" for k, v in decision["probabilities"].items())
@@ -824,7 +979,7 @@ class BrainwavesBackend(QObject):
             self.logMessage.emit("No fresh quality-approved prediction to execute")
             return
         self._queue_prediction(result)
-        self.flight_log.insert(0, f"Queued: {result['prediction_label']}")
+        self.flight_log.insert(0, f"Queued: {result['prediction_label']}{self._source_suffix(result)}")
         self.flightLogUpdated.emit(self.flight_log)
 
     @Slot()
@@ -1320,7 +1475,7 @@ class BrainwavesBackend(QObject):
     @Slot(str)
     def setDataMode(self, mode):
         """
-        Set data mode to either synthetic or live based on radio button selection.
+        Set data mode to synthetic, live or replay based on radio button selection.
         """
         
         self.current_prediction_label = ""
@@ -1329,10 +1484,15 @@ class BrainwavesBackend(QObject):
 
         if mode == "synthetic":
             self.init_synthetic_board()
-            self.logMessage.emit("Switched to Synthetic Data Mode")
+            self.logMessage.emit("Switched to Synthetic Data Mode (test source, not EEG: the capture check is bypassed)")
+            self.replayRecordingChanged.emit("")
         elif mode == "live":
             self.init_live_board()
             self.logMessage.emit("Switched to Live Data Mode")
+            self.replayRecordingChanged.emit("")
+        elif mode == "replay":
+            self.logMessage.emit(f"Switched to Replay Recording Mode ({self._replay_status()})")
+            self.replayRecordingChanged.emit(self._replay_status())
         else:
             print(f"Unknown data mode: {mode}")
 
@@ -1357,7 +1517,8 @@ class BrainwavesBackend(QObject):
 
         if source == "neurosity":
             self.current_bci_source = "neurosity"
-            self.current_data_mode = "live"
+            self.current_data_mode = "live"       # Neurosity has no replay or synthetic source
+            self.replayRecordingChanged.emit("")
             # print ("setBCISource bug")
             try:
                 self.init_neurosity_processor()

@@ -17,7 +17,7 @@ The new pipeline assesses **original physical EEG**, records explainable reasons
 | `salvage.py` | Export of windows recovered by excluding dead electrodes, with masks, montage options and a loader |
 | `sensitivity.py`, `sensitivity_template.html` | Threshold sensitivity sweeps, margins, verdict stability and review-based error curves |
 | `review_set.py`, `review_set_template.html` | Stratified blind review sets for multi-reviewer validation of the rules |
-| `gui_view.py`, `explain.py` | GUI quality panel view models (withholding indicator, channel grid) and shared plain-language reasons |
+| `explain.py` | shared plain-language reasons for the rule flags (the GUI quality panel and its `gui_view.py` view model were removed on 19 October 2026) |
 | `default_config.json`, `config.py` | Deployed policy (verified 60 Hz mains; line ratios recorded, not rejected), loaded by the GUI gate via `load_default_config()` |
 | `tests/test_quality.py` | Fault, provenance, gating, training and actual GUI/client method tests |
 
@@ -221,20 +221,32 @@ The callback gets a read-only copy of the exact assessed `[channels, samples]` c
 
 ## Avatar integration
 
-`GUI5.py` and `ReadBrain.qml` display quality status and reasons. The Read Brain tab has a quality panel driven by `BrainwavesBackend.qualityViewChanged` (built by `gui_view.py`, testable without Qt):
+The gate is used by the GUI's prediction routes (`GUI5.py`, `BrainwavesBackend.readMyMind`) through
+`prediction-gaussiannb/eeg_quality.py`, which holds the deployed copy of the assessor, the policy and
+`QualityGatedPredictor` (this package re-exports it). The Read Brain tab shows one status line per press ("EEG passed
+configured quality checks", "Prediction withheld: <reasons>", or the replay / synthetic markers below); the earlier
+quality panel, dashboard and recording-check buttons were removed on 19 October 2026 together with `gui_view.py`.
 
-- **Withholding indicator:** after every *Read my mind*, "Prediction allowed" or "Prediction withheld" with the gate's reasons in plain language (hover for all of them); green/amber border. Changing model or framework resets it, so a stale decision is never shown.
-- **Channel grid:** one numbered tile per physical channel, green pass / red fail / grey unassessed; hover for the reason and measurements. Decisions made before any measurement (e.g. an unsupported headset) show no invented tiles.
-- **Quality dashboard...** opens a recording's interactive dashboard (above) in the default browser; files are written to the system temp folder under `avatar_quality_dashboards`.
-- **Check recording...** runs the preflight on a recording file and shows it in the same panel: verdict, the estimate without dead electrodes, findings with fixes (also written to the console log), and channels judged after the start-up window (amber = flagged in under half of those windows).
+Data sources: **Live Data** (the headset) and **Replay Recording** (a chosen OpenBCI GUI export stands in for the
+headset, one capture per press) go through the gate; **Synthetic Data** (BrainFlow's synthetic board) bypasses it and
+runs the selected model unscreened, as the project's GUI did before the gate existed, with the result marked
+"synthetic" in the predictions table and the flight log. In Live and Replay mode the Random Forest service and the
+PyTorch CNN assess the physical capture before using it, and the GaussianNB chains run only on accepted captures
+(`predict_capture(capture, participant, gate)`); in Synthetic mode the chains run on the decimated synthetic capture.
 
-The panel fits the default 1200×800 window; it was rendered off-screen with PySide6 against a stub backend and introduces no QML warnings beyond those already present in `ReadBrain.qml`. The existing RF controller assesses the real OpenBCI capture before posting that same capture to the service. The PyTorch CNN route assesses its original physical EEG before its existing StandardScaler transformation. Quality assessment is independent of the classifier architecture.
+A withheld result clears the previous prediction. Missing continuity metadata, model errors, unsupported labels and
+expired input never substitute random commands; in Synthetic mode an unsupported label is withheld as well. Each
+queued prediction carries its accepted result: the worker checks freshness and that it still matches the current
+decision immediately before dispatch. A new assessment or source/model/framework change invalidates older approvals.
+This does not cancel a hardware command already executing. Manual controls remain separate from prediction approval.
 
-A withheld result clears the previous prediction. Synthetic input, missing continuity metadata, model errors, unsupported labels and expired input never substitute random commands. Each queued prediction carries its accepted result: the worker checks freshness and that it still matches the current decision immediately before dispatch. A new assessment or source/model/framework change invalidates older approvals. This does not cancel a hardware command already executing. Manual controls remain separate from prediction approval.
+Neurosity lacks a verified raw timestamp/rate/channel contract in the current adapter and is withheld. The TensorFlow
+CNN route is not implemented and is withheld. The legacy RF server's feature/width contract still needs validation
+against a live physical capture; the gate does not certify that classifier.
 
-Neurosity lacks a verified raw timestamp/rate/channel contract in the current adapter and is withheld. GaussianNB lacks a verified deployment feature adapter and is withheld; its former remote-RF substitution was removed. Unimplemented TensorFlow CNN/GNB routes are withheld. Both RF framework selections retain the existing remote TensorFlow RF route. The legacy RF server's feature/width contract still needs validation against a live physical capture; the gate does not certify that classifier.
-
-Tests do not initialize headset/drone hardware or send network requests. Live integration has not been verified. In the existing Avatar virtual environment, BrainFlow 5.14 currently fails import because `pkg_resources` is absent; repair its SDK/environment compatibility before live verification. The offline quality pipeline and notebook do not import BrainFlow.
+Tests do not initialize headset/drone hardware or send network requests
+(`prediction-gaussiannb/tests/test_gui_gaussiannb_routes.py` runs the routes with stubbed Qt and BrainFlow). Live
+integration has not been verified. The offline quality pipeline and notebook do not import BrainFlow.
 
 ## Independent review, learned classification and research
 
@@ -270,3 +282,7 @@ assessor = QualityAssessor(config, quality_model=model)
 ```
 
 A paper could evaluate quality-aware abstention across subjects, with reviewer agreement, subject-level confidence intervals and an independent final test set. Downstream risk-versus-coverage needs trustworthy task labels and a frozen existing classifier; it cannot currently establish six-intent accuracy from these recordings. These additional research measurements are not claimed by the current rule replay.
+
+## Note (19 October 2026)
+
+The fail-closed prediction gate (`gate.py`) moved to `prediction-gaussiannb/eeg_quality.py`, together with copies of the acquisition adapters, the label normaliser, the assessor and the deployed policy (`prediction-gaussiannb/quality_policy.json`); the GUI view model (`gui_view.py`) and the quality panel of the Read Brain tab were removed. The GUI, the GaussianNB loader and the live path import from there; this package keeps the offline tools.

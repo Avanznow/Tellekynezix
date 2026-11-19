@@ -4,8 +4,10 @@ PySide6 and brainflow are not needed: the modules the GUI imports are replaced b
 imported, the BrainFlow processor is replaced by one that serves a Data_clean capture the quality gate accepts, and
 the training-session stream is replaced by a replay of Data_clean recordings against the real clock. Checks: every
 framework loads its own chains and stores, predictions reach a decision (also through readMyMind), calibration from a
-recording is stored in the framework's folder, and a short guided session trains and persists a user model with the
-selected framework. Skipped when Data_clean or the notebooks' artifacts are not present.
+recording is stored in the framework's folder, a short guided session trains and persists a user model with the
+selected framework, a chosen recording replayed as the data source feeds readMyMind one context at a time, and Synthetic
+Data mode runs the models on the (stubbed) synthetic board without the capture check. Skipped when Data_clean or the
+notebooks' artifacts are not present.
 """
 import importlib.util
 import json
@@ -18,9 +20,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from portable import link_or_copy
 
 GNB_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = GNB_DIR.parent
+if str(REPO_ROOT / "prediction-gaussiannb") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "prediction-gaussiannb"))
 if not (REPO_ROOT / "Data_clean" / "G03" / "person03").is_dir():
     pytest.skip("Data_clean not present", allow_module_level=True)
 for name in ("pytorch/torch_gaussiannb_subject_models.joblib", "tensorflow/gaussiannb_tf_subject_specific.pkl",
@@ -94,7 +99,9 @@ class Any_:
 
 
 CHOSEN = {"path": None}
+CHOSEN_DIR = {"path": ""}                   # what the stubbed folder dialog returns
 CAPTURE = {"path": None, "start": 250, "n": 625}
+SYNTH = {"sfreq": 250.0, "repeat": 2}        # what the fake synthetic board serves: every sample `repeat` times at `sfreq`
 
 
 def _module(name, **attrs):
@@ -107,29 +114,43 @@ def _module(name, **attrs):
 def _install_stubs():
     if "GUI5" in sys.modules:
         return
-    from signal_quality.acquisition import read_openbci
+    from eeg_quality import read_openbci
 
     class FakeProcessor:
+        last_capture = 0.0
+
         def __init__(self, board_id=None, sample_time=None):
-            self.sample_time = sample_time
+            self.board_id, self.sample_time = board_id, sample_time
 
         def get_quality_capture(self):
             cap = read_openbci(CAPTURE["path"])
             a, n = CAPTURE["start"], CAPTURE["n"]
             out = dict(cap)
             out["raw"], out["counters"], out["timestamps"] = cap["raw"][:, a:a + n], cap["counters"][a:a + n], cap["timestamps"][a:a + n]
-            out.update(captured_monotonic=time.monotonic(), stream_id="fake")
+            # Strictly increasing capture times without stamping in the future: the gate refuses a capture stamped no
+            # later than the previous one on the same stream, and Windows' monotonic clock ticks every ~16 ms, so two
+            # back-to-back calls could share a stamp; wait for the clock to move on (at most one tick).
+            while time.monotonic() <= FakeProcessor.last_capture:
+                time.sleep(0.001)
+            FakeProcessor.last_capture = time.monotonic()
+            out.update(captured_monotonic=FakeProcessor.last_capture, stream_id="fake")
+            if self.board_id == BoardIds.SYNTHETIC_BOARD.value:
+                # the synthetic board runs at 250 Hz and is not EEG: every sample twice, marked synthetic
+                rep = SYNTH["repeat"]
+                out.update(raw=np.repeat(out["raw"], rep, axis=1), counters=np.repeat(out["counters"], rep),
+                           timestamps=np.repeat(out["timestamps"], rep), sfreq=SYNTH["sfreq"], source_kind="synthetic", stream_id="fake-synthetic")
             return out
 
     class BoardIds:
         CYTON_DAISY_BOARD = types.SimpleNamespace(value=2)
         CYTON_BOARD = types.SimpleNamespace(value=0)
+        SYNTHETIC_BOARD = types.SimpleNamespace(value=-1)
 
     _module("dotenv", load_dotenv=lambda *a, **k: None)
     _module("PySide6")
     _module("PySide6.QtWidgets", QApplication=Any_, QMessageBox=Any_,
             QFileDialog=types.SimpleNamespace(getOpenFileName=lambda *a, **k: (CHOSEN["path"], "x"),
-                                              getExistingDirectory=lambda *a, **k: ""))
+                                              getExistingDirectory=lambda *a, **k: CHOSEN_DIR["path"]))
     _module("PySide6.QtQml", QQmlApplicationEngine=Any_)
     _module("PySide6.QtGui", QDesktopServices=Any_)
     _module("PySide6.QtCore", QObject=QObject, Signal=Signal, Slot=Slot, Property=Property, QProcess=Any_, QUrl=Any_, QTimer=QTimer)
@@ -173,9 +194,7 @@ def files():
 
 @pytest.fixture(scope="module")
 def backend(gui, files):
-    from signal_quality import QualityAssessor, QualityGatedPredictor
-    from signal_quality.acquisition import read_openbci
-    from signal_quality.config import load_default_config
+    from eeg_quality import QualityAssessor, QualityGatedPredictor, load_default_config, read_openbci
     b = gui.BrainwavesBackend()
     b.current_data_mode, b.current_bci_source = "live", "openbci"
     # a capture slice the quality gate accepts
@@ -257,7 +276,7 @@ def test_calibration_is_stored_per_framework_and_pytorch_route_keeps_its_own_cha
 @pytest.mark.parametrize("framework", list(FRAMEWORKS))
 def test_guided_training_session_trains_a_user_with_the_selected_framework(gui, backend, files, framework):
     import subject_gnb_inference as S
-    from signal_quality.acquisition import read_openbci
+    from eeg_quality import read_openbci
     spec = FRAMEWORKS[framework]
     b = backend
     b.selectFramework(framework)
@@ -316,3 +335,263 @@ def test_guided_training_session_trains_a_user_with_the_selected_framework(gui, 
     result = getattr(b, spec["route"])()
     assert result["status"] in ("accepted", "withheld") and chain.last_decision["participant"] == "gui-tester"
     b.setGaussianNBMode("global")
+
+
+def test_replay_recording_stands_in_for_the_headset_one_context_per_press(gui, backend, files):
+    """Replay Recording: a chosen Data_clean recording is the data source; each Read my mind press takes the next
+    capture_samples samples after the loader's 2 s start-up block through the gate and the chain, the end of the
+    file withholds once and restarts, the command is marked as replayed, and Live mode clears the label."""
+    from eeg_quality import read_openbci
+    b = backend
+    b.selectModel("GaussianNB")
+    b.selectFramework("TensorFlow")
+    left = next(p for p in files if p.parent.name.lower().startswith("left"))
+    CHOSEN["path"] = str(left)
+    b.chooseReplayRecording()
+    cap = read_openbci(str(left))
+    fs, total, start = cap["sfreq"], cap["raw"].shape[1], int(round(2 * cap["sfreq"]))
+    assert b.current_data_mode == "replay" and b.replay_path == str(left) and b.replay_pos == start
+    assert gui.BrainwavesBackend.replayRecordingChanged.calls[-1] == f"Replay: {left.name} at 2.0 of {total / fs:.1f} s"
+    n = b._gnb_chain("TensorFlow").capture_samples
+    results, streams = [], set()
+    while b.replay_pos + n <= total:
+        b.readMyMind()
+        results.append(b.current_prediction_result)
+        streams.update(k for k in b.quality_gate._good if k.startswith("replay:"))   # a gate withhold pops its stream
+    assert len(results) == (total - start) // n and b.replay_pos == start + len(results) * n
+    assert all(r["status"] in ("accepted", "withheld") for r in results)
+    accepted = [r for r in results if r["status"] == "accepted"]
+    assert accepted, "no replayed capture was accepted by the quality gate"
+    assert streams == {f"replay:{left.name}"}, streams                 # one gate stream for the whole replayed file
+    assert b.predictions_log[-1]["server"] == ("Replay" if results[-1]["status"] == "accepted" else "Quality gate")
+    assert sum(e["server"] == "Replay" for e in b.predictions_log) == len(accepted)
+    assert sum(m.endswith(f", replay of {left.name})") for m in b.flight_log) == len(accepted)
+    assert _log(gui, f", replay of {left.name}") and gui.BrainwavesBackend.signalQualityChanged.calls[-1].startswith(
+        "EEG passed configured quality checks, replay of" if results[-1]["status"] == "accepted" else "Prediction withheld")
+    assert gui.BrainwavesBackend.replayRecordingChanged.calls[-1] == f"Replay: {left.name} at {b.replay_pos / fs:.1f} of {total / fs:.1f} s"
+    # the end of the file: withheld once with the reason, position back after the start-up block, then it runs again
+    b.readMyMind()
+    assert b.current_prediction_result["status"] == "withheld"
+    assert b.current_prediction_result["withholding_reason"] == f"Replay of {left.name} reached its end; the next press starts it again"
+    assert b.replay_pos == start
+    b.readMyMind()
+    assert b.replay_pos == start + n
+    # Calibrate (30 s) in replay mode calibrates from the loaded recording (worker thread), and says so where the user looks
+    b.setGaussianNBParticipant("replay-cal")
+    b.calibrateGaussianNB()
+    t0 = time.time()
+    while b._gnb_calibrating and time.time() - t0 < 60:
+        time.sleep(0.2)
+    assert not b._gnb_calibrating and b.gnb_chains["tensorflow"].participant_status("replay-cal") == "calibrated"
+    assert (TMP / "cal_tf" / "replay-cal.npz").exists()
+    assert _log(gui, f"from the replay recording {left.name} for 'replay-cal'")
+    assert gui.BrainwavesBackend.signalQualityChanged.calls[-1].startswith("GaussianNB calibrated 'replay-cal': ")
+    # the guided session needs the headset; the message names the alternative
+    b.startGaussianNBTraining()
+    assert b._gnb_training is None and "Train from folder" in gui.BrainwavesBackend.signalQualityChanged.calls[-1]
+    # the subject-specific route reads the same source
+    b.setGaussianNBParticipant("G03/person03")
+    b.setGaussianNBMode("subject")
+    assert b._run_gaussiannb("TensorFlow")["status"] in ("accepted", "withheld") and b.replay_pos == start + 2 * n
+    b.setGaussianNBMode("global")
+    b.setGaussianNBParticipant("gui-tester")
+    # the remote Random Forest route cannot replay and says so; nothing is substituted
+    b.selectModel("Random Forest")
+    b.readMyMind()
+    assert b.current_prediction_result["status"] == "withheld" and "Random Forest service" in b.current_prediction_result["withholding_reason"]
+    assert b.replay_pos == start + 2 * n
+    # cancelling the dialog keeps the loaded recording; a file the reader rejects is reported and ignored
+    CHOSEN["path"] = None
+    b.chooseReplayRecording()
+    assert b.replay_path == str(left) and b.current_data_mode == "replay"
+    CHOSEN["path"] = str(GNB_DIR / "quality_policy.json")
+    b.chooseReplayRecording()
+    assert b.replay_path == str(left) and gui.BrainwavesBackend.replayRecordingChanged.calls[-1].startswith("Replay recording rejected: ")
+    # a recording that cannot hold one capture is reported as too short, not as "reached its end"
+    short = TMP / "short.txt"
+    with open(left) as src, short.open("w") as dst:
+        for k, line in enumerate(src):
+            if k >= 5 + 300:
+                break
+            dst.write(line)
+    CHOSEN["path"] = str(short)
+    b.chooseReplayRecording()
+    b.selectModel("GaussianNB")
+    b.readMyMind()
+    assert b.current_prediction_result["status"] == "withheld"
+    assert b.current_prediction_result["withholding_reason"] == f"Replay recording short.txt is too short: 2.4 s, one capture needs {(start + n) / fs:.1f} s"
+    # back to the live source: the label clears and the GaussianNB route reads the (stubbed) board again
+    b.setDataMode("live")
+    assert gui.BrainwavesBackend.replayRecordingChanged.calls[-1] == "" and b.current_data_mode == "live"
+    assert b.run_gaussiannb_tensorflow()["status"] in ("accepted", "withheld")
+    # a rejected file chosen from Live mode still switches the source to replay (the radio is checked) and says why
+    CHOSEN["path"] = str(GNB_DIR / "quality_policy.json")
+    b.chooseReplayRecording()
+    assert b.current_data_mode == "replay" and b.replay_path == str(short)
+    assert gui.BrainwavesBackend.replayRecordingChanged.calls[-1].startswith("Replay recording rejected: ")
+    b.setDataMode("live")
+    CHOSEN["path"] = str(left)
+
+
+def test_synthetic_mode_runs_the_models_without_the_capture_check(gui, backend):
+    """Synthetic Data mode (the project's test source, as before this work): the synthetic board's 250 Hz capture is
+    decimated to the chain's 125 Hz and the chain runs on it without the quality gate; the result is executable, marked
+    synthetic in the table, the flight log and the status line; the subject chain's vote gate still applies; the
+    Random Forest and CNN routes report a failure instead of substituting a command."""
+    from eeg_quality import COMMANDS
+    b = backend
+    b.selectModel("GaussianNB")
+    b.selectFramework("TensorFlow")
+    b.setGaussianNBMode("global")
+    b.setDataMode("synthetic")
+    assert _log(gui, "Switched to Synthetic Data Mode (test source, not EEG: the capture check is bypassed)")
+    gate_calls, decimations = [], []
+    original, original_decimate = b.quality_gate.predict, gui.decimate
+    b.quality_gate.predict = lambda *a, **k: gate_calls.append(k.get("stream_id")) or original(*a, **k)
+    gui.decimate = lambda raw, q, **k: decimations.append((raw.shape, q, k)) or original_decimate(raw, q, **k)
+    try:
+        b.readMyMind()
+    finally:
+        b.quality_gate.predict, gui.decimate = original, original_decimate
+    r = b.current_prediction_result
+    assert not gate_calls, gate_calls                                   # the capture check was bypassed
+    assert r["status"] == "accepted" and r["source_kind"] == "synthetic" and r["prediction_label"] in COMMANDS
+    assert r["quality"]["screened"] is False and r["quality"]["source_kind"] == "synthetic"
+    assert gui.may_execute(r) and b.current_prediction_label == r["prediction_label"]
+    chain = b.gnb_chains["tensorflow"]
+    assert b.brainwave_processor.board_id == gui.BoardIds.SYNTHETIC_BOARD.value
+    # the 250 Hz capture (every sample twice, 2 x 1,250 samples) was decimated by 2 with the anti-alias filter
+    assert decimations == [((16, 2 * CAPTURE["n"]), 2, {"axis": 1, "zero_phase": True})], decimations
+    assert chain.last_decision["windows"] == 5                         # exactly capture_samples at 125 Hz after decimation
+    assert b.predictions_log[-1] == {"count": str(len(b.predictions_log)), "server": "Synthetic", "label": r["prediction_label"]}
+    queued = f"Queued: {r['prediction_label']} (Model: GaussianNB, Framework: TensorFlow, synthetic board (not screened))"
+    assert queued in b.flight_log                                     # the drone worker may add "Command failed" above it
+    assert gui.BrainwavesBackend.signalQualityChanged.calls[-1] == "Synthetic board: test source, capture check bypassed"
+    # Execute re-queues the same synthetic result with the same marker
+    b.executeAction()
+    assert b.flight_log.count(f"Queued: {r['prediction_label']}, synthetic board (not screened)") == 1
+    # the subject-specific chain: unscreened too, but its vote gate still decides; an uncertain vote is withheld
+    b.setGaussianNBParticipant("G03/person03")
+    b.setGaussianNBMode("subject")
+    b.readMyMind()
+    r, d = b.current_prediction_result, b.gnb_subject_chains["tensorflow"].last_decision
+    assert d is not None and (r["status"] == "accepted") == d["certain"]
+    assert d["certain"] or r["withholding_reason"].startswith("uncertain_decision: ")
+    subject = b.gnb_subject_chains["tensorflow"]
+    original_decide = subject.decide
+    subject.decide = lambda logp, *a, **k: dict(original_decide(logp, *a, **k), certain=False, agreement=3, votes=5, votes_needed=4)
+    try:
+        b.readMyMind()
+    finally:
+        subject.decide = original_decide
+    r, d = b.current_prediction_result, subject.last_decision
+    assert r["status"] == "withheld" and r["withholding_reason"] == f"uncertain_decision: 3/5 window votes agree with '{d['command']}', need 4"
+    assert b.predictions_log[-1] == {"count": str(len(b.predictions_log)), "server": "Synthetic", "label": "WITHHELD"}
+    b.setGaussianNBMode("global")
+    b.setGaussianNBParticipant("gui-tester")
+    # the synthetic board's error branches: a rate that is not a multiple of 125 Hz, and too few samples after decimation
+    b.selectModel("GaussianNB")
+    SYNTH.update(sfreq=200.0)
+    b.readMyMind()
+    assert b.current_prediction_result["withholding_reason"] == "synthetic board at 200 Hz cannot be decimated to the model's 125 Hz"
+    SYNTH.update(sfreq=250.0, repeat=1)
+    b.readMyMind()
+    assert b.current_prediction_result["withholding_reason"] == "Insufficient samples for the GaussianNB 5-window context"
+    SYNTH.update(sfreq=250.0, repeat=2)
+    # calibration has nothing to learn from the synthetic board, and says so in the status line
+    b.calibrateGaussianNB()
+    assert not b._gnb_calibrating and "no user statistics to learn" in gui.BrainwavesBackend.signalQualityChanged.calls[-1]
+    # no Random Forest client in the stubbed GUI: withheld, nothing substituted
+    b.selectModel("Random Forest")
+    b.readMyMind()
+    assert b.current_prediction_result["status"] == "withheld" and "BCI connection unavailable" in b.current_prediction_result["withholding_reason"]
+    # with a client, the synthetic capture is posted to the service unscreened (column labels set as the controller does)
+
+    class FakeBci:
+        def __init__(self, label="forward", fail=False):
+            self.label, self.fail, self.calls, self.labels_seen = label, fail, [], None
+
+        def set_mode(self, mode):
+            self.calls.append(("mode", mode))
+
+        def read_from_board(self):
+            return np.zeros((32, 2500))
+
+        def send_data_to_server(self, data):
+            self.labels_seen = list(self.column_labels)                # AttributeError when unset, as in the real client
+            self.calls.append(("post", data.shape))
+            if self.fail:
+                raise RuntimeError("connection refused")
+            return types.SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"prediction_label": self.label})
+
+    gui.DataMode = types.SimpleNamespace(LIVE="Live", SYNTHETIC="Synthetic")
+    b.bcicon = FakeBci("forward")
+    b.readMyMind()
+    r = b.current_prediction_result
+    assert r["status"] == "accepted" and r["prediction_label"] == "forward" and r["source_kind"] == "synthetic"
+    assert b.bcicon.calls == [("mode", "Synthetic"), ("post", (32, 2500))] and b.bcicon.labels_seen == [f"c{i}" for i in range(32)]
+    assert b.predictions_log[-1]["server"] == "Synthetic"
+    b.bcicon = FakeBci(fail=True)
+    b.readMyMind()
+    assert b.current_prediction_result["status"] == "withheld"
+    assert b.current_prediction_result["withholding_reason"] == "capture_or_server_failed: connection refused"
+    b.bcicon = None
+    b.selectFramework("PyTorch")
+    b.selectModel("Deep Learning")
+    b.readMyMind()
+    assert b.current_prediction_result["status"] == "withheld"
+    assert b.current_prediction_result["withholding_reason"] == "missing_or_unsupported_prediction"
+    assert b.predictions_log[-1]["label"] == "WITHHELD"
+    # live mode screens again: the stubbed board capture goes through the gate
+    b.selectFramework("TensorFlow")
+    b.selectModel("GaussianNB")
+    b.setDataMode("live")
+    gate_calls = []
+    b.quality_gate.predict = lambda *a, **k: gate_calls.append(k.get("stream_id")) or original(*a, **k)
+    try:
+        b.readMyMind()
+    finally:
+        b.quality_gate.predict = original
+    assert gate_calls == ["fake"] and b.current_prediction_result["status"] in ("accepted", "withheld")
+
+
+def test_train_from_folder_guards_one_command_folders_and_forget_removes_the_store(gui, backend, files):
+    """Train from folder...: a command folder is redirected to the person's folder above it; a folder holding one
+    command only is refused before anything is stored (the cause of 'every vote uncertain'); Forget my model removes
+    the user's store and the status falls back."""
+    b = backend
+    b.selectModel("GaussianNB")
+    b.selectFramework("TensorFlow")
+    b.setGaussianNBParticipant("folder-user")
+    b.setGaussianNBMode("subject")
+    person = TMP / "person"
+    for command in ("Left", "Right"):
+        (person / command).mkdir(parents=True, exist_ok=True)
+        for p in [f for f in files if f.parent.name == command][:2]:
+            link_or_copy(person / command / p.name, p)
+    # a command folder -> its parent, two commands, a few recordings: trained (too few windows for an own model, honestly said)
+    CHOSEN_DIR["path"] = str(person / "Left")
+    b.trainGaussianNBFromFolder()
+    chain = b.gnb_subject_chains["tensorflow"]
+    assert _log(gui, "Left holds one command; using its parent person (2 commands)")
+    assert "folder-user" in chain.users and (TMP / "users_tf" / "folder-user" / "scaler.npz").exists()
+    status = chain.participant_status("folder-user")
+    assert status.startswith("own model") or status.startswith("too few labelled windows ("), status
+    assert "only " not in status
+    # Forget my model: the store is gone and the participant falls back
+    b.forgetGaussianNBUser()
+    assert _log(gui, "forgot 'folder-user' (TensorFlow)") and "folder-user" not in chain.users
+    assert not (TMP / "users_tf" / "folder-user").exists()
+    assert chain.participant_status("folder-user") == "no model yet: global fallback"
+    # a person's folder with a single command: refused, nothing stored
+    solo = TMP / "solo" / "Takeoff"
+    solo.mkdir(parents=True, exist_ok=True)
+    for p in [f for f in files if f.parent.name == "Takeoff"][:2]:
+        link_or_copy(solo / p.name, p)
+    CHOSEN_DIR["path"] = str(TMP / "solo")
+    b.trainGaussianNBFromFolder()
+    assert "needs at least two commands" in gui.BrainwavesBackend.signalQualityChanged.calls[-1]
+    assert "folder-user" not in chain.users and not (TMP / "users_tf" / "folder-user").exists()
+    CHOSEN_DIR["path"] = ""
+    b.setGaussianNBMode("global")
+    b.setGaussianNBParticipant("gui-tester")

@@ -15,6 +15,9 @@ from .vqc import VQCClassifier
 
 
 def noisy_model(state_dict, n_qubits, n_layers, p, n_classes=6):
+    """Rebuild the trained VQC on the density-matrix simulator with depolarising probability p and load its weights.
+
+    The architecture must match the one that was trained, otherwise load_state_dict raises on the shape mismatch."""
     model = VQCClassifier(n_qubits, n_layers, n_classes=n_classes, device_name="default.mixed", noise_p=p)
     model.load_state_dict(state_dict)
     model.eval()
@@ -41,6 +44,8 @@ def noise_sweep(state_dict, n_qubits, n_layers, X_angles, y, probabilities, batc
         t0 = time.perf_counter()
         z, pred = expectations_and_predictions(model, X_angles, batch_size)
         seconds = time.perf_counter() - t0
+        # The first p in the sweep is the reference, so the config must list p = 0 first for changed_predictions
+        # to mean "differs from the noiseless circuit" (its own row is then 0 by construction).
         if pred_clean is None:
             pred_clean = pred
         row = dict(noise_p=float(p), **classification_scores(y, pred), mean_abs_expectation=float(np.abs(z).mean()),
@@ -53,5 +58,7 @@ def noise_sweep(state_dict, n_qubits, n_layers, X_angles, y, probabilities, batc
 
 
 def chance_level(y):
+    """Majority-class share of the integer labels y: the accuracy a constant classifier would get, drawn as the
+    dotted chance line in the figures."""
     counts = np.bincount(np.asarray(y))
     return float(counts.max() / counts.sum())

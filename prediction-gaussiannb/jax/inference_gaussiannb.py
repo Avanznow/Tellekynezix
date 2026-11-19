@@ -20,6 +20,7 @@ from algorithm_gnb_jax import GaussianNBJAX, load_model
 
 def standardize(X: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
     """Apply pre-computed standardization to test data."""
+    # 1e-8 keeps a zero-variance feature from dividing by zero.
     return (X - mean) / (std + 1e-8)
 
 
@@ -39,12 +40,14 @@ def predict_on_data(model: GaussianNBJAX, X: np.ndarray,
     # log-probabilities; this avoids running the likelihood computation twice.
     y_proba = model.predict_proba(X)
     y_pred = np.argmax(y_proba, axis=1).astype(np.int32)
+    # Sorting by index makes class_names[j] the label for column j of y_proba.
     class_names = [index_to_label[i] for i in sorted(index_to_label.keys())]
     
     return y_pred, y_proba, class_names
 
 
 if __name__ == '__main__':
+    # Only the model path is used; this block loads the pickle and reports what it expects, it does not classify.
     if len(sys.argv) < 2:
         print("Usage: python inference_gaussiannb.py <path/to/model.pkl> [data_path]")
         sys.exit(1)
@@ -53,6 +56,8 @@ if __name__ == '__main__':
     
     # Load model
     print(f"Loading model from {model_path}...")
+    # state is load_model's meta dict. This script expects it to hold index_to_label and, optionally, metadata['accuracy'];
+    # the notebook's pickles store label_names instead (see README, Known issue).
     model, state = load_model(model_path)
     index_to_label = state['index_to_label']
     

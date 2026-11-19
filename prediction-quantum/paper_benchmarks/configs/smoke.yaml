@@ -1,0 +1,12 @@
+# Few-minute smoke run (tests and quick checks only; its numbers are not results)
+data: {max_windows_per_class: 150, subsample_seed: 0}
+protocols:
+  participant: {n_folds: 3, val_fraction: 0.1}
+  recording: {seeds: [0]}
+encoding: {n_qubits: 4}
+qsvm: {max_train: 200, reps: 2, C: 1.0}
+vqc: {n_layers: 1, epochs: 2, batch_size: 64, lr: 0.01}
+mlp: {hidden: 16, epochs: 2, batch_size: 64, lr: 0.01}
+models: [qsvm, vqc, logreg, gnb, svm_rbf, mlp, gnb_full, lda_gnb_full, mlp_full]
+latency: {repeats: 5, warmup: 1}
+compute: {n_jobs: 4, torch_threads: 1}

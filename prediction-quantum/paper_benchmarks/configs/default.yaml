@@ -1,0 +1,27 @@
+# QML benchmark (prediction-quantum/paper_benchmarks). Run from paper_benchmarks:
+#   ~/qml_env/bin/python -m qml_bench.run --config configs/default.yaml
+data:
+  max_windows_per_class: 2000   # same fixed-seed subsample as the original prediction-quantum benchmark
+  subsample_seed: 0
+protocols:
+  participant: {n_folds: 5, val_fraction: 0.1}
+  recording: {seeds: [0, 1, 2]}
+encoding:
+  n_qubits: 6                   # PCA components = qubits (the best VQC size of the original benchmark)
+qsvm:
+  max_train: 3000               # stratified training subsample (kernel cost grows as n_train^2); svm_rbf uses the same
+  reps: 2
+  C: 1.0
+vqc:
+  n_layers: 4
+  epochs: 40
+  batch_size: 64
+  lr: 0.01
+mlp:
+  hidden: 64
+  epochs: 40
+  batch_size: 64
+  lr: 0.01
+models: [qsvm, vqc, logreg, gnb, svm_rbf, mlp, gnb_full, lda_gnb_full, mlp_full]
+latency: {repeats: 50, warmup: 5}
+compute: {n_jobs: 8, torch_threads: 2}

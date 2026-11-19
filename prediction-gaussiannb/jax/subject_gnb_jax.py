@@ -65,11 +65,14 @@ def jax_model_module():
 
 
 def GaussianNBJAX(*args, **kwargs):
+    """Construct a GaussianNBJAX without importing jax at module import time: the import happens on first use,
+    through jax_model_module(), so pin_jax_to_cpu() runs before jax is ever imported."""
     return jax_model_module().GaussianNBJAX(*args, **kwargs)
 
 
 def _log_softmax(x):
     x = np.asarray(x, np.float64)
+    # the row max is taken out before exp() so it cannot overflow; it cancels again in the difference
     m = x.max(axis=1, keepdims=True)
     return x - m - np.log(np.exp(x - m).sum(axis=1, keepdims=True))
 
@@ -83,12 +86,18 @@ class ProjectedGaussianNBJAX:
     """
 
     def __init__(self, n_components=5, shrinkage="auto", var_smoothing=1e-9, absent_floor=1e-6):
+        """n_components caps the LDA dimension (at most n_present - 1 axes survive), shrinkage goes to sklearn's
+        eigen solver, var_smoothing is the GaussianNBJAX variance floor and absent_floor the posterior handed to
+        commands this model was never trained on."""
         self.n_components = n_components
         self.shrinkage = shrinkage
         self.var_smoothing = var_smoothing
         self.absent_floor = absent_floor
 
     def fit(self, Z, y, n_classes):
+        """Fit the LDA projection on Z (n, d) and the GaussianNBJAX on the projected rows; returns self. y holds
+        command ids, re-indexed to 0..n_present-1 (searchsorted into classes_) because a participant may not have
+        recorded every command, so the GaussianNBJAX only sees the classes that occur. n_classes is the full count."""
         Z = np.asarray(Z, np.float64); y = np.asarray(y, np.int64)
         self.n_classes_ = int(n_classes)
         self.classes_ = np.unique(y)
@@ -97,6 +106,8 @@ class ProjectedGaussianNBJAX:
         y_local = np.searchsorted(self.classes_, y)
         lda = LinearDiscriminantAnalysis(n_components=min(self.n_components, len(self.classes_) - 1),
                                          solver="eigen", shrinkage=self.shrinkage).fit(Z, y_local)
+        # keep only the projection (sklearn's eigen-solver transform is Z @ scalings_[:, :k]); the fitted LDA also
+        # holds two d x d matrices (covariance_, the full scalings_) that are not needed and dwarf the (d, k) projection
         self.projection_ = np.ascontiguousarray(lda.scalings_[:, :lda._max_components])
         self.nb_ = GaussianNBJAX(var_smoothing=self.var_smoothing).fit(self.transform(Z).astype(np.float32), y_local.astype(np.int32))
         self.n_train_ = len(y)
@@ -115,12 +126,19 @@ class ProjectedGaussianNBJAX:
         return model
 
     def transform(self, Z):
+        """Project Z (n, d) onto the LDA axes -> (n, k) with k = min(n_components, n_present - 1)."""
         return np.asarray(Z, np.float64) @ self.projection_
 
     def log_joint(self, Z):
+        """Unnormalised log p(class, z) for the present classes, (n, n_present) float64. Despite its name, the
+        GaussianNBJAX's predict_log_proba returns log-likelihood + log prior without the softmax normalisation, which
+        is exactly what the subject chain wants here; predict_log_proba below does the normalising."""
         return np.asarray(self.nb_.predict_log_proba(self.transform(Z).astype(np.float32)), np.float64)
 
     def predict_log_proba(self, Z):
+        """Log posteriors over all n_classes commands, (n, n_classes): the softmax-normalised log_joint in the
+        columns of classes_ and log(absent_floor) in the columns of commands this model never saw, so every
+        participant model has the same width whatever it was trained on."""
         local = _log_softmax(self.log_joint(Z))
         if len(self.classes_) == self.n_classes_:
             return local
@@ -130,6 +148,9 @@ class ProjectedGaussianNBJAX:
 
     # arrays <-> model (the same keys the PyTorch and TensorFlow live paths store in model.npz)
     def to_arrays(self):
+        """Everything needed to rebuild the model as plain numpy arrays, for np.savez into model.npz: projection is
+        (d, k), classes the global command ids this model knows, and priors/means/variances the GaussianNBJAX's
+        float32 class_prior_ (n_present,), theta_ and var_ (both (n_present, k))."""
         nb = self.nb_
         return dict(projection=np.asarray(self.projection_, np.float64), classes=np.asarray(self.classes_, np.int64),
                     n_classes=np.int64(self.n_classes_), n_train=np.int64(getattr(self, "n_train_", 0)),
@@ -138,10 +159,13 @@ class ProjectedGaussianNBJAX:
 
     @classmethod
     def from_arrays(cls, z):
+        """Inverse of to_arrays: a GaussianNBJAX is rebuilt from saved arrays without a fit (the variance floor was
+        already applied when the arrays were made, so var_smoothing is only nominal) and wrapped with from_parts."""
         nb = GaussianNBJAX(var_smoothing=1e-9)
         nb.class_prior_ = np.asarray(z["priors"], np.float32)
         nb.theta_ = np.asarray(z["means"], np.float32)
         nb.var_ = np.asarray(z["variances"], np.float32)
+        # fit() sets these too (and algorithm_gnb_jax.save_model writes them), so the rebuilt model looks fitted
         nb.n_classes_, nb.n_features_ = int(nb.theta_.shape[0]), int(nb.theta_.shape[1])
         return cls.from_parts(np.asarray(z["projection"], np.float64), nb, np.asarray(z["classes"], np.int64),
                               int(z["n_classes"]), int(z["n_train"]), float(z["absent_floor"]))
@@ -155,16 +179,20 @@ class _Resolver(pickle.Unpickler):
     the CPU before the module is imported)."""
 
     def find_class(self, module, name):
+        """Map the class name GaussianNBJAX, whether it was pickled under algorithm_gnb_jax or __main__, to the one
+        class of this folder; every other reference resolves as usual."""
         if name == "GaussianNBJAX" and module in ("algorithm_gnb_jax", "__main__"):
             return jax_model_module().GaussianNBJAX
         return super().find_class(module, name)
 
 
 def load_jax_pickle(path):
+    """Unpickle one of the notebook's model files through _Resolver, so it loads without this folder on sys.path."""
     with open(path, "rb") as f:
         return _Resolver(f).load()
 
 
+# the name subject_gnb.framework_backend() looks up, next to ProjectedGaussianNB and subject_models_from_pickle
 load_pickle = load_jax_pickle
 
 
@@ -177,9 +205,12 @@ def subject_models_from_pickle(payload, n_classes=6):
         raise ValueError("not a subject-specific chain pickle")
     wrapper = SubjectSpecificGaussianNB(n_components=chain["global_projection"].shape[1], shrinkage="auto",
                                         n_classes=n_classes, backend="jax")
+    # the global model saw every command, so its class set is the full 0..n_classes-1 range
     wrapper.global_ = ProjectedGaussianNBJAX.from_parts(chain["global_projection"], chain["global_model"],
                                                         np.arange(n_classes), n_classes)
     wrapper.models_ = {str(q): ProjectedGaussianNBJAX.from_parts(s["projection"], s["model"], s["classes"], n_classes)
                        for q, s in chain["subjects"].items()}
+    # participants the notebook left on the global model (under SUBJ_MIN_WINDOWS windows or fewer than two commands),
+    # with its "<n> windows, <c> commands -> global fallback" reason
     wrapper.skipped_ = {str(q): str(v) for q, v in chain.get("fallback", {}).items()}
     return wrapper, chain["scaler"]

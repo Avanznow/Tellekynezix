@@ -42,10 +42,7 @@ import improved_gnb_inference as I  # noqa: E402
 import subject_gnb_inference as S  # noqa: E402
 from eeg_data import LoadConfig, load_recordings  # noqa: E402
 from improved_gnb_features import participant_of  # noqa: E402
-from signal_quality import QualityAssessor, QualityGatedPredictor  # noqa: E402
-from signal_quality.acquisition import read_openbci  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
-from signal_quality.salvage import folder_label  # noqa: E402
+from eeg_quality import QualityAssessor, QualityGatedPredictor, folder_label, load_default_config, read_openbci  # noqa: E402
 
 PER_PARTICIPANT_CSV = JAX_DIR / "gaussiannb_jax_subject_per_participant.csv"
 CLASSIC_PICKLE = JAX_DIR / "gaussiannb_jax_model.pkl"        # its meta["results_df"] holds the chains' test accuracies

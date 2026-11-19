@@ -25,6 +25,7 @@ N_CLASSES = 6
 
 def entangling_ranges(n_qubits, n_layers):
     """CNOT ranges StronglyEntanglingLayers uses by default when all layers are applied in one call."""
+    # PennyLane uses range 0 on a single wire (no CNOT has a partner); the modulo below would also divide by zero.
     if n_qubits < 2:
         return [0] * n_layers
     return [(layer % (n_qubits - 1)) + 1 for layer in range(n_layers)]
@@ -38,6 +39,7 @@ def build_circuit(n_qubits, n_layers, device_name="default.qubit", noise_p=0.0, 
     if noise_p > 0 and device_name == "default.qubit":
         raise ValueError("default.qubit cannot simulate channels; use default.mixed for noise_p > 0")
 
+    # Called after the embedding and after every layer; on the noiseless device it adds nothing to the tape.
     def noise():
         if noise_p > 0:
             for w in range(n_qubits):
@@ -48,6 +50,7 @@ def build_circuit(n_qubits, n_layers, device_name="default.qubit", noise_p=0.0, 
         qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
         noise()
         for layer in range(n_layers):
+            # Slice, not index, so the layer axis survives: the template expects (1, n_qubits, 3), not (n_qubits, 3).
             qml.StronglyEntanglingLayers(weights[layer:layer + 1], wires=range(n_qubits), ranges=[ranges[layer]])
             noise()
         return [qml.expval(qml.PauliZ(w)) for w in range(n_qubits)]
@@ -56,11 +59,20 @@ def build_circuit(n_qubits, n_layers, device_name="default.qubit", noise_p=0.0, 
 
 
 class VQCClassifier(nn.Module):
+    """build_circuit() wrapped in a TorchLayer, followed by a linear head over the n_qubits Pauli-Z expectations.
+
+    Inputs are the (batch, n_qubits) RY angles FeatureEncoder produces, one angle per qubit. seed fixes the
+    uniform(0, 2 pi) draw of the circuit weights and the head's init, so a run is repeatable; device_name and
+    noise_p go straight to build_circuit() (default.mixed is required for noise_p > 0). windows_evaluated counts
+    every window pushed through the circuit, training and inference alike; it is a diagnostic only (the cost
+    figures in the report come from train.py's own counters and the PennyLane tracker).
+    """
     def __init__(self, n_qubits, n_layers, n_classes=N_CLASSES, seed=0, device_name="default.qubit", noise_p=0.0):
         super().__init__()
         self.n_qubits, self.n_layers, self.n_classes = int(n_qubits), int(n_layers), int(n_classes)
         self.device_name, self.noise_p = device_name, float(noise_p)
         self.circuit = build_circuit(self.n_qubits, self.n_layers, device_name, noise_p)
+        # (n_layers, n_qubits, 3): one Rot = RZ-RY-RZ angle triple per qubit per layer.
         shape = qml.StronglyEntanglingLayers.shape(n_layers=self.n_layers, n_wires=self.n_qubits)
         torch.manual_seed(seed)
         self.qlayer = qml.qnn.TorchLayer(self.circuit, {"weights": shape})   # uniform(0, 2 pi) init
@@ -71,26 +83,34 @@ class VQCClassifier(nn.Module):
         """(batch, n_qubits) angles -> (batch, n_qubits) Pauli-Z expectations."""
         if x.shape[-1] != self.n_qubits:
             raise ValueError(f"expected {self.n_qubits} angles per window, got {tuple(x.shape)}")
+        # A 1-d input is one window, not shape[0] of them.
         self.windows_evaluated += int(x.shape[0]) if x.dim() > 1 else 1
         return self.qlayer(x)
 
     def forward(self, x):
+        """(batch, n_qubits) angles -> (batch, n_classes) unnormalised class scores (logits)."""
         return self.head(self.expectations(x))
 
     @property
     def quantum_device(self):
+        """The PennyLane device the QNode runs on; it is what qml.Tracker has to watch."""
         return self.circuit.device
 
     def tracker(self):
+        """Context manager counting circuit runs on this device; read .totals["executions"] once the block ends."""
         return qml.Tracker(self.quantum_device)
 
     def n_quantum_parameters(self):
+        """Trainable circuit angles only, n_layers * n_qubits * 3; the linear head is not counted."""
         return int(self.qlayer.weights.numel())
 
     def n_parameters(self):
+        """Circuit angles plus the head's n_qubits * n_classes weights and n_classes biases."""
         return int(sum(p.numel() for p in self.parameters()))
 
     def config(self):
+        """Hyperparameters and parameter counts as a plain dict (a convenience for callers; runs.py records the counts
+        itself)."""
         return dict(n_qubits=self.n_qubits, n_layers=self.n_layers, n_classes=self.n_classes, device=self.device_name,
                     noise_p=self.noise_p, n_quantum_parameters=self.n_quantum_parameters(), n_parameters=self.n_parameters())
 

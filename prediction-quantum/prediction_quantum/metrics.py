@@ -15,6 +15,10 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 
 
 def classification_scores(y_true, y_pred):
+    """Accuracy, macro F1 and balanced accuracy of integer command labels, returned as a dict of plain floats.
+
+    zero_division=0 scores a command the model never predicts as F1 0 instead of raising sklearn's undefined-metric warning.
+    """
     y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
     return dict(accuracy=float(accuracy_score(y_true, y_pred)),
                 macro_f1=float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
@@ -23,6 +27,7 @@ def classification_scores(y_true, y_pred):
 
 def median_latency_ms(fn, repeats=50, warmup=5):
     """Median (and 90th percentile) wall time of fn() in milliseconds over `repeats` calls after `warmup` calls."""
+    # The warm-up calls absorb one-off start-up costs (lazy imports, allocations, cold caches) and are not timed.
     for _ in range(warmup):
         fn()
     times = []

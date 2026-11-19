@@ -25,6 +25,9 @@ MODELS = ("vqc", "mlp_pca", "gnb_pca", "logreg_pca", "mlp_full", "gnb_full")
 
 
 def versions():
+    """Interpreter and library versions, written into every config.yaml (and environment.json) so a run can be
+    matched to the environment that produced it. Cast to str because yaml.safe_dump rejects str subclasses such as
+    torch's TorchVersion."""
     import pennylane
     import scipy
     import sklearn
@@ -33,6 +36,7 @@ def versions():
 
 
 def label_of(spec):
+    """Display name of a run for tables and figures, e.g. 'VQC 6q x 2 layers' or 'GaussianNB (PCA-6)'."""
     m, n, L = spec["model"], spec.get("n_qubits"), spec.get("n_layers")
     return {"vqc": f"VQC {n}q x {L} layer{'s' if L != 1 else ''}", "mlp_pca": f"MLP-64 (PCA-{n})", "gnb_pca": f"GaussianNB (PCA-{n})",
             "logreg_pca": f"Logistic regression (PCA-{n})", "mlp_full": "MLP-64 (570 features)",
@@ -40,20 +44,26 @@ def label_of(spec):
 
 
 def family_of(model):
+    """Classifier family a run is grouped under in the report; the PCA and 570-feature variants share one."""
     return {"vqc": "VQC", "mlp_pca": "MLP", "mlp_full": "MLP", "gnb_pca": "GaussianNB", "gnb_full": "GaussianNB",
             "logreg_pca": "Logistic regression"}[model]
 
 
 def input_of(spec):
+    """What the classifier is fed: the whole standardised feature vector or the n_qubits PCA scores as RY angles."""
     return "570 standardised features" if spec["model"].endswith("_full") else f"PCA-{spec['n_qubits']} angles"
 
 
 def run_specs(cfg):
+    """The benchmark grid as a list of run dicts (run_id, model, n_qubits, n_layers, seed): every n_qubits x n_layers
+    VQC per seed, the three PCA baselines at each n_qubits, and the two full-feature baselines once per seed."""
     specs = []
     for seed in cfg["split"]["seeds"]:
         for n in cfg["encoding"]["n_qubits"]:
             for L in cfg["vqc"]["n_layers"]:
                 specs.append(dict(run_id=f"vqc_q{n}_l{L}_s{seed}", model="vqc", n_qubits=n, n_layers=L, seed=seed))
+            # the PCA baselines sit inside the n_qubits loop because each uses the encoder fitted for this (n, seed),
+            # the same one the VQC of that size reads
             for m in ("mlp_pca", "gnb_pca", "logreg_pca"):
                 specs.append(dict(run_id=f"{m}{n}_s{seed}", model=m, n_qubits=n, n_layers=None, seed=seed))
         for m in ("mlp_full", "gnb_full"):
@@ -70,9 +80,13 @@ def run_config(spec, cfg, out_dir):
               features=dict(cache_dir=cfg["data"]["cache_dir"], data_dir=cfg["data"]["data_dir"], cache_key=D.feature_cache_key(),
                             spec=D.feature_spec()),
               torch_threads=cfg["compute"]["torch_threads"], versions=versions())
+    # split_csv and encoder are relative to output_dir (model_inputs() joins them); run_benchmark.phase_data() fits one
+    # encoder per (n_qubits, seed) that the VQC and the PCA baselines share, and one StandardScaler per seed for the
+    # full-feature baselines
     if spec["model"] == "vqc":
         rc["training"] = dict(cfg["vqc"], optimizer="Adam", loss="cross-entropy", checkpoint="best validation accuracy")
         rc["encoder"] = f"encoders/encoder_q{n}_s{seed}.joblib"
+        # documentation only, nothing reads it back; the circuit is rebuilt from n_qubits and n_layers (VQCClassifier)
         rc["circuit"] = dict(embedding="AngleEmbedding(RY)", ansatz="StronglyEntanglingLayers", measurement="PauliZ on every qubit",
                              head="Linear(n_qubits, 6)", device="default.qubit", interface="torch", diff_method="backprop")
     elif spec["model"].startswith("mlp"):
@@ -88,12 +102,14 @@ def run_config(spec, cfg, out_dir):
 def model_inputs(rc, out_dir, cfg_data):
     """(train, val, test) arrays of the model's input and labels, read from the split CSV and the saved encoder."""
     feats = D.build_features(cfg_data["data_dir"], cfg_data["cache_dir"], verbose=False)
-    split = D.load_split(Path(out_dir) / rc["split_csv"])
+    split = D.load_split(Path(out_dir) / rc["split_csv"], feats)
     enc = joblib.load(Path(out_dir) / rc["encoder"])
     X, y = feats["X"], feats["y"]
     parts = {}
     for p in ("train", "val", "test"):
         idx = split[p]
+        # (windows, n_qubits) angles from a FeatureEncoder or (windows, 570) from the full-feature StandardScaler;
+        # float32 is what the torch models take, fit_sklearn() and the predict call in run_single() cast to float64
         A = enc.transform(X[idx]).astype(np.float32)
         parts[p] = (A, y[idx])
     return parts
@@ -104,9 +120,11 @@ def run_single(rc, out_dir, cfg_data, run_dir=None, force=False, log=None):
     out_dir = Path(out_dir)
     run_dir = Path(run_dir) if run_dir else out_dir / "runs" / rc["run_id"]
     metrics_path = run_dir / "metrics.json"
+    # metrics.json marks a finished run, which is how an interrupted grid resumes without retraining
     if metrics_path.exists() and not force:
         return json.loads(metrics_path.read_text())
     run_dir.mkdir(parents=True, exist_ok=True)
+    # the grid runs several of these in parallel (compute.n_jobs), so each keeps to its own share of the cores
     torch.set_num_threads(int(rc["torch_threads"]))
     (run_dir / "config.yaml").write_text(yaml.safe_dump(rc, sort_keys=False))
     parts = model_inputs(rc, out_dir, cfg_data)
@@ -125,6 +143,7 @@ def run_single(rc, out_dir, cfg_data, run_dir=None, force=False, log=None):
             model = MLPClassifier(Atr.shape[1], hidden=tr_cfg["hidden"], seed=rc["seed"])
         m["n_parameters"] = model.n_parameters()
         tracker = model.tracker() if model_kind == "vqc" else None
+        # entered by hand instead of a with-block so the MLP branch, which has no tracker, shares the same call
         if tracker:
             tracker.__enter__()
         history, best, timing = train_classifier(model, Atr, ytr, Ava, yva, epochs=tr_cfg["epochs"], lr=tr_cfg["lr"],
@@ -133,8 +152,10 @@ def run_single(rc, out_dir, cfg_data, run_dir=None, force=False, log=None):
             tracker.__exit__(None, None, None)
             m["circuit_evaluations_training"] = int(tracker.totals.get("executions", 0))     # one per window per forward pass
             m["simulations_training"] = int(tracker.totals.get("simulations", 0))            # batched state-vector runs
+            # epochs x n_train: the tracker totals above also count the validation pass after every epoch
             m["circuit_evaluations_training_train_only"] = int(timing["windows_forwarded"])
             m["parameter_shift_equivalent_evaluations"] = parameter_shift_evaluations(timing["windows_forwarded"], m["n_quantum_parameters"])
+        # test metrics come from the best-validation checkpoint, not from the last epoch
         model.load_state_dict(best["state_dict"])
         torch.save(best["state_dict"], run_dir / "params.pt")
         history.to_csv(run_dir / "history.csv", index=False)
@@ -165,6 +186,7 @@ def load_trained(rc, out_dir, run_dir=None):
         return model.eval()
     if rc["model"].startswith("mlp"):
         state = torch.load(run_dir / "params.pt")
+        # input width read off the first Linear weight, shape (hidden, n_in); the config does not store it
         n_in = state["net.0.weight"].shape[1]
         model = MLPClassifier(n_in, hidden=rc["training"]["hidden"], seed=rc["seed"])
         model.load_state_dict(state)
@@ -173,6 +195,8 @@ def load_trained(rc, out_dir, run_dir=None):
 
 
 def main(argv=None):
+    """Re-train one run from its config.yaml into results/runs_repro/<run_id>/ (or --out) and print its headline
+    metrics; --data-dir points at the recordings when they are not where the config says."""
     ap = argparse.ArgumentParser(description="Re-train one benchmark run from its config.yaml")
     ap.add_argument("run_config")
     ap.add_argument("--out", default=None, help="run directory to write (default results/runs_repro/<run_id>)")
@@ -180,6 +204,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     rc = yaml.safe_load(Path(a.run_config).read_text())
     out_dir = Path(rc["output_dir"])
+    # a relative output_dir (and cache_dir below) resolves against the project folder, not the current working
+    # directory; data_dir is used as given
     if not out_dir.is_absolute():
         out_dir = D.PROJECT_DIR / out_dir
     cfg_data = dict(data_dir=a.data_dir or rc["features"]["data_dir"], cache_dir=rc["features"]["cache_dir"])

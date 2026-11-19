@@ -5,6 +5,8 @@ noise sweep -> CSV tables -> figures -> BENCHMARK.md.
     python -m prediction_quantum.run_benchmark --config configs/default.yaml [--data-dir ../Data_clean] [--quick]
         [--force] [--features-only] [--report-only] [--n-jobs N] [--output-dir results]
 
+With --output-dir the report (BENCHMARK.md, or BENCHMARK_quick.md with --quick) is written into that directory.
+
 Finished runs (results/runs/<id>/metrics.json) are skipped unless --force, so an interrupted benchmark resumes.
 """
 import argparse
@@ -36,10 +38,15 @@ PROJECT_DIR = D.PROJECT_DIR
 
 
 def say(msg):
+    """Print a timestamped progress line; the worker processes get it as ``log`` so all output looks alike."""
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def resolve_paths(cfg, data_dir=None, output_dir=None):
+    """Apply the --data-dir / --output-dir overrides and make every path in the config absolute.
+
+    Relative paths are taken from the prediction-quantum directory (PROJECT_DIR), not the shell's cwd.
+    """
     if data_dir:
         cfg["data"]["data_dir"] = data_dir
     if output_dir:
@@ -67,6 +74,7 @@ def apply_quick(cfg):
 
 
 def cpu_name():
+    """CPU model string for environment.json: /proc/cpuinfo on Linux, platform.processor() anywhere else."""
     try:
         m = re.search(r"model name\s*:\s*(.+)", Path("/proc/cpuinfo").read_text())
         return m.group(1).strip() if m else platform.processor()
@@ -76,6 +84,11 @@ def cpu_name():
 
 # ------------------------------------------------------------------------------------------------- 1. data
 def phase_data(cfg, out_dir, force=False):
+    """Build (or reload) the cached window features, write one split CSV per seed and fit the scalers and encoders.
+
+    The class-balanced subsample is drawn once and shared by every seed; a seed only changes which recordings go
+    to train/val/test. Returns the feature dict and the summary that is written to dataset.json.
+    """
     d = cfg["data"]
     feats = D.build_features(d["data_dir"], d["cache_dir"], n_jobs=d.get("n_jobs_load", -1), verbose=True)
     y, groups, parts = feats["y"], feats["groups"], feats["participants"]
@@ -88,11 +101,12 @@ def phase_data(cfg, out_dir, force=False):
         if force or not path.exists():
             part = D.make_split(y[keep], groups[keep], seed, cfg["split"]["test_fraction"], cfg["split"]["val_fraction"])
             D.write_split(path, keep, y, groups, parts, part)
-        split = D.load_split(path)
+        split = D.load_split(path, feats)
         s = D.split_summary(split["frame"])
         s.insert(0, "seed", seed)
         summaries.append(s)
         Xtr = feats["X"][split["train"]]
+        # The scaler and the encoders see training windows only, so nothing from val/test leaks into their fit.
         scaler_path = enc_dir / f"scaler_full_s{seed}.joblib"
         if force or not scaler_path.exists():
             joblib.dump(StandardScaler().fit(Xtr), scaler_path)
@@ -120,11 +134,16 @@ def phase_data(cfg, out_dir, force=False):
 
 # --------------------------------------------------------------------------------------------- 2. training
 def phase_train(cfg, out_dir, force=False):
+    """Train every (model, seed, qubits, layers) run that has no metrics.json yet, in parallel worker processes.
+
+    Returns the full list of run configs, finished ones included, so the later phases can walk all of them.
+    """
     specs = run_specs(cfg)
     rcs = [run_config(s, cfg, out_dir) for s in specs]
     cfg_data = dict(data_dir=cfg["data"]["data_dir"], cache_dir=cfg["data"]["cache_dir"])
     pending = [rc for rc in rcs if force or not (out_dir / "runs" / rc["run_id"] / "metrics.json").exists()]
     cost = {"vqc": 3, "mlp_full": 2, "mlp_pca": 1, "gnb_pca": 0, "gnb_full": 0, "logreg_pca": 0}
+    # Longest jobs first (big circuits, then MLPs) so the pool does not end with one slow VQC running alone.
     pending.sort(key=lambda rc: -(cost[rc["model"]] * 100 + (rc["n_qubits"] or 0) * (rc["n_layers"] or 1)))
     say(f"training: {len(pending)} of {len(rcs)} runs to do in {cfg['compute']['n_jobs']} processes x {cfg['compute']['torch_threads']} threads")
     if pending:
@@ -135,12 +154,21 @@ def phase_train(cfg, out_dir, force=False):
 
 # ------------------------------------------------------------------------------------- 3. latency and noise
 def test_inputs(rc, out_dir, feats):
-    split = D.load_split(out_dir / rc["split_csv"])
+    """Load the run's split and encoder; returns (encoder, encoded test inputs as float32, test labels, unencoded test features).
+
+    The unencoded features are kept so the encoder's own transform time can be measured on the same windows.
+    """
+    split = D.load_split(out_dir / rc["split_csv"], feats)
     enc = joblib.load(out_dir / rc["encoder"])
     return enc, enc.transform(feats["X"][split["test"]]).astype(np.float32), feats["y"][split["test"]], feats["X"][split["test"]]
 
 
 def phase_latency(cfg, out_dir, rcs, feats, force=False):
+    """Time single-window and batched inference for every run and add the numbers to its metrics.json.
+
+    Single-window latency is the median (and p90) of ``repeats`` calls after ``warmup`` discarded ones; the batched
+    figure is microseconds per window over the whole test set.
+    """
     torch.set_num_threads(int(cfg["compute"]["torch_threads"]))
     rep, warm = cfg["latency"]["repeats"], cfg["latency"]["warmup"]
     for rc in rcs:
@@ -163,6 +191,8 @@ def phase_latency(cfg, out_dir, rcs, feats, force=False):
                     t0 = time.perf_counter()
                     pred = predict(model, Ate, batch_size=256)
                     dt = time.perf_counter() - t0
+                # executions = one circuit run per window (what hardware would pay); simulations = batched
+                # state-vector runs actually performed, which is why the second number is much smaller.
                 m["circuit_evaluations_inference"] = int(tr.totals.get("executions", 0))
                 m["simulations_inference"] = int(tr.totals.get("simulations", 0))
             else:
@@ -170,12 +200,14 @@ def phase_latency(cfg, out_dir, rcs, feats, force=False):
                 pred = predict(model, Ate, batch_size=256)
                 dt = time.perf_counter() - t0
         else:
+            # sklearn models were fitted on float64; this is the same cast runs.py applies before predict().
             x1 = Ate[:1].astype(np.float64)
             lat, p90 = median_latency_ms(lambda: model.predict(x1), rep, warm)
             t0 = time.perf_counter()
             pred = model.predict(Ate.astype(np.float64))
             dt = time.perf_counter() - t0
         enc_lat, _ = median_latency_ms(lambda: enc.transform(Xte[:1]), rep, warm)
+        # accuracy_reloaded re-scores the model loaded from disk as a check that it matches the training-time result.
         m.update(latency_ms=lat, latency_p90_ms=p90, batched_us_per_window=dt / len(yte) * 1e6, encoder_latency_ms=enc_lat,
                  latency_threads=int(cfg["compute"]["torch_threads"]), accuracy_reloaded=classification_scores(yte, pred)["accuracy"])
         path.write_text(json.dumps(m, indent=2))
@@ -183,6 +215,10 @@ def phase_latency(cfg, out_dir, rcs, feats, force=False):
 
 
 def phase_noise(cfg, out_dir, rcs, feats, force=False):
+    """Re-score the trained circuits under depolarising noise and stack the per-p rows into noise_sweep.csv.
+
+    Returns the frame, or None when no run qualifies (e.g. every circuit is wider than noise.max_qubits).
+    """
     path = out_dir / "noise_sweep.csv"
     if path.exists() and not force:
         return pd.read_csv(path)
@@ -190,6 +226,7 @@ def phase_noise(cfg, out_dir, rcs, feats, force=False):
     nz = cfg["noise"]
     frames = []
     for rc in rcs:
+        # Only circuits see noise, and the density-matrix simulator scales as 4^n, hence the qubit cap.
         if rc["model"] != "vqc" or rc["n_qubits"] > nz["max_qubits"] or rc["seed"] not in nz["seeds"]:
             continue
         say(f"noise sweep {rc['run_id']}")
@@ -211,6 +248,8 @@ NUMERIC = ["accuracy", "macro_f1", "balanced_accuracy", "train_seconds", "latenc
 
 
 def aggregate(out_dir, rcs):
+    """Collect every run's metrics.json into three CSVs: the raw per-run table, the per-configuration mean/sd
+    summary (averaged over seeds) and the stacked training histories used for the convergence figure."""
     rows = [json.loads((out_dir / "runs" / rc["run_id"] / "metrics.json").read_text()) for rc in rcs]
     df = pd.DataFrame(rows)
     df.to_csv(out_dir / "benchmark_results.csv", index=False)
@@ -223,6 +262,7 @@ def aggregate(out_dir, rcs):
         if c in df:
             agg[c] = (c, "mean")
     summary = df.groupby(keys, dropna=False).agg(**agg).reset_index()
+    # Row order of the report tables: circuits first, then the classical baselines from simplest to largest.
     order = {"VQC": 0, "Logistic regression": 1, "GaussianNB": 2, "MLP": 3}
     summary["_o"] = summary.family.map(order)
     summary = summary.sort_values(["_o", "n_qubits", "n_layers"], na_position="last").drop(columns="_o")
@@ -232,6 +272,7 @@ def aggregate(out_dir, rcs):
         p = out_dir / "runs" / rc["run_id"] / "history.csv"
         if p.exists():
             h = pd.read_csv(p)
+            # Every insert goes to column 0, so the keys are listed backwards to come out as run_id, label, ...
             for k in ("seed", "n_layers", "n_qubits", "family", "model", "label", "run_id"):
                 h.insert(0, k, rc[k])
             hist.append(h)
@@ -241,6 +282,7 @@ def aggregate(out_dir, rcs):
 
 
 def main(argv=None):
+    """Parse the flags listed in the module docstring and run the phases in order, ending with BENCHMARK.md."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=str(PROJECT_DIR / "configs" / "default.yaml"))
     ap.add_argument("--data-dir", default=None, help="Data_clean directory (default: data.data_dir of the config)")
@@ -261,6 +303,7 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "config_used.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
     timing_path = out_dir / "timing.json"
+    # timing.json is merged across invocations so a resumed benchmark still reports every phase it ever ran.
     timing = json.loads(timing_path.read_text()) if timing_path.exists() else {}
     t_all = time.perf_counter()
 
@@ -287,13 +330,19 @@ def main(argv=None):
                n_jobs=cfg["compute"]["n_jobs"], platform=platform.platform(), generated=time.strftime("%Y-%m-%d %H:%M:%S"))
     (out_dir / "environment.json").write_text(json.dumps(env, indent=2))
     timing["total_seconds_this_invocation"] = round(time.perf_counter() - t_all, 1)
+    # The phase total sums the latest recorded time of every phase, including phases earlier invocations ran
+    # and this one skipped; the other total is just this process.
     timing["total_seconds_phases"] = round(sum(v for k, v in timing.items() if k.endswith("_seconds") and not k.startswith("total")), 1)
     timing_path.write_text(json.dumps(timing, indent=2))
     figures.make_all(out_dir, cfg, info["chance_level"])
-    report_path = PROJECT_DIR / ("BENCHMARK.md" if not a.quick else "results_quick/BENCHMARK_quick.md")
+    report_name = "BENCHMARK_quick.md" if a.quick else "BENCHMARK.md"
+    # The report sits in the project folder (results_quick/ for --quick) by default; with --output-dir it goes next
+    # to the results it describes, so a run elsewhere never overwrites the project's own report.
+    report_path = out_dir / report_name if a.output_dir else PROJECT_DIR / ("results_quick" / Path(report_name) if a.quick else report_name)
     report.write_report(out_dir, cfg, info, env, timing, report_path)
     say(f"done: {len(df)} runs, report {report_path}, {timing['total_seconds_this_invocation']} s this invocation")
     best = summary[summary.family == "VQC"].sort_values("accuracy_mean", ascending=False).iloc[0]
+    # With a single seed (--quick) the sd is NaN, hence the guard in the message.
     say(f"best circuit: {best.label} accuracy {best.accuracy_mean:.4f} +/- {0 if np.isnan(best.accuracy_sd) else best.accuracy_sd:.4f}")
 
 

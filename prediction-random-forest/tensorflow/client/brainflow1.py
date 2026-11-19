@@ -3,8 +3,12 @@ import numpy as np
 import pandas as pd
 import requests
 import uuid
-from signal_quality.acquisition import brainflow_capture
-from signal_quality.gate import QualityGatedPredictor, withheld_result
+import sys
+from pathlib import Path
+_GNB = Path(__file__).resolve().parents[3] / "prediction-gaussiannb"
+if str(_GNB) not in sys.path:
+    sys.path.insert(0, str(_GNB))
+from eeg_quality import QualityGatedPredictor, brainflow_capture, withheld_result  # noqa: E402
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, LogLevels, BoardIds
 from brainflow.data_filter import DataFilter
 from enum import Enum

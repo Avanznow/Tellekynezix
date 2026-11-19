@@ -37,7 +37,7 @@ for p in (REPO_ROOT, GNB_DIR):
         sys.path.insert(0, str(p))
 
 from eeg_data import LoadConfig, _is_named_openbci, load_recordings  # noqa: E402
-from signal_quality.config import load_default_config  # noqa: E402
+from eeg_quality import load_default_config  # noqa: E402
 
 # Reasons the assessor raises per channel; every other reason is about the window as a whole (continuity, time,
 # sample count, numeric range) and is unaffected by excluding a channel.
@@ -54,6 +54,7 @@ def rel_key(path):
 
 
 def sha256(path):
+    """Hex sha256 of one file, read in 1 MiB blocks so the file never has to fit in memory whole."""
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
         for block in iter(lambda: stream.read(1 << 20), b""):
@@ -62,12 +63,16 @@ def sha256(path):
 
 
 def describe_file(path):
+    """Size in bytes and line count of a recording, the two columns of the per-file table in the report."""
     size = path.stat().st_size
     lines = path.read_text(errors="ignore").splitlines()
     return size, len(lines)
 
 
 def main():
+    """Run the three steps of the module docstring and write the report; returns 0 when every check holds and 1
+    when a block mismatch, residual, alignment or file-set difference or a sha256 mismatch is left, so a calling
+    script can notice."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--replay", default=str(REPO_ROOT / "signal_quality" / "data" / "real_replay_v3"))
     ap.add_argument("--data", default=str(REPO_ROOT / "Data_clean"))
@@ -92,6 +97,7 @@ def main():
             w = json.loads(line)
             if len(w["channels"]) != 16:
                 continue
+            # 2 s at the file's rate (250 samples at 125 Hz); start // block is the same block index the loader uses
             block = int(round(2.0 * w["sfreq"]))
             assert w["source_end_sample_exclusive"] - w["source_start_sample"] == block
             assert w["source_start_sample"] % block == 0, "replay windows are not cut from sample 0"
@@ -105,11 +111,13 @@ def main():
     all_files = [p for p in data.rglob("*") if p.is_file()]
     txt_files = {rel_key(p): p for p in data.rglob("*.txt")}
     other_suffixes = Counter(p.suffix.lower() for p in all_files if p.suffix.lower() != ".txt")
+    # the loader's 'found' count: a 21-byte header check only, nothing is parsed yet
     l_named = {k for k, p in txt_files.items() if _is_named_openbci(p)}
     recs, skipped = load_recordings(data, config, verbose=False)
     l_loaded = {rel_key(r["path"]): r for r in recs}
     l_skipped = {rel_key(r["path"]): r for r in skipped}
     assert set(l_loaded) | set(l_skipped) == l_named
+    # the board error names the channel count and rate of each file; fold every variant into one 'other board' bucket
     skip_reason = Counter(re.sub(r"recording is \d+ ch at [0-9.]+ Hz, not \S+", "other board", s.get("error") or "unlabelled folder")
                           for s in l_skipped.values())
 
@@ -118,6 +126,7 @@ def main():
     assert txt_set == set(inv), "the replay inventory and the .txt files under --data differ"
     only_loader = sorted(l_named - r_assessed)          # counted by the loader, not assessed by the replay
     only_replay = sorted(txt_set - l_named)             # attempted by the replay, not counted by the loader
+    # should be empty: assessed but not named, or named and assessed yet skipped although not an 8-channel file
     both_count_but_differ = sorted((r_assessed - l_named) | (l_named & r_assessed & set(l_skipped) - r_8))
     file_rows = []
     for k in only_loader:
@@ -150,6 +159,8 @@ def main():
             bad = set(w["bad_channels"])
             other_bad = bad - {EXCLUDED}
             replay_ok = bool(w["rule_usable"])
+            # the loader's decision, derived from the replay record: kept iff not block 0, no window-level reason and
+            # no bad channel apart from the excluded one
             loader_ok = b != 0 and not nonch and not other_bad
             derived[(k, b)] = loader_ok
             per_p[participant]["windows"] += 1
@@ -196,6 +207,7 @@ def main():
         n_blocks_loader += len(usable)
         kept_loader += sum(usable)
         segments += len(r["segments"])
+        # one run per kept block whose predecessor is dropped; if runs == segments, continuity split none of them
         runs += sum(1 for i, u in enumerate(usable) if u and (i == 0 or not usable[i - 1]))
         for b, ok in enumerate(usable):
             if derived.get((k, b)) != ok:
@@ -208,6 +220,7 @@ def main():
 
     # ---------------------------------------------------------------- summary for Table 10
     n_csv = sum(other_suffixes.values())
+    # file_rows columns: key, bytes, lines, replay verdict, loader verdict, why
     empty_n = sum(1 for r in file_rows if r[3].endswith("Empty recording"))
     headerless = [r[0] for r in file_rows if r[1] == 0]
     board_skipped = skip_reason.get("other board", 0)
@@ -217,6 +230,7 @@ def main():
     other_n = cats["both drop: fails on a channel other than 15"]
     ch15_n = cats["loader keeps, replay drops: fails only on EXG Channel 15"]
     both_keep = cats["both keep"]
+    # 0 when the loader's kept count is exactly 'both keep' plus the windows that fail only on channel 15
     residual = (both_keep + ch15_n) - kept_loader
     ch15_text = "; ".join(f"{n} {r}" for r, n in ch15_reasons.most_common())
     gained_text = ", ".join(f"{p} ({n})" for n, p in gained)
@@ -305,6 +319,7 @@ def main():
              f"bad channel is channel 15. That derivation was checked against a fresh loader run.\n")
     L.append("| Class | Windows |")
     L.append("|---|---|")
+    # kept classes first, then the dropped ones; the continuity reasons are sorted so the table is stable
     order = ["both keep",
              "loader keeps, replay drops: fails only on EXG Channel 15",
              "replay keeps, loader drops: start-up block that passes on all 16 channels",
@@ -337,6 +352,7 @@ def main():
     L.append(f"| **all** | **{c['windows']:,}** | **{c['startup']:,}** | **{c['both']:,}** | **{c['ch15_only']}** | **{c['continuity']}** | **{c['other_channel']:,}** | **{c['replay']:,}** | **{c['loader']:,}** |")
     L.append("")
     replay_root = Path(summary["source_root"])
+    # when the tree the replay read is still on this machine and is not --data itself, compare the two copies by size
     if replay_root.is_dir() and replay_root.resolve() != data.resolve():
         theirs = {rel_key(p): p for p in replay_root.rglob("*") if p.is_file()}
         ours = {rel_key(q): q for q in all_files}
@@ -356,6 +372,7 @@ def main():
     print(para2)
     print()
     print(f"report: {out}  ({time.perf_counter() - t0:.0f} s)")
+    # sha_mismatch is None when hashing was skipped and [] when it passed; only a non-empty list counts as a failure
     if mismatches or residual or alignment_mismatch or both_count_but_differ or (sha_mismatch):
         print("WARNING: not fully reconciled:", len(mismatches), "mismatches,", residual, "residual,",
               len(alignment_mismatch), "alignment,", len(both_count_but_differ), "file-set,", sha_mismatch and len(sha_mismatch), "sha")

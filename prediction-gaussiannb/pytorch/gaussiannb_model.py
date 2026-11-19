@@ -35,6 +35,8 @@ class GaussianNB(nn.Module):
         
         # Register buffers (non-trainable parameters)
         # These will store the calculated statistics
+        # Buffers move with .to(device) and are saved by state_dict, so a fitted model can be checkpointed like any
+        # nn.Module; is_fitted is a tensor rather than a Python bool for the same reason.
         self.register_buffer('class_priors', torch.zeros(num_classes))
         self.register_buffer('means', torch.zeros(num_classes, num_features))
         self.register_buffer('variances', torch.zeros(num_classes, num_features))
@@ -64,12 +66,17 @@ class GaussianNB(nn.Module):
             # Get samples for this class
             X_c = X[class_mask]
             
+            # Skip a class with no samples (.mean()/.var() of an empty tensor is NaN) and leave its buffers at zero;
+            # subject_gnb.py remaps labels to the classes a participant actually has, so this is only a safeguard.
             if len(X_c) > 0:
                 # Calculate mean μ for each feature
                 self.means[c] = X_c.mean(dim=0)
                 
                 # Calculate variance σ² for each feature
                 # Add small epsilon to avoid division by zero
+                # torch.var is the unbiased (n-1) estimate; the TensorFlow/JAX models use the population variance.
+                # 1e-9 is a flat additive constant, not sklearn's var_smoothing * max σ² (subject_gnb.py adds that
+                # on top after fit).
                 self.variances[c] = X_c.var(dim=0) + 1e-9
         
         self.is_fitted = torch.tensor(True)
@@ -84,12 +91,14 @@ class GaussianNB(nn.Module):
         Returns:
             torch.Tensor: Log posteriors of shape (n_samples, n_classes)
         """
+        # subject_gnb.py calls this directly for the per-participant log-posteriors; forward/predict_proba wrap it.
         if not self.is_fitted:
             raise RuntimeError("Model must be fitted before making predictions")
 
         X = X.to(self.means.device)
 
         # Log of class prior: log(P(y=c)), shape (C,)
+        # 1e-10 keeps the log finite for a class whose prior came out exactly zero.
         log_prior = torch.log(self.class_priors + 1e-10)
 
         # Log PDF: log(P(x|y=c)) = -0.5 * [log(2πσ²) + (x-μ)²/σ²]
@@ -105,7 +114,7 @@ class GaussianNB(nn.Module):
 
     def forward(self, X):
         """
-        Make predictions using the Gaussian PDF and Bayes' theorem.
+        Make predictions using the Gaussian Probability Density Function and Bayes' theorem.
 
         Args:
             X (torch.Tensor): Input data of shape (n_samples, n_features)
@@ -129,5 +138,7 @@ class GaussianNB(nn.Module):
         log_probs = self._joint_log_likelihood(X)
 
         # Convert log probabilities to probabilities using softmax
+        # Softmax over the joint log likelihoods is exactly Bayes' normalisation exp(jll_c) / Σ_k exp(jll_k), done
+        # in log space so the very negative values of a multi-feature Gaussian do not underflow to zero.
         probs = torch.softmax(log_probs, dim=1)
         return probs

@@ -15,14 +15,17 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from signal_quality import QualityAssessor, QualityConfig, QualityGatedPredictor, may_execute
+from signal_quality import QualityAssessor, QualityConfig
 from signal_quality.acquisition import brainflow_capture, file_sha256, read_openbci
-from signal_quality.gate import withheld_result
 from signal_quality.replay import replay
 from signal_quality.train import QualityModel, reviewed_features, train
 
 
 ROOT = Path(__file__).resolve().parents[2]
+import sys
+if str(ROOT / "prediction-gaussiannb") not in sys.path:
+    sys.path.insert(0, str(ROOT / "prediction-gaussiannb"))
+from eeg_quality import QualityGatedPredictor, may_execute, withheld_result  # noqa: E402  (moved from signal_quality.gate)
 
 
 def capture(seconds=2, *, fs=125, c=16, start=1000):
@@ -234,16 +237,11 @@ def gui_methods():
     functions = []
     for node in cls.body:
         if isinstance(node,ast.FunctionDef) and node.name in ("readMyMind","executeAction","_queue_action","_queue_prediction","_drone_loop",
-                                                               "_choose_recording","openQualityDashboard","checkRecordingQuality"):
+                                                               "_choose_recording"):
             node.decorator_list=[]
             functions.append(node)
-    from signal_quality.dashboard import build as build_quality_dashboard
-    from signal_quality.gui_view import preflight_view, quality_view
-    from signal_quality.report import preflight as preflight_recording
     import tempfile
-    namespace = dict(may_execute=may_execute,withheld_result=withheld_result,quality_view=quality_view,
-                     preflight_view=preflight_view,preflight_recording=preflight_recording,
-                     build_quality_dashboard=build_quality_dashboard,Path=Path,tempfile=tempfile,
+    namespace = dict(may_execute=may_execute,withheld_result=withheld_result,Path=Path,tempfile=tempfile,
                      QUrl=SimpleNamespace(fromLocalFile=lambda path:("file",path)))
     exec(compile(ast.fix_missing_locations(ast.Module(body=functions,type_ignores=[])),"GUI5.py","exec"),namespace)
     return namespace
@@ -252,7 +250,7 @@ def gui_methods():
 def backend(result):
     b = SimpleNamespace(current_model="Random Forest",current_framework="PyTorch",current_prediction_label="old-forward",
                         current_prediction_result=result,quality_gate=QualityGatedPredictor(),flight_log=[],predictions_log=[],actions=[])
-    for name in ("signalQualityChanged","qualityViewChanged","logMessage","flightLogUpdated","predictionsTableUpdated"): setattr(b,name,Signal())
+    for name in ("signalQualityChanged","logMessage","flightLogUpdated","predictionsTableUpdated"): setattr(b,name,Signal())
     b.run_random_forest_pytorch=lambda:result
     b._queue_prediction=lambda result:b.actions.append(result["prediction_label"])
     return b

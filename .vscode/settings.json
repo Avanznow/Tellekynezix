@@ -1,5 +1,10 @@
 {
-  "files.exclude": {
-    "**/.claude": true
-  }
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/prediction-gaussiannb",
+    "${workspaceFolder}/prediction-gaussiannb/pytorch",
+    "${workspaceFolder}/prediction-random-forest/tensorflow/client",
+    "./prediction-quantum/paper_benchmarks",
+    "./prediction-quantum/paper_benchmarks/matched"
+  ],
+  
 }

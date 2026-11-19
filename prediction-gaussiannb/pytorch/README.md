@@ -103,6 +103,14 @@ every trial becomes one labelled item from the cue to the end marker, through th
 (`../tests/test_eeg_data_sessions.py`). Windows must be cut within segments (`segment_id`), and data must be split by
 recording or by participant, never by window.
 
+**Not used in this project.** The session format belongs to `prediction_eegnet`, an EEGNet chain that was planned and
+then dropped; its recorder (`prediction_eegnet/record_session.py`) is not part of this repository, and no cued session
+has been recorded. `Data_clean` holds OpenBCI text exports only, which is why every notebook's first cell reports
+`recorded sessions: 0 (0 trials)`. The session reader (`eeg_data.load_session`, the session branches of `load_item` and
+`load_recordings`, `SESSION_BOARDS`) and its test are kept as they are: they add nothing to the loaded data, the caches,
+the splits or any result in this folder. `predictions_local/eegnetpredictor.py`, a wrapper that imports the dropped
+package, is likewise unused by the GUI and the notebooks.
+
 ## What the numbers mean
 
 Every command in `Data_clean` was recorded as **one contiguous block per participant**. A split by recording therefore
@@ -143,9 +151,11 @@ from the 16-channel 125 Hz board:
 7. causal context: sum of the log-posteriors of the last 5 windows (384 samples, 3.07 s), normalised;
 8. the notebook's threshold rule `argmax(probability / class_threshold)` -> one command.
 
-Only captures accepted by the app's quality gate (`signal_quality.QualityGatedPredictor`) reach step 1;
-`predict_capture(capture, participant, gate)` assesses first and returns the gate's decision dict. The gate also
-refuses synthetic or unverified sources and stale captures.
+In Live and Replay mode only captures accepted by the app's quality gate (`eeg_quality.QualityGatedPredictor`, in
+`prediction-gaussiannb/eeg_quality.py`) reach step 1; `predict_capture(capture, participant, gate)` assesses first and
+returns the gate's decision dict, and the gate refuses synthetic or unverified sources and stale captures. Synthetic
+Data mode is the exception: the GUI runs `predict_raw` on the synthetic board's capture (decimated to 125 Hz) without
+the gate, as the project's GUI did before, and marks the result as synthetic.
 
 **Calibration** stores one `predictions_local/gnb_calibration/<participant>.npz` per user (feature mean / std, number
 of windows, feature version, source, time). The participant state is `calibrated`, `training participant` or
@@ -214,7 +224,10 @@ all fail the quality checks contributes nothing and is listed in the session sum
 ## Using it in the GUI
 
 `GUI5.py`, **Read Brain** tab: choose **GaussianNB** as the model, **PyTorch**, **TensorFlow** or **JAX** as the
-framework, the **OpenBCI** source and **live** mode (the synthetic BrainFlow board never produces a command). The
+framework, the **OpenBCI** source and one of three data sources: **Live Data** (the headset, screened by the capture
+check), **Replay Recording** (a named OpenBCI GUI export stands in for the headset, one capture per press, screened
+the same way; the label under the radios shows the file and the position) or **Synthetic Data** (BrainFlow's synthetic
+board, not screened, marked as synthetic in the table and the flight log). The
 GaussianNB panel beside *Read my mind...* shows the participant id (`AVATAR_PARTICIPANT_ID`, default `user`), its
 state, and the **Global model** / **My model** radios (`setGaussianNBMode`; the start value is `AVATAR_GNB_MODE`,
 `global` by default, `subject` for *My model*).
@@ -224,9 +237,12 @@ With **Global model** (the improved global chain):
 - **Calibrate (30 s)** records `AVATAR_GNB_CALIBRATION_SECONDS` (default 30, use 30-60) seconds of unlabelled EEG
   from the headset in a worker thread, cuts it into 2 s quality blocks exactly like the loader, filters each run of
   passing blocks, extracts the features and stores the user's statistics. Sit still with eyes open and cycle through
-  the imagined commands; at least 2 usable windows are needed (a 30 s recording gives about 55).
+  the imagined commands; at least 2 usable windows are needed (a 30 s recording gives about 55). In **Replay
+  Recording** mode the button calibrates from the loaded recording instead (the same as *Calibrate from
+  recording...* with that file); in Synthetic Data mode it refuses, since the synthetic board has no user statistics.
 - **Calibrate from recording...** does the same from one of the user's named OpenBCI GUI `.txt` recordings.
-- *Read my mind...* captures about 5 s, keeps the last 384 samples and runs the chain; the console log shows the
+- *Read my mind...* captures about 5 s from the headset (or takes the next 384 samples of the replay recording, or
+  5 s of the synthetic board decimated to 125 Hz), keeps the last 384 samples and runs the chain; the console log shows the
   command, the context length, the participant state and the six class probabilities.
 
 With **My model** (the subject-specific chain):
@@ -240,7 +256,10 @@ With **My model** (the subject-specific chain):
   labelled windows, whether the model was fitted, the learning-curve expectation and the cue-grouped self-check.
 - **Train from folder...** (`trainGaussianNBFromFolder`) trains or extends the model from a folder of the user's
   labelled OpenBCI GUI recordings laid out like `Data_clean` (`<folder>/<command>/OpenBCI-RAW-*.txt`; every recording
-  is one cue).
+  is one cue). Choosing one command's folder is redirected to the person's folder above it; a folder that holds a
+  single command is refused before anything is stored, because one-command statistics with the global fallback make
+  every vote uncertain. **Forget my model** removes the participant's stored model, statistics and windows for the
+  selected framework (the CLI's `forget`).
 - The status text reads `<id>: my model: own model (631 windows, 6 cues/command, expect ~81 %)` or
   `... no model yet: global fallback`; the line below gives the learning-curve expectation for the configured session.
 - *Read my mind...* captures about 5 s, keeps the last 384 samples and runs the user's model; the log shows the
@@ -323,8 +342,8 @@ a headset.
 | `test_subject_gnb_live.py` | the interleaved schedule; the learning-curve expectation; the vote gate; the three views and 435 features equal the notebook's cache window for window; the training flow on `G03/person03`'s 44 training recordings reproduces the notebook's participant model (statistics exactly, projection to 1e-15); the 16 test recordings through the live path give the row of `gaussiannb_subject_specific_per_participant.csv` (0.8857 on 210 windows); gated captures, persistence, fallback and `forget`; the guided session on a replayed stream; the CLI |
 | `test_subject_gnb_tf.py` | the TensorFlow backend: no tail window, the notebook's geometry and artifacts, the per-participant accuracy and the training flow reproduced, agreement with PyTorch on the same model and on separately fitted models, separate user stores, the global chain replays, calibrates and decides by argmax |
 | `test_subject_gnb_jax.py` | the JAX backend: the same checks plus the CPU pin with one model class in the process, and the whole notebook split through the global chain (0.5253 on 2810 windows) |
-| `test_gui_gaussiannb_routes.py` | `GUI5.BrainwavesBackend`'s GaussianNB routes for the three frameworks: predictions with the global and training-participant models, calibration stored per framework, the guided training session with the selected framework |
-| `test_eeg_data_sessions.py` | `eeg_data` reads cued sessions in the `record_session.py` format: one cue-locked item per trial, failing blocks dropped, unusable sessions skipped, irregular packet counters refused |
+| `test_gui_gaussiannb_routes.py` | `GUI5.BrainwavesBackend`'s GaussianNB routes for the three frameworks: predictions with the global and training-participant models, calibration stored per framework, the guided training session with the selected framework; a replayed recording as the data source, one context per press; Synthetic Data mode without the capture check |
+| `test_eeg_data_sessions.py` | `eeg_data` reads cued sessions in the `record_session.py` format: one cue-locked item per trial, failing blocks dropped, unusable sessions skipped, irregular packet counters refused. The format is not used in this project (see [Data and the shared loader](#data-and-the-shared-loader)); the test builds synthetic sessions in a temporary folder and needs no recorded data |
 
 ## Defense figures and tables
 

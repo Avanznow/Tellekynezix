@@ -1,0 +1,70 @@
+{
+  "python": "3.12.10",
+  "pennylane": "0.45.1",
+  "torch": "2.14.1+cpu",
+  "scikit_learn": "1.9.1",
+  "numpy": "2.5.4",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "cpu": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+  "config": {
+    "data": {
+      "max_windows_per_class": 2000,
+      "subsample_seed": 0
+    },
+    "protocols": {
+      "participant": {
+        "n_folds": 5,
+        "val_fraction": 0.1
+      },
+      "recording": {
+        "seeds": [
+          0,
+          1,
+          2
+        ]
+      }
+    },
+    "encoding": {
+      "n_qubits": 6
+    },
+    "qsvm": {
+      "max_train": 3000,
+      "reps": 2,
+      "C": 1.0
+    },
+    "vqc": {
+      "n_layers": 4,
+      "epochs": 40,
+      "batch_size": 64,
+      "lr": 0.01
+    },
+    "mlp": {
+      "hidden": 64,
+      "epochs": 40,
+      "batch_size": 64,
+      "lr": 0.01
+    },
+    "models": [
+      "qsvm",
+      "vqc",
+      "logreg",
+      "gnb",
+      "svm_rbf",
+      "mlp",
+      "gnb_full",
+      "lda_gnb_full",
+      "mlp_full"
+    ],
+    "latency": {
+      "repeats": 50,
+      "warmup": 5
+    },
+    "compute": {
+      "n_jobs": 8,
+      "torch_threads": 2
+    }
+  },
+  "feature_cache": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\prediction-quantum\\results\\cache\\features_4df6a3d7e7044283.npz",
+  "n_windows": 11698,
+  "generated": "2026-11-02 20:43:39"
+}

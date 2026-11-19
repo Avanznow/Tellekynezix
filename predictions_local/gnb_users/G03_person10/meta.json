@@ -1,0 +1,538 @@
+{
+  "participant": "G03/person10",
+  "feature_version": "subject_logcov_dcov_gammacov_multitaper_v1",
+  "n_features": 435,
+  "framework": "torch",
+  "window_size": 128,
+  "window_stride": 64,
+  "channels": [
+    "EXG Channel 0",
+    "EXG Channel 1",
+    "EXG Channel 2",
+    "EXG Channel 3",
+    "EXG Channel 4",
+    "EXG Channel 5",
+    "EXG Channel 6",
+    "EXG Channel 7",
+    "EXG Channel 8",
+    "EXG Channel 9",
+    "EXG Channel 10",
+    "EXG Channel 11",
+    "EXG Channel 12",
+    "EXG Channel 13",
+    "EXG Channel 14"
+  ],
+  "sfreq": 125.0,
+  "commands": [
+    "backward",
+    "forward",
+    "landing",
+    "left",
+    "right",
+    "takeoff"
+  ],
+  "n_windows": 895,
+  "windows_per_command": {
+    "backward": 145,
+    "forward": 150,
+    "landing": 150,
+    "left": 150,
+    "right": 150,
+    "takeoff": 150
+  },
+  "cues_per_command": {
+    "backward": 10,
+    "forward": 10,
+    "landing": 10,
+    "left": 10,
+    "right": 10,
+    "takeoff": 10
+  },
+  "min_windows": 60,
+  "n_components": 5,
+  "shrinkage": "auto",
+  "model": "own",
+  "model_classes": [
+    "backward",
+    "forward",
+    "landing",
+    "left",
+    "right",
+    "takeoff"
+  ],
+  "cue_cv": {
+    "folds": 10,
+    "windows": 895,
+    "accuracy": 0.7731843575418994,
+    "context_accuracy": 0.8357541899441341
+  },
+  "learning_curve": [
+    {
+      "recordings_per_command": 1,
+      "accuracy": 0.537
+    },
+    {
+      "recordings_per_command": 2,
+      "accuracy": 0.656
+    },
+    {
+      "recordings_per_command": 3,
+      "accuracy": 0.693
+    },
+    {
+      "recordings_per_command": 4,
+      "accuracy": 0.745
+    },
+    {
+      "recordings_per_command": 6,
+      "accuracy": 0.813
+    },
+    {
+      "recordings_per_command": 8,
+      "accuracy": 0.854
+    }
+  ],
+  "created": "2026-10-21T13:09:29",
+  "updated": "2026-10-21T13:09:29",
+  "sessions": [
+    {
+      "id": "20261021-130928-folder:person10",
+      "source": "folder:person10",
+      "started": "2026-10-21T13:09:28",
+      "n_windows": 895,
+      "n_cues": 60,
+      "windows_per_command": {
+        "backward": 145,
+        "forward": 150,
+        "landing": 150,
+        "left": 150,
+        "right": 150,
+        "takeoff": 150
+      },
+      "plan": null,
+      "cues": [
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-09-33.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-09-55.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-11-28.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-11-53.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-12-23.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-12-47.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-13-10.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-13-33.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-13-57.txt",
+          "command": "backward",
+          "n_windows": 10,
+          "n_blocks": 5,
+          "n_blocks_kept": 3
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Backward\\OpenBCI-RAW-2025-04-21_15-14-23.txt",
+          "command": "backward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-15-08.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-15-32.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-15-56.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-16-20.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-16-44.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-17-07.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-17-31.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-17-55.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-18-17.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Forward\\OpenBCI-RAW-2025-04-21_15-18-42.txt",
+          "command": "forward",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-19-27.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-19-52.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-20-21.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-20-45.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-21-09.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-22-01.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-22-25.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-22-50.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-23-13.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Landing\\OpenBCI-RAW-2025-04-21_15-23-37.txt",
+          "command": "landing",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-24-32.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-24-59.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-25-27.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-25-50.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-26-14.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-26-40.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-27-03.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-27-30.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-27-55.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Left\\OpenBCI-RAW-2025-04-21_15-28-19.txt",
+          "command": "left",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-29-03.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-29-28.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-29-52.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-30-15.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-30-38.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-31-01.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-31-23.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-31-47.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-32-09.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Right\\OpenBCI-RAW-2025-04-21_15-32-33.txt",
+          "command": "right",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-33-10.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-33-33.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-33-56.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-34-21.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-34-44.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-35-06.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-35-31.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-35-54.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-36-18.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        },
+        {
+          "path": "C:\\Starred Paper\\avatar\\Tellekynezix - windows\\Data_clean\\G03\\person10\\Take Off\\OpenBCI-RAW-2025-04-21_15-36-41.txt",
+          "command": "takeoff",
+          "n_windows": 15,
+          "n_blocks": 5,
+          "n_blocks_kept": 4
+        }
+      ]
+    }
+  ],
+  "expected_accuracy": 0.854
+}

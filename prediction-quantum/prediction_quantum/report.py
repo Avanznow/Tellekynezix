@@ -1,5 +1,6 @@
 """BENCHMARK.md, generated from the CSV tables in results/ so that every number in the report is backed by a file."""
 import json
+import os
 import time
 from pathlib import Path
 
@@ -10,16 +11,19 @@ from . import data as D
 
 
 def fmt(v, nd=3):
+    """Number as a string with `nd` decimals; None and NaN become "-" so an empty table cell is visibly empty."""
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return "-"
     return f"{v:.{nd}f}"
 
 
 def pm(mean, sd, nd=3):
+    """Render "mean +/- sd" with `nd` decimals, or the mean alone when the sd is missing (one seed has no spread)."""
     return fmt(mean, nd) if (sd is None or np.isnan(sd)) else f"{mean:.{nd}f} +/- {sd:.{nd}f}"
 
 
 def md_table(rows, header):
+    """Markdown table from row tuples; cells are str()-ed as given, so callers format the numbers first."""
     out = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
     for r in rows:
         out.append("| " + " | ".join(str(c) for c in r) + " |")
@@ -27,16 +31,37 @@ def md_table(rows, header):
 
 
 def rel(path, base):
-    return Path(path).relative_to(base).as_posix()
+    """`path` relative to `base` as a POSIX string, so links in the report resolve from the report's own directory.
+
+    A results folder outside the report's directory (--output-dir elsewhere) gives a `../` path; one on another
+    Windows drive, which has no relative form, is written out in full.
+    """
+    path, base = Path(path).resolve(), Path(base).resolve()
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        pass
+    try:
+        return Path(os.path.relpath(path, base)).as_posix()
+    except ValueError:                      # different drives on Windows
+        return path.as_posix()
 
 
 def write_report(out_dir, cfg, info, env, timing, report_path):
+    """Build the Markdown report (BENCHMARK.md, or the --quick variant) from the files in `out_dir`, write it to `report_path` and return that path.
+
+    `cfg` is the resolved benchmark config, `info` the dataset and subsample statistics, `env` the environment table
+    and `timing` the phase timings; every number in the text comes from those or from the CSVs, so the report can be
+    rebuilt from the files alone without re-training anything.
+    """
     out_dir, report_path = Path(out_dir), Path(report_path)
     base = report_path.parent
     summary = pd.read_csv(out_dir / "benchmark_summary.csv")
     results = pd.read_csv(out_dir / "benchmark_results.csv")
     splits = pd.read_csv(out_dir / "dataset_splits.csv")
     encoders = pd.read_csv(out_dir / "encoders.csv")
+    # noise_sweep.csv is absent when the noise phase never ran or no circuit qualified for it (noise.seeds /
+    # noise.max_qubits), so every noise passage below is guarded on `noise`.
     noise_path = out_dir / "noise_sweep.csv"
     noise = pd.read_csv(noise_path) if noise_path.exists() else None
     conv = pd.read_csv(out_dir / "convergence.csv")
@@ -47,9 +72,11 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
 
     vqc = summary[summary.family == "VQC"].copy()
     best = vqc.sort_values("accuracy_mean", ascending=False).iloc[0]
+    # The config's reference circuit anchors the noise paragraph; the best one stands in if that point was not run.
     ref = vqc[(vqc.n_qubits == n_ref) & (vqc.n_layers == L_ref)]
     ref = ref.iloc[0] if len(ref) else best
 
+    # PCA baselines exist once per qubit count, so `n` picks the one that saw the same angle vectors as a circuit.
     def row_of(model, n=None):
         d = summary[summary.model == model]
         if n is not None:
@@ -59,6 +86,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
     def cmp_word(a, b):
         return "above" if a > b else ("below" if a < b else "level with")
 
+    # Baselines are quoted at the best circuit's qubit count, so "same input" in the headline holds literally.
     lr_ref, mlp_ref, gnb_ref = row_of("logreg_pca", int(best.n_qubits)), row_of("mlp_pca", int(best.n_qubits)), row_of("gnb_pca", int(best.n_qubits))
     gnb_full, mlp_full = row_of("gnb_full"), row_of("mlp_full")
     classical_best = summary[summary.family != "VQC"].sort_values("accuracy_mean", ascending=False).iloc[0]
@@ -90,12 +118,14 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
               f"{best.parameter_shift_equivalent_evaluations:,.0f} runs before shots.",
               ]
     if noise is not None:
+        # Accuracy change from p = 0 to the largest p, per circuit, sorted ascending: the first label lost the most.
         p_max = noise.noise_p.max()
         acc_p = noise.groupby(["label", "noise_p"]).accuracy.mean().unstack("noise_p")
         delta = (acc_p[p_max] - acc_p[0.0]).sort_values()
         worst = delta.index[0]
         changed_txt = ""
         if "changed_predictions" in noise:
+            # Flipped-prediction share at the largest p, min-max per depth; the text quotes shallowest and deepest.
             ch = noise[noise.noise_p == p_max].groupby("n_layers").changed_predictions.agg(["min", "max"])
             lo_L, hi_L = ch.index.min(), ch.index.max()
             changed_txt = (f" At p = {p_max} the {int(lo_L)}-layer circuits change {ch.loc[lo_L, 'min']:.0%}-{ch.loc[lo_L, 'max']:.0%} of their "
@@ -106,6 +136,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
                   f"because the channel contracts every expectation value towards zero while the linear head's decision depends mostly on their "
                   f"direction.{changed_txt} Details in section 4.6."]
     d_lr, d_mlp = best.accuracy_mean - lr_ref.accuracy_mean, best.accuracy_mean - mlp_ref.accuracy_mean
+    # A NaN sd (single seed) counts as 0; the larger of the two decides whether the gap is "within one sd".
     sd_ref = max(float(np.nan_to_num(best.accuracy_sd)), float(np.nan_to_num(lr_ref.accuracy_sd)))
     reading = (f"**Reading.** The best circuit {'beats' if d_lr > 0 else 'does not beat'} the linear model on its own {int(best.n_qubits)}-dimensional "
                f"input by {d_lr:+.3f} accuracy, {'within' if abs(d_lr) <= sd_ref else 'more than'} one standard deviation over seeds ({sd_ref:.3f}), "
@@ -113,6 +144,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
                f"classical model on the full 570 features it is {classical_best.accuracy_mean - best.accuracy_mean:.3f} lower, and it is "
                f"{best.latency_ms_mean / lr_ref.latency_ms_mean:.0f}x slower per window than logistic regression and "
                f"{best.latency_ms_mean / mlp_ref.latency_ms_mean:.0f}x slower than the MLP. ")
+    # Two wordings only: above the linear model but below the MLP, or (anything else) no advantage.
     reading += ("So on this problem the circuit adds some capacity over a linear read-out of the same components, far less than a small classical "
                 "network, at orders of magnitude more compute. " if d_lr > 0 and d_mlp < 0 else
                 "So on this problem the circuit shows no advantage over classical models on the same input, at orders of magnitude more compute. ")
@@ -189,6 +221,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
     # ------------------------------------------------------------------------------------------------- results
     lines += ["## 4. Results", "", "### 4.1 All models", ""]
     rows = []
+    # Classical rows have no circuit counts (NaN) and show "-".
     for _, r in summary.iterrows():
         rows.append((r.label, r.input, f"{int(r.n_parameters):,}", pm(r.accuracy_mean, r.accuracy_sd), pm(r.macro_f1_mean, r.macro_f1_sd),
                      pm(r.balanced_accuracy_mean, r.balanced_accuracy_sd), pm(r.train_seconds_mean, r.train_seconds_sd, 2),
@@ -206,6 +239,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
 
     lines += ["### 4.2 Circuit grid: qubits x depth", ""]
     qs, Ls = sorted(vqc.n_qubits.unique()), sorted(vqc.n_layers.unique())
+    # One grid table per metric; times get two decimals, accuracy and macro-F1 three, grid points not run show "-".
     for metric, name in (("accuracy", "accuracy"), ("macro_f1", "macro-F1"), ("train_seconds", "train (s)"), ("latency_ms", "latency (ms/window)")):
         rows = []
         for q in qs:
@@ -219,6 +253,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
 
     # convergence
     lines += ["### 4.3 Convergence", "", f"![convergence]({rel(out_dir, base)}/fig_convergence.png)", ""]
+    # Reference qubit count only: a row per depth (shallow to deep) plus the MLP on the same input, means over seeds.
     cv = conv[(conv.model == "vqc") & (conv.n_qubits == n_ref)]
     cm = conv[(conv.model == "mlp_pca") & (conv.n_qubits == n_ref)]
     rows = []
@@ -259,6 +294,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
         lines += ["### 4.6 Sensitivity to simulated depolarising noise", "", f"![noise]({rel(out_dir, base)}/fig_noise.png)", ""]
         ps = sorted(noise.noise_p.unique())
         rows = []
+        # Rows ordered by (qubits, layers) like the grid in 4.2; each cell is the mean over the noise seeds.
         for (lab, q, L), d in sorted(noise.groupby(["label", "n_qubits", "n_layers"]), key=lambda t: (t[0][1], t[0][2])):
             g = d.groupby("noise_p").accuracy.mean()
             rows.append((lab, *(fmt(g.loc[p]) for p in ps)))
@@ -273,6 +309,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
             for (lab, q, L), d in sorted(noise.groupby(["label", "n_qubits", "n_layers"]), key=lambda t: (t[0][1], t[0][2])):
                 g = d.groupby("noise_p")[["mean_abs_expectation", "changed_predictions"]].mean()
                 rows.append((lab, *(f"{g.loc[p, 'mean_abs_expectation']:.3f} / {g.loc[p, 'changed_predictions']:.0%}" for p in ps)))
+            # The reference circuit is not swept if it exceeds max_qubits; the worst one then supplies the example.
             gref = noise[(noise.n_qubits == ref.n_qubits) & (noise.n_layers == ref.n_layers)].groupby("noise_p")[["mean_abs_expectation", "changed_predictions"]].mean()
             if not len(gref):
                 gref = noise[noise.label == worst].groupby("noise_p")[["mean_abs_expectation", "changed_predictions"]].mean()
@@ -288,6 +325,7 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
                       f"benefit. Source: `{rel(out_dir, base)}/noise_sweep.csv`.", ""]
 
     # --------------------------------------------------------------------------------------------- limitations
+    # The PCA variance quoted in the limitations is the first seed's; section 2.1 lists every seed.
     lines += ["## 5. Limitations", "",
               "- **Simulator only.** Every circuit ran on PennyLane's CPU state-vector (`default.qubit`) or density-matrix (`default.mixed`) simulator. "
               "No hardware run; the latency, circuit-evaluation and noise numbers describe the simulation, not a device. On hardware every "
@@ -311,6 +349,8 @@ def write_report(out_dir, cfg, info, env, timing, report_path):
               "ratios between models are more robust than the absolute values.", ""]
 
     # ----------------------------------------------------------------------------------------- reproduction
+    # timing.json is merged across invocations but only holds the phases some invocation ran (e.g. --report-only on a
+    # fresh results dir has only data_seconds); missing phases print as 0 and a missing total as nan.
     lines += ["## 6. Reproduction and environment", "",
               "```bash", "cd prediction-quantum", "python -m prediction_quantum.run_benchmark --config configs/default.yaml --data-dir ../Data_clean", "```", "",
               f"The command rebuilds the feature cache from `Data_clean` when missing, writes every CSV, figure and this report, and skips finished "
