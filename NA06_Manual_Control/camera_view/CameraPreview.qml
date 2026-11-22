@@ -30,7 +30,10 @@ Rectangle {
             }
             Label {
                 anchors.centerIn: parent
-                text: "Preview stopped"
+                text: panel.cameraController.active ? "Starting camera..." : "Camera stopped\nClick Start Stream to preview"
+                horizontalAlignment: Text.AlignHCenter
+                width: Math.max(0, parent.width - 24)
+                wrapMode: Text.WordWrap
                 color: "#c0cadd"
                 visible: !panel.cameraController.hasFrame
             }

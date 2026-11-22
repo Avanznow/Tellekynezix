@@ -50,6 +50,70 @@ Rectangle {
         return item.value === null ? "Unavailable" : Number(item.value).toFixed(2) + " " + item.unit
     }
 
+    component ConnectionBadge: Rectangle {
+        implicitWidth: badgeRow.implicitWidth + 18
+        implicitHeight: 28
+        radius: 14
+        color: naoSimulation.connected ? "#234d3c" : "#485767"
+        border.color: naoSimulation.connected ? "#69ca8b" : "#a9b7c6"
+        Row {
+            id: badgeRow
+            anchors.centerIn: parent
+            spacing: 6
+            Rectangle {
+                width: 9; height: 9; radius: 5
+                anchors.verticalCenter: parent.verticalCenter
+                color: naoSimulation.connected ? "#6ce492" : "#bdc6d0"
+            }
+            Label {
+                text: naoSimulation.connected ? "Connected" : "Disconnected"
+                color: "white"
+                font.pixelSize: 12
+            }
+        }
+    }
+
+    component ControlTile: Button {
+        id: tile
+        property string iconName: ""
+        property bool selected: false
+        property string fillColor: "#ffffff"
+        property string labelColor: "#182b40"
+        hoverEnabled: true
+        padding: 7
+        background: Rectangle {
+            radius: 14
+            color: tile.down ? Qt.darker(tile.fillColor, 1.12) :
+                   tile.selected ? "#dff3e5" : tile.hovered && tile.enabled ? Qt.darker(tile.fillColor, 1.06) : tile.fillColor
+            border.width: tile.activeFocus || tile.selected ? 2 : 1
+            border.color: tile.activeFocus ? "#1676d2" : tile.selected ? "#198c32" : "#d0dce9"
+            opacity: tile.enabled ? 1 : 0.65
+        }
+        contentItem: ColumnLayout {
+            spacing: 3
+            Image {
+                visible: tile.iconName.length > 0
+                source: tile.iconName ? "NA06_Manual_Control/control_icons/" + tile.iconName + ".svg" : ""
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: Math.min(34, tile.height * 0.40)
+                Layout.preferredHeight: Layout.preferredWidth
+                sourceSize.width: 64
+                sourceSize.height: 64
+                opacity: tile.enabled ? 1 : 0.55
+            }
+            Label {
+                text: tile.text
+                color: tile.labelColor
+                font.pixelSize: tile.objectName === "simulationStopButton" ? 18 : 13
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+    }
+
     RowLayout {
         anchors.fill: parent
         spacing: 0
@@ -61,89 +125,104 @@ Rectangle {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 12
-                spacing: 10
-                Label {
-                    text: "NAO Simulation"
-                    color: "white"
-                    font.pixelSize: 20
-                    font.bold: true
-                    Layout.alignment: Qt.AlignHCenter
-                }
-                Label {
-                    text: "Motion controls\nChoose a direction; standing is automatic"
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
+                spacing: 7
+                RowLayout {
                     Layout.fillWidth: true
+                    Label {
+                        text: "NAO Simulation"
+                        color: "white"
+                        font.pixelSize: 18
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    ConnectionBadge { }
                 }
                 GridLayout {
-                    columns: 2
+                    columns: 3
+                    rowSpacing: 8
+                    columnSpacing: 8
                     Layout.fillWidth: true
                     Repeater {
                         model: [
-                            {label: "Walking Backward", action: "backward", icon: "back.png"},
-                            {label: "Walking Forward", action: "forward", icon: "forward.png"},
-                            {label: "Turn Right", action: "turn_right", icon: "right.png"},
-                            {label: "Turn Left", action: "turn_left", icon: "left.png"}
+                            {label: "Walk Forward", action: "forward", icon: "forward", row: 0, col: 1},
+                            {label: "Turn Left", action: "turn_left", icon: "turn-left", row: 1, col: 0},
+                            {label: "Turn Right", action: "turn_right", icon: "turn-right", row: 1, col: 2},
+                            {label: "Walk Backward", action: "backward", icon: "backward", row: 2, col: 1}
                         ]
-                        delegate: Button {
+                        delegate: ControlTile {
                             objectName: "simulationMotion_" + modelData.action
+                            text: modelData.label
+                            iconName: modelData.icon
+                            Layout.row: modelData.row
+                            Layout.column: modelData.col
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.min(110, root.height * 0.17)
+                            Layout.preferredWidth: 90
+                            Layout.minimumWidth: 0
+                            Layout.preferredHeight: Math.min(68, root.height * 0.09)
+                            selected: naoSimulation.connected && naoSimulation.motion.action === modelData.action
                             enabled: naoSimulation.canSwitchMotion
-                            contentItem: Column {
-                                spacing: 4
-                                Image {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    source: "GUI_Pics/" + modelData.icon
-                                    width: 48; height: 48
-                                    fillMode: Image.PreserveAspectFit
-                                }
-                                Label {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: modelData.label
-                                }
-                            }
                             onClicked: naoSimulation.requestMotion(modelData.action)
                         }
                     }
+                    ControlTile {
+                        objectName: "simulationStopButton"
+                        text: naoSimulation.stopping ? "Stopping..." : "STOP"
+                        fillColor: "#e52535"
+                        labelColor: "white"
+                        Layout.row: 1
+                        Layout.column: 1
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 90
+                        Layout.minimumWidth: 0
+                        Layout.preferredHeight: Math.min(68, root.height * 0.09)
+                        enabled: naoSimulation.motionSupported && naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
+                        onClicked: naoSimulation.stopMotion()
+                    }
                 }
-                Label { text: "Simulated posture"; color: "white" }
                 RowLayout {
                     Layout.fillWidth: true
-                    Button {
+                    spacing: 8
+                    ControlTile {
                         objectName: "simulationStandButton"
                         text: "Stand Up"
+                        iconName: "stand"
                         Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(54, root.height * 0.075)
                         enabled: naoSimulation.connected && !naoSimulation.busy && !naoSimulation.pending
                         onClicked: naoSimulation.requestPosture("Stand")
                     }
-                    Button {
+                    ControlTile {
                         objectName: "simulationSitButton"
                         text: "Sit Down"
+                        iconName: "sit"
                         Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(54, root.height * 0.075)
                         enabled: naoSimulation.connected && !naoSimulation.busy && !naoSimulation.pending
                         onClicked: naoSimulation.requestPosture("Sit")
                     }
                 }
-                Button {
-                    objectName: "simulationStopButton"
-                    text: naoSimulation.stopping ? "Stopping..." : "Stop"
-                    Layout.fillWidth: true
-                    enabled: naoSimulation.motionSupported && naoSimulation.connected && naoSimulation.busy && !naoSimulation.pending && !naoSimulation.stopping
-                    onClicked: naoSimulation.stopMotion()
-                }
                 RowLayout {
                     Layout.fillWidth: true
-                    Button {
+                    spacing: 8
+                    ControlTile {
                         objectName: "simulationVoiceSpeak"
-                        text: "Speak command"
+                        text: naoSimulation.voice.listening ? "Listening..." : "Speak Command"
+                        iconName: "microphone"
+                        fillColor: "#087bea"
+                        labelColor: "white"
                         Layout.fillWidth: true
+                        Layout.preferredWidth: 180
+                        Layout.preferredHeight: 48
                         enabled: naoSimulation.connected && !naoSimulation.pending && !naoSimulation.voice.listening
                         onClicked: naoSimulation.voice.start()
                     }
-                    Button {
+                    ControlTile {
                         objectName: "simulationVoiceCancel"
-                        text: "Cancel listening"
+                        text: "Cancel Listening"
+                        fillColor: "#dce5f0"
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 120
+                        Layout.preferredHeight: 48
                         enabled: naoSimulation.voice.listening
                         onClicked: naoSimulation.voice.cancel()
                     }
@@ -159,11 +238,28 @@ Rectangle {
                     ToolTip.text: "walk forward, walk backward, turn left, turn right, stand up, sit down, stop"
                     MouseArea { id: voiceHelp; anchors.fill: parent; hoverEnabled: true }
                 }
-                Label { text: "Console"; color: "white" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Console"; color: "white"; font.bold: true; Layout.fillWidth: true }
+                    Button {
+                        objectName: "simulationConsoleClear"
+                        text: "Clear"
+                        implicitHeight: 28
+                        enabled: consoleLog.length > 0
+                        onClicked: consoleLog.clear()
+                    }
+                    Button {
+                        objectName: "simulationConsoleCopy"
+                        text: "Copy Log"
+                        implicitHeight: 28
+                        enabled: consoleLog.length > 0
+                        onClicked: { consoleLog.selectAll(); consoleLog.copy(); consoleLog.deselect() }
+                    }
+                }
                 ScrollView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.minimumHeight: 80
+                    Layout.minimumHeight: 160
                     TextArea {
                         id: consoleLog
                         objectName: "simulationConsole"
@@ -276,6 +372,7 @@ Rectangle {
                 color: "white"
                 font.pixelSize: 11
             }
+
             Rectangle {
                 objectName: "naoHardwareConnectionPanel"
                 anchors.right: parent.right
@@ -338,23 +435,61 @@ Rectangle {
             Layout.minimumWidth: 250
             Layout.fillHeight: true
             color: "#233747"
-            ColumnLayout {
+            ScrollView {
+                id: sidebarScroll
                 anchors.fill: parent
                 anchors.margins: 14
-                spacing: 12
+                clip: true
+                contentWidth: availableWidth
+            ColumnLayout {
+                width: sidebarScroll.availableWidth
+                spacing: 10
                 NaoCamera.CameraPreview {
                     objectName: "naoCameraPanel"
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: Math.max(330, root.height * 0.48)
                     cameraController: naoSimulation.cameraPreview
                 }
-                Label { text: "Simulation session"; color: "white"; font.pixelSize: 18 }
-                ComboBox {
-                    id: simulationBackend
-                    objectName: "simulationBackendSelector"
+                RowLayout {
                     Layout.fillWidth: true
-                    model: ["Local simulation", "Remote simulation"]
-                    enabled: !naoSimulation.connected && !naoSimulation.pending
+                    spacing: 8
+                    Label { text: "Simulation session"; color: "white"; font.pixelSize: 15 }
+                    ComboBox {
+                        id: simulationBackend
+                        objectName: "simulationBackendSelector"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        model: ["Local simulation", "Remote simulation"]
+                        enabled: !naoSimulation.connected && !naoSimulation.pending
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Button {
+                        objectName: "simulationConnectButton"
+                        Layout.fillWidth: true
+                        text: naoSimulation.connected ? "Disconnect" : "Connect simulation"
+                        enabled: !naoSimulation.pending
+                        onClicked: {
+                            if (naoSimulation.connected) naoSimulation.disconnectSimulation()
+                            else if (simulationBackend.currentIndex === 0 ||
+                                     (simulationHost.text.trim().length > 0 && simulationPort.acceptableInput)) {
+                                if (naoSimulation.configureSimulation(simulationBackend.currentIndex === 1,
+                                                                      simulationHost.text, Number(simulationPort.text)))
+                                    naoSimulation.connectSimulation()
+                            }
+                        }
+                    }
+                    ColumnLayout {
+                        spacing: 3
+                        Label {
+                            text: "Status"
+                            color: "white"
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                        ConnectionBadge { }
+                    }
                 }
                 RowLayout {
                     visible: simulationBackend.currentIndex === 1
@@ -384,38 +519,19 @@ Rectangle {
                     color: "white"
                     text: "Motion, posture and telemetry from the remote simulation."
                 }
-                Label {
-                    objectName: "simulationStatus"
-                    text: "Status: " + naoSimulation.statusText
-                    color: "white"
-                }
                 Label { text: "Posture: " + naoSimulation.posture; color: "white" }
                 Button {
-                    objectName: "simulationConnectButton"
+                    id: telemetryToggle
+                    objectName: "naoTelemetryToggle"
                     Layout.fillWidth: true
-                    text: naoSimulation.connected ? "Disconnect" : "Connect simulation"
-                    enabled: !naoSimulation.pending
-                    onClicked: {
-                        if (naoSimulation.connected) naoSimulation.disconnectSimulation()
-                        else if (simulationBackend.currentIndex === 0 ||
-                                 (simulationHost.text.trim().length > 0 && simulationPort.acceptableInput)) {
-                            if (naoSimulation.configureSimulation(simulationBackend.currentIndex === 1,
-                                                                  simulationHost.text, Number(simulationPort.text)))
-                                naoSimulation.connectSimulation()
-                        }
-                    }
-                }
-                TabBar {
-                    id: informationTabs
-                    objectName: "naoInformationTabs"
-                    Layout.fillWidth: true
-                    TabButton { text: "Camera" }
-                    TabButton { text: "Telemetry" }
+                    checkable: true
+                    checked: true
+                    text: (checked ? "\u25be  " : "\u25b8  ") + "Telemetry"
                 }
                 Item {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: informationTabs.currentIndex === 1 ? root.height * 0.30 : 0
-                    visible: informationTabs.currentIndex === 1
+                    Layout.preferredHeight: telemetryToggle.checked ? root.height * 0.30 : 0
+                    visible: telemetryToggle.checked
                     ScrollView {
                         anchors.fill: parent
                         id: telemetryScroll
@@ -455,6 +571,8 @@ Rectangle {
                     }
                 }
 
+
+            }
             }
         }
     }
