@@ -6,7 +6,7 @@ import QtMultimedia
 
 Rectangle {
     id: panel
-    anchors.fill: parent
+    implicitHeight: 360
     color: "#2c3e50"
     property var cameraController
     onVisibleChanged: { if (!visible && cameraController) cameraController.stop() }
@@ -15,6 +15,26 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 12
         spacing: 8
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            color: "#11161a"
+            clip: true
+            VideoOutput {
+                id: preview
+                objectName: "naoPreviewVideo"
+                anchors.fill: parent
+                fillMode: VideoOutput.PreserveAspectFit
+                visible: panel.cameraController.active && panel.cameraController.hasFrame
+                Component.onCompleted: panel.cameraController.attachOutput(preview)
+            }
+            Label {
+                anchors.centerIn: parent
+                text: "Preview stopped"
+                color: "#c0cadd"
+                visible: !panel.cameraController.hasFrame
+            }
+        }
         Label { text: "CAMERA VIEW"; color: "white"; font.bold: true; Layout.alignment: Qt.AlignHCenter }
         ComboBox {
             id: sourceSelector
@@ -46,26 +66,6 @@ Rectangle {
             wrapMode: Text.WordWrap
             text: panel.cameraController.sourceLabel
             color: "white"
-        }
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            color: "#11161a"
-            clip: true
-            VideoOutput {
-                id: preview
-                objectName: "naoPreviewVideo"
-                anchors.fill: parent
-                fillMode: VideoOutput.PreserveAspectFit
-                visible: panel.cameraController.active && panel.cameraController.hasFrame
-                Component.onCompleted: panel.cameraController.attachOutput(preview)
-            }
-            Label {
-                anchors.centerIn: parent
-                text: "Preview stopped"
-                color: "#c0cadd"
-                visible: !panel.cameraController.hasFrame
-            }
         }
         Label { text: panel.cameraController.frameInfo; color: "white"; Layout.fillWidth: true }
         Label {

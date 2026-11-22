@@ -168,7 +168,7 @@ class QtSimulationTests(unittest.TestCase):
         self.assertEqual(tabs.property("currentIndex"), 0)
         tabs.setProperty("currentIndex", 1)
         self.app.processEvents()
-        self.assertFalse(camera.property("visible"))
+        self.assertTrue(camera.property("visible"))
         tabs.setProperty("currentIndex", 0)
         self.app.processEvents()
         self.assertTrue(camera.property("visible"))

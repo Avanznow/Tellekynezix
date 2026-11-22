@@ -342,6 +342,12 @@ Rectangle {
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 12
+                NaoCamera.CameraPreview {
+                    objectName: "naoCameraPanel"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    cameraController: naoSimulation.cameraPreview
+                }
                 Label { text: "Simulation session"; color: "white"; font.pixelSize: 18 }
                 ComboBox {
                     id: simulationBackend
@@ -406,17 +412,12 @@ Rectangle {
                     TabButton { text: "Camera" }
                     TabButton { text: "Telemetry" }
                 }
-                StackLayout {
-                    currentIndex: informationTabs.currentIndex
+                Item {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Item {
-                        NaoCamera.CameraPreview {
-                            objectName: "naoCameraPanel"
-                            cameraController: naoSimulation.cameraPreview
-                        }
-                    }
+                    Layout.preferredHeight: informationTabs.currentIndex === 1 ? root.height * 0.30 : 0
+                    visible: informationTabs.currentIndex === 1
                     ScrollView {
+                        anchors.fill: parent
                         id: telemetryScroll
                         clip: true
                         contentWidth: availableWidth
