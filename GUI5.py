@@ -72,10 +72,15 @@ class BrainwavesBackend(QObject):
     naoEnded = Signal()
     enqueueMoveRequested = Signal(str)
     neurosityStatusChanged = Signal(str)
+    authorizationStatusChanged = Signal(str)
     loginSucceeded = Signal("QVariantList")
     loginFailed = Signal(str)
     deviceConnected = Signal()
     deviceOffline = Signal(str)
+
+    @Property(str, notify=authorizationStatusChanged)
+    def neurosityAuthorizationStatus(self):
+        return self.neurosity_authorized
 
     @Slot()
     def startNaoManual(self):
@@ -118,7 +123,7 @@ class BrainwavesBackend(QObject):
         if send_command("stand_up"):
             self.flight_log.insert(0, "Standing Up.")
         else:
-            self.fligt_log.insert(0, "Nao failed to stand up.")
+            self.flight_log.insert(0, "Nao failed to stand up.")
         self.flightLogUpdated.emit(self.flight_log)
 
 
@@ -136,6 +141,7 @@ class BrainwavesBackend(QObject):
         self.image_paths = []  # Store converted image paths
         self.neurosity_processor = None
         self.neurosity_connected = False
+        self.neurosity_authorized = "UNKNOWN" # Flag to indicate if the device is authorized
         self.plots_dir = os.path.abspath("plotscode/plots")  # Base plots directory
         self.current_dataset = "refresh"  # Default dataset to display
         self.connected = False
@@ -1071,6 +1077,7 @@ class BrainwavesBackend(QObject):
         ok = self.neurosity_processor.login(email, password)
 
         if ok:
+            self.checkNeurosityAuthorization()
             devices = self.neurosity_processor.get_devices()
             if not devices:
                 devices = ["No devices paired"]
@@ -1086,8 +1093,27 @@ class BrainwavesBackend(QObject):
     @Slot()
     def neurosityLogout(self):
         self.neurosity_processor.logout()
+        self.neurosity_authorized = "UNKNOWN"
+        self.authorizationStatusChanged.emit(self.neurosity_authorized)
         self.neurosityStatusChanged.emit("Signed out")
-    
+
+    def _set_neurosity_authorization_status(self, status):
+        self.neurosity_authorized = status
+        self.authorizationStatusChanged.emit(status)
+    @Slot()
+    def checkNeurosityAuthorization(self):
+        if self.neurosity_processor is None:
+            self._set_neurosity_authorization_status("UNKNOWN")
+            return
+        self._set_neurosity_authorization_status("LOADING")
+        if not self.neurosity_processor.is_logged_in():
+            self._set_neurosity_authorization_status("UNKNOWN")
+            return
+
+            # Verify access with the service, not just the local login state.
+        self.neurosity_processor.get_devices()
+        self._set_neurosity_authorization_status("ACTIVE")
+
     @Slot(str)
     def selectNeurosityDevice(self, device):
 
@@ -1097,9 +1123,7 @@ class BrainwavesBackend(QObject):
         if state == "online":
             self.deviceConnected.emit()
         else:
-            self.deviceOffline.emit(
-                "Device is offline. Please connect it in the Neurosity app."
-            )
+            self.deviceOffline.emit("Device is offline. Please connect it in the Neurosity app.")
 
 
 if __name__ == "__main__":
