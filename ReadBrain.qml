@@ -13,6 +13,7 @@ Rectangle {
     property string currentFramework: "PyTorch"
     property string selectedHeadset: "OpenBCI"
     property string neurosityStatus: "Signed Out"
+    property string authorizationStatus: "UNKNOWN"
     color: "#718399"
     Layout.fillWidth: true
     Layout.fillHeight: true
@@ -683,7 +684,20 @@ Rectangle {
                             }
                         }
                     }
-                }
+
+Text {
+    text: "Blockchain Authorization: " + root.authorizationStatus
+
+    width: parent.width
+    wrapMode: Text.WordWrap
+
+    font.pixelSize: 18
+    font.bold: true
+
+    color: root.authorizationStatus === "ACTIVE" ? "#4caf50" :
+           root.authorizationStatus === "REVOKED" ? "#f44336" :
+           "#b0b0b0"
+}
             }          
         }
     }
@@ -889,6 +903,10 @@ Rectangle {
 
                 function onDeviceOffline(message) {
                     deviceErrorLabel.text = message
+                }
+
+                function onAuthorizationStatusChanged(status) {
+                    root.authorizationStatus = status
                 }
             }
 
